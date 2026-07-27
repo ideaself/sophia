@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { ClassroomView } from './chat/ClassroomView'
 import { useChatStream } from './chat/useChatStream'
 
@@ -484,6 +486,9 @@ function TextbooksView({
   const [content, setContent] = useState('')
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
+  const [viewingTextbook, setViewingTextbook] = useState<Textbook | null>(null)
+  const [viewingContent, setViewingContent] = useState('')
+  const [loadingContent, setLoadingContent] = useState(false)
 
   const handleTextImport = async () => {
     if (!title.trim()) return
@@ -538,6 +543,19 @@ function TextbooksView({
       setError(err instanceof Error ? err.message : '导入失败')
     } finally {
       setImporting(false)
+    }
+  }
+
+  const handleViewContent = async (t: Textbook) => {
+    setViewingTextbook(t)
+    setLoadingContent(true)
+    try {
+      const full = await window.sophia.data.getTextbook(t.id)
+      setViewingContent(full?.content ?? '')
+    } catch {
+      setViewingContent('加载失败')
+    } finally {
+      setLoadingContent(false)
     }
   }
 
@@ -596,18 +614,57 @@ function TextbooksView({
               <h4 className="font-medium">{t.title}</h4>
               <p className="text-xs text-gray-500">{t.format}</p>
             </div>
-            <button
-              onClick={() => onSelect(t)}
-              className="rounded border border-gray-600 px-3 py-1 text-sm hover:bg-gray-700"
-            >
-              选择
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleViewContent(t)}
+                className="rounded border border-gray-600 px-3 py-1 text-sm hover:bg-gray-700"
+              >
+                查看
+              </button>
+              <button
+                onClick={() => onSelect(t)}
+                className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500"
+              >
+                选择
+              </button>
+            </div>
           </div>
         ))}
         {textbooks.length === 0 && (
           <p className="text-gray-500">暂无教材。请在上方导入。</p>
         )}
       </div>
+
+      {/* Textbook content viewer modal */}
+      {viewingTextbook && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="flex h-[80vh] w-[80vw] flex-col rounded-lg border border-gray-600 bg-gray-900 shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-700 px-6 py-4">
+              <div>
+                <h3 className="text-lg font-semibold">{viewingTextbook.title}</h3>
+                <p className="text-xs text-gray-400">{viewingTextbook.format}</p>
+              </div>
+              <button
+                onClick={() => setViewingTextbook(null)}
+                className="rounded p-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto px-6 py-4">
+              {loadingContent ? (
+                <p className="text-sm text-gray-500">加载中...</p>
+              ) : (
+                <div className="markdown-body text-sm leading-relaxed text-gray-200">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {viewingContent}
+                  </ReactMarkdown>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -73,11 +73,15 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, chatStream.state.assistantContent])
 
-  const handleSend = async () => {
-    if (!input.trim() || chatStream.state.isStreaming || !companion) return
+  // Last failed message for retry
+  const [retryMessage, setRetryMessage] = useState<{ input: string; convId: string } | null>(null)
 
-    const userMessage = input.trim()
+  const handleSend = async (retryInput?: string) => {
+    const userMessage = retryInput ?? input.trim()
+    if (!userMessage || chatStream.state.isStreaming || !companion) return
+
     setInput('')
+    setRetryMessage(null)
 
     // Create conversation on first message
     let convId = conversationId
@@ -140,7 +144,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           ])
         }
       } catch {
-        // Stream was cancelled or errored — don't persist
+        // Stream was cancelled or errored — save retry info
+        setRetryMessage({ input: userMessage, convId: convId! })
       }
     }
 
@@ -227,8 +232,21 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           <ChatMessage key={msg.id} role={msg.role} content={msg.content} />
         ))}
         {chatStream.state.error && (
-          <div className="rounded border border-red-800 bg-red-900/30 px-4 py-2 text-sm text-red-300">
-            错误: {chatStream.state.error.message}
+          <div className="rounded border border-red-800 bg-red-900/30 px-4 py-3 text-sm text-red-300">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">发送失败</p>
+                <p className="mt-1 text-xs text-red-400">{chatStream.state.error.message}</p>
+              </div>
+              {retryMessage && (
+                <button
+                  onClick={() => handleSend(retryMessage.input)}
+                  className="rounded bg-red-800 px-3 py-1 text-xs text-red-200 hover:bg-red-700"
+                >
+                  重试
+                </button>
+              )}
+            </div>
           </div>
         )}
         <div ref={messagesEndRef} />
