@@ -71,17 +71,22 @@ app.whenReady().then(async () => {
       return win.webContents
     },
     (params) => {
-      // Use active provider's endpoint if available, else default
       return createDeepSeekStreamAdapter({ endpoint: params._endpoint }).streamChat(params)
     },
     async () => {
-      // Try active provider first, fallback to legacy key store
       const activeProvider = await providerStore.getActive()
       if (activeProvider) {
         const key = await providerStore.readApiKey(activeProvider.id)
         if (key) return key
       }
       return keyStore.readKey()
+    },
+    async () => {
+      const activeProvider = await providerStore.getActive()
+      if (activeProvider) {
+        return { model: activeProvider.selectedModel, baseUrl: activeProvider.baseUrl }
+      }
+      return null
     }
   )
 

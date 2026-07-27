@@ -203,9 +203,20 @@ export async function loadReferenceCompanions(
     await copyFile(sourcePath, destPath)
   }
 
-  // Write index.json with all companion metadata
+  // Merge with existing index.json — preserve custom companions
   const indexPath = join(companionDir, 'index.json')
-  await writeFile(indexPath, JSON.stringify(companions, null, 2), 'utf-8')
+  let existing: Companion[] = []
+  try {
+    const raw = await readFile(indexPath, 'utf-8')
+    existing = CompanionSchema.array().parse(JSON.parse(raw))
+  } catch {
+    // No existing index — that's fine
+  }
+  const customOnes = existing.filter((c) => c.source === 'custom')
+  const merged = [...companions, ...customOnes]
+
+  // Write merged index.json
+  await writeFile(indexPath, JSON.stringify(merged, null, 2), 'utf-8')
 
   return {
     companions,

@@ -88,6 +88,12 @@ export type StreamAdapterFactory = (
  */
 export type ApiKeyReader = () => Promise<string | null>
 
+/**
+ * Function that reads the active provider config for streaming.
+ * Returns model + endpoint, or null if no provider is configured.
+ */
+export type ActiveProviderReader = () => Promise<{ model: string; baseUrl: string } | null>
+
 // ---------------------------------------------------------------
 // Stream event payloads sent to the renderer
 // ---------------------------------------------------------------
@@ -130,7 +136,8 @@ interface UsagePayload {
 export function registerChatStreamIpc(
   getWebContents: () => WebContents,
   adapterFactory: StreamAdapterFactory,
-  readApiKey: ApiKeyReader
+  readApiKey: ApiKeyReader,
+  readActiveProvider?: ActiveProviderReader
 ): Map<string, StreamChatSession> {
   const sessions = new Map<string, StreamChatSession>()
 
@@ -143,6 +150,17 @@ export function registerChatStreamIpc(
       throw new Error('API key not configured')
     }
 
+    // Read model and endpoint from active provider
+    let model = parsed.model
+    let _endpoint: string | undefined
+    if (readActiveProvider) {
+      const provider = await readActiveProvider()
+      if (provider) {
+        model = provider.model
+        _endpoint = provider.baseUrl
+      }
+    }
+
     const sessionId = generateSessionId()
     const wc = getWebContents()
 
@@ -150,8 +168,9 @@ export function registerChatStreamIpc(
       sessionId,
       {
         messages: parsed.messages,
-        model: parsed.model,
-        apiKey
+        model,
+        apiKey,
+        _endpoint
       },
       { streamChat: (p) => adapterFactory(p) },
       (event) => {

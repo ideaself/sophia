@@ -185,8 +185,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center text-text-muted">
-          <p className="text-lg">请先在侧边栏选择一位学习伙伴</p>
-          <p className="mt-2 text-sm">选择后即可开始苏格拉底式对话</p>
+          <p className="text-lg">请先选择一位学习伙伴</p>
+          <p className="mt-2 text-sm">点击顶部菜单栏的「角色」选择，或点击「课堂」下拉菜单新建</p>
         </div>
       </div>
     )

@@ -42,6 +42,7 @@ function App(): React.ReactElement {
   const [showClassroomDropdown, setShowClassroomDropdown] = useState(false)
   const [activeConversations, setActiveConversations] = useState<ActiveConversation[]>([])
   const [loadConversationId, setLoadConversationId] = useState<string | null>(null)
+  const [classroomResetKey, setClassroomResetKey] = useState(0)
 
   const [editingCompanion, setEditingCompanion] = useState<CompanionDTO | null>(null)
   const [isCreatingCompanion, setIsCreatingCompanion] = useState(false)
@@ -125,9 +126,14 @@ function App(): React.ReactElement {
   }
 
   const handleNewClassroom = (comp?: Companion) => {
-    if (comp) setSelectedCompanion(comp)
-    setLoadConversationId(null)
-    setView('classroom')
+    if (comp) {
+      setSelectedCompanion(comp)
+      setLoadConversationId(null)
+      setClassroomResetKey((k) => k + 1)
+      setView('classroom')
+    } else {
+      setView('companions')
+    }
     setShowClassroomDropdown(false)
   }
 
@@ -247,6 +253,12 @@ function App(): React.ReactElement {
             onEdit={(c) => handleEditCompanionFromDropdown(c)}
             onAdd={() => handleCreateCompanion()}
             onRefresh={reloadCompanions}
+            onStart={(c) => {
+              setSelectedCompanion(c)
+              setLoadConversationId(null)
+              setClassroomResetKey((k) => k + 1)
+              setView('classroom')
+            }}
           />
         )}
         {view === 'textbooks' && (
@@ -269,7 +281,7 @@ function App(): React.ReactElement {
             })
           }} />
         )}
-        <div className={view === 'classroom' ? 'h-full' : 'hidden h-full'}>
+        <div key={classroomResetKey} className={view === 'classroom' ? 'h-full' : 'hidden h-full'}>
           <ClassroomView companion={selectedCompanion} textbook={selectedTextbook} chatStream={chatStream}
             loadConversationId={loadConversationId} onConversationLoaded={() => setLoadConversationId(null)} />
         </div>
@@ -1082,12 +1094,14 @@ function CompanionsManageView({
   companions,
   onEdit,
   onAdd,
-  onRefresh
+  onRefresh,
+  onStart
 }: {
   companions: Companion[]
   onEdit: (c: Companion) => void
   onAdd: () => void
   onRefresh: () => void
+  onStart: (c: Companion) => void
 }): React.ReactElement {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
@@ -1125,7 +1139,11 @@ function CompanionsManageView({
                 ))}
               </div>
             </button>
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3 flex items-center justify-between">
+              <button
+                onClick={() => onStart(c)}
+                className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
+              >开始对话</button>
               {deleteConfirmId === c.id ? (
                 <div className="flex gap-2">
                   <button
