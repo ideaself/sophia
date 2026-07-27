@@ -23,6 +23,7 @@ import type {
   DeepSeekStreamParams
 } from './stream-types'
 import { AppError, mapDeepSeekError } from './errors'
+import { assertHttpsEndpoint } from './endpoint'
 
 // ---------------------------------------------------------------
 // Constants
@@ -47,9 +48,7 @@ export function createDeepSeekStreamAdapter(options?: {
   const defaultEndpoint = options?.endpoint ?? DEFAULT_ENDPOINT
   const fetchImpl = options?.fetchImpl ?? fetch
 
-  if (defaultEndpoint.startsWith('http://')) {
-    throw new Error('Endpoint must use HTTPS')
-  }
+  assertHttpsEndpoint(defaultEndpoint)
 
   return {
     streamChat: async function* (
@@ -61,6 +60,9 @@ export function createDeepSeekStreamAdapter(options?: {
         const base = params._endpoint.replace(/\/$/, '')
         endpoint = base.endsWith('/chat/completions') ? base : `${base}/chat/completions`
       }
+      // The override comes from user-configured providers — enforce the
+      // same HTTPS rule before the API key leaves the machine.
+      assertHttpsEndpoint(endpoint)
       const response = await fetchImpl(endpoint, {
         method: 'POST',
         headers: {

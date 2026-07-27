@@ -691,4 +691,16 @@ describe('DeepSeekStreamAdapter — endpoint validation', () => {
       })
     ).not.toThrow()
   })
+
+  it('throws when per-request _endpoint override uses http://', async () => {
+    const { fetchFn, calls } = mockFetch(200, ['data: [DONE]\n\n'])
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
+
+    await expect(
+      collectChunks(adapter, streamParams({ _endpoint: 'http://insecure.example.com/v1' }))
+    ).rejects.toThrow('Endpoint must use HTTPS')
+
+    // The insecure request must never hit the network
+    expect(calls).toHaveLength(0)
+  })
 })

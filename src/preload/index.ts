@@ -237,7 +237,6 @@ export interface ProviderAPI {
 export interface SyncWebDavConfig {
   url: string
   username: string
-  password: string
 }
 
 export interface SyncResult {
@@ -251,6 +250,8 @@ export interface SyncAPI {
   test: (config: SyncWebDavConfig) => Promise<{ success: boolean; message?: string }>
   push: (config: SyncWebDavConfig) => Promise<SyncResult>
   pull: (config: SyncWebDavConfig) => Promise<SyncResult>
+  hasWebdavPassword: () => Promise<boolean>
+  setWebdavPassword: (password: string) => Promise<void>
 }
 
 export interface SophiaAPI {
@@ -404,7 +405,9 @@ const sophia: SophiaAPI = {
   sync: {
     test: (config) => ipcRenderer.invoke('sync:test', config),
     push: (config) => ipcRenderer.invoke('sync:push', config),
-    pull: (config) => ipcRenderer.invoke('sync:pull', config)
+    pull: (config) => ipcRenderer.invoke('sync:pull', config),
+    hasWebdavPassword: () => ipcRenderer.invoke('sync:has-webdav-password'),
+    setWebdavPassword: (password) => ipcRenderer.invoke('sync:set-webdav-password', { password })
   }
 }
 

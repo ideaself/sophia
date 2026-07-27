@@ -508,7 +508,9 @@ function ThemeSwitcher(): React.ReactElement {
 function WebDavSyncView(): React.ReactElement {
   const [url, setUrl] = useState(() => localStorage.getItem('webdav-url') || '')
   const [username, setUsername] = useState(() => localStorage.getItem('webdav-username') || '')
-  const [password, setPassword] = useState(() => localStorage.getItem('webdav-password') || '')
+  // Password is never persisted in the renderer; it lives encrypted in the main process.
+  const [password, setPassword] = useState('')
+  const [hasPassword, setHasPassword] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [pushing, setPushing] = useState(false)
@@ -517,16 +519,26 @@ function WebDavSyncView(): React.ReactElement {
   const [lastPull, setLastPull] = useState(() => localStorage.getItem('webdav-last-pull') || '')
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null)
 
-  const getConfig = () => ({ url: url.trim(), username: username.trim(), password })
+  useEffect(() => {
+    // One-time migration: purge any plaintext password saved by older versions
+    localStorage.removeItem('webdav-password')
+    window.sophia.sync.hasWebdavPassword().then(setHasPassword)
+  }, [])
 
-  const saveToStorage = () => {
+  const getConfig = () => ({ url: url.trim(), username: username.trim() })
+
+  const saveToStorage = async () => {
     localStorage.setItem('webdav-url', url.trim())
     localStorage.setItem('webdav-username', username.trim())
-    localStorage.setItem('webdav-password', password)
+    if (password.length > 0) {
+      await window.sophia.sync.setWebdavPassword(password)
+      setHasPassword(true)
+      setPassword('')
+    }
   }
 
   const handleTest = async () => {
-    saveToStorage()
+    await saveToStorage()
     setTesting(true)
     setTestResult(null)
     try {
@@ -540,7 +552,7 @@ function WebDavSyncView(): React.ReactElement {
   }
 
   const handlePush = async () => {
-    saveToStorage()
+    await saveToStorage()
     setPushing(true)
     setResult(null)
     try {
@@ -562,7 +574,7 @@ function WebDavSyncView(): React.ReactElement {
   }
 
   const handlePull = async () => {
-    saveToStorage()
+    await saveToStorage()
     if (lastPush) {
       const ago = Date.now() - new Date(lastPush).getTime()
       const hours = Math.floor(ago / 3600000)
@@ -621,6 +633,7 @@ function WebDavSyncView(): React.ReactElement {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              placeholder={hasPassword ? 'Saved — type to replace' : 'Not set'}
               className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:border-accent-border focus:outline-none"
             />
           </div>
@@ -674,7 +687,7 @@ function WebDavSyncView(): React.ReactElement {
       </div>
 
       <p className="mt-4 text-xs text-text-muted">
-        Credentials are stored locally in your browser. API keys are never synced.
+        Password is stored encrypted via the OS keychain and never synced. API keys are never synced.
       </p>
     </div>
   )

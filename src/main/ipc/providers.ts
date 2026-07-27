@@ -1,6 +1,10 @@
 import { ipcMain } from 'electron'
 import { ProviderStore } from '../storage/provider-store'
 import type { SafeStorageAdapter } from '../security/secure-key-store'
+import { assertHttpsEndpoint } from '../llm/endpoint'
+
+/** Timeout for provider discovery/connectivity probes. */
+const PROVIDER_REQUEST_TIMEOUT_MS = 15_000
 
 /**
  * Register IPC handlers for API provider management.
@@ -83,6 +87,7 @@ export function registerProviderIpc(
 
   ipcMain.handle('providers:fetch-models', async (_event, input: unknown) => {
     const { baseUrl, apiKey } = input as { baseUrl: string; apiKey: string }
+    assertHttpsEndpoint(baseUrl)
     const modelsUrl = `${baseUrl.replace(/\/$/, '')}/models`
 
     const response = await fetch(modelsUrl, {
@@ -90,7 +95,8 @@ export function registerProviderIpc(
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
-      }
+      },
+      signal: AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS)
     })
 
     if (!response.ok) {
@@ -107,6 +113,11 @@ export function registerProviderIpc(
 
   ipcMain.handle('providers:test-connection', async (_event, input: unknown) => {
     const { baseUrl, apiKey } = input as { baseUrl: string; apiKey: string }
+    try {
+      assertHttpsEndpoint(baseUrl)
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Invalid endpoint' }
+    }
     const modelsUrl = `${baseUrl.replace(/\/$/, '')}/models`
 
     try {
@@ -115,7 +126,8 @@ export function registerProviderIpc(
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
-        }
+        },
+        signal: AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS)
       })
 
       if (!response.ok) {

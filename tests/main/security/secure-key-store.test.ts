@@ -203,3 +203,33 @@ describe('encryption security', () => {
     expect(file1.equals(file2)).toBe(false)
   })
 })
+
+// ============================================================
+// Custom file name (e.g. WebDAV password storage)
+// ============================================================
+describe('custom file name', () => {
+  it('stores and reads the secret under the given file name', async () => {
+    const root = join(tempDir, 'custom_1')
+    const store = new SecureKeyStore(root, createTestAdapter(), 'webdav-password.enc')
+    await store.setKey('dav-secret')
+
+    expect(await store.hasKey()).toBe(true)
+    expect(await store.readKey()).toBe('dav-secret')
+
+    const { access } = await import('node:fs/promises')
+    await access(join(configDir(root), 'webdav-password.enc'))
+    await expect(access(join(configDir(root), 'deepseek-key.enc'))).rejects.toThrow()
+  })
+
+  it('two stores with different file names in the same dataRoot do not collide', async () => {
+    const root = join(tempDir, 'custom_2')
+    const apiKeyStore = new SecureKeyStore(root, createTestAdapter())
+    const davStore = new SecureKeyStore(root, createTestAdapter(), 'webdav-password.enc')
+
+    await apiKeyStore.setKey('api-key')
+    await davStore.setKey('dav-password')
+
+    expect(await apiKeyStore.readKey()).toBe('api-key')
+    expect(await davStore.readKey()).toBe('dav-password')
+  })
+})

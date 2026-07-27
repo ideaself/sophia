@@ -92,3 +92,15 @@ export const IpcListArtifactsInputSchema = z.object({
 export const IpcSetDeepSeekKeyInputSchema = z.object({
   key: z.string().min(1, 'API key must not be empty').trim()
 })
+
+// --- IPC: WebDAV Sync ---
+
+/** Non-secret connection fields; the password is stored encrypted in the main process. */
+export const IpcWebDavConfigInputSchema = z.object({
+  url: z.string().min(1).trim(),
+  username: z.string().min(1).trim()
+})
+
+export const IpcSetWebDavPasswordInputSchema = z.object({
+  password: z.string().min(1, 'Password must not be empty')
+})

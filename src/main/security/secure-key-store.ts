@@ -18,23 +18,28 @@ export interface SafeStorageAdapter {
   decryptString(encrypted: Buffer): string
 }
 
-const KEY_FILE_NAME = 'deepseek-key.enc'
+const DEFAULT_KEY_FILE_NAME = 'deepseek-key.enc'
 
 /**
- * Persists the DeepSeek API key as an encrypted binary blob under
- * `{dataRoot}/config/deepseek-key.enc`.
+ * Persists a secret as an encrypted binary blob under
+ * `{dataRoot}/config/{fileName}` (default: the DeepSeek API key file).
  *
- * The plaintext key never appears in the file system and is never
+ * The plaintext secret never appears in the file system and is never
  * exposed to the renderer process.
  */
 export class SecureKeyStore {
+  private readonly fileName: string
+
   constructor(
     private readonly dataRoot: string,
-    private readonly safeStorage: SafeStorageAdapter
-  ) {}
+    private readonly safeStorage: SafeStorageAdapter,
+    fileName: string = DEFAULT_KEY_FILE_NAME
+  ) {
+    this.fileName = fileName
+  }
 
   private get keyFilePath(): string {
-    return join(configDir(this.dataRoot), KEY_FILE_NAME)
+    return join(configDir(this.dataRoot), this.fileName)
   }
 
   /** Returns true if an encrypted key file exists on disk */

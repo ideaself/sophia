@@ -15,6 +15,10 @@ import type {
   DeepSeekApiParams,
   DeepSeekApiResult
 } from './types'
+import { assertHttpsEndpoint } from './endpoint'
+
+/** Default request timeout — a hung endpoint must not block generation forever. */
+const DEFAULT_TIMEOUT_MS = 60_000
 
 // ---------------------------------------------------------------
 // Options
@@ -53,9 +57,7 @@ export function createDeepSeekHttpAdapter(
   const endpoint =
     options.endpoint ?? 'https://api.deepseek.com/chat/completions'
 
-  if (endpoint.startsWith('http://')) {
-    throw new Error('Endpoint must use HTTPS')
-  }
+  assertHttpsEndpoint(endpoint)
 
   const fetchImpl = options.fetchImpl ?? globalThis.fetch
 
@@ -74,7 +76,8 @@ export function createDeepSeekHttpAdapter(
             model: params.model,
             messages: params.messages,
             stream: false
-          })
+          }),
+          signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
         })
 
         if (response.ok) {

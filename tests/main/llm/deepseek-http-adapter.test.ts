@@ -330,6 +330,29 @@ describe('createDeepSeekHttpAdapter', () => {
   })
 
   // -----------------------------------------------------------
+  // Request timeout
+  // -----------------------------------------------------------
+
+  describe('request timeout', () => {
+    it('passes an AbortSignal to fetch so a hung endpoint cannot block forever', async () => {
+      const response = mockResponse(200, stubCompletion)
+      const fetchMock = vi.fn().mockResolvedValue(response)
+      const adapter = createDeepSeekHttpAdapter({
+        fetchImpl: fetchMock as unknown as typeof fetch
+      })
+
+      await adapter.chatCompletion({
+        model: 'deepseek-v4-pro',
+        messages: testMessages,
+        apiKey: testApiKey
+      })
+
+      const init = fetchMock.mock.calls[0][1] as RequestInit
+      expect(init.signal).toBeInstanceOf(AbortSignal)
+    })
+  })
+
+  // -----------------------------------------------------------
   // Default fetchImpl
   // -----------------------------------------------------------
 

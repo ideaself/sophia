@@ -186,7 +186,6 @@ declare global {
   interface SyncWebDavConfig {
     url: string
     username: string
-    password: string
   }
 
   interface SyncResult {
@@ -200,6 +199,8 @@ declare global {
     test: (config: SyncWebDavConfig) => Promise<{ success: boolean; message?: string }>
     push: (config: SyncWebDavConfig) => Promise<SyncResult>
     pull: (config: SyncWebDavConfig) => Promise<SyncResult>
+    hasWebdavPassword: () => Promise<boolean>
+    setWebdavPassword: (password: string) => Promise<void>
   }
 
   interface SophiaAPI {

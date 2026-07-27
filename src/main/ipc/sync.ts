@@ -1,23 +1,50 @@
 import { ipcMain } from 'electron'
 import { SyncManager } from '../sync/sync-manager'
+import { SecureKeyStore, type SafeStorageAdapter } from '../security/secure-key-store'
+import type { WebDavConfig } from '../sync/webdav-client'
+import {
+  IpcWebDavConfigInputSchema,
+  IpcSetWebDavPasswordInputSchema
+} from '../../shared/schemas/ipc'
 
-export interface WebDavConfigInput {
-  url: string
-  username: string
-  password: string
-}
+const WEBDAV_PASSWORD_FILE = 'webdav-password.enc'
 
-export function registerSyncIpc(dataRoot: string): void {
+/**
+ * Register IPC handlers for WebDAV sync.
+ *
+ * The renderer only ever sends the non-secret fields ({url, username}).
+ * The password is stored encrypted in the main process via safeStorage
+ * and injected here — it never travels over IPC and is never returned
+ * to the renderer.
+ */
+export function registerSyncIpc(dataRoot: string, safeStorage: SafeStorageAdapter): void {
   const manager = new SyncManager(dataRoot)
+  const passwordStore = new SecureKeyStore(dataRoot, safeStorage, WEBDAV_PASSWORD_FILE)
+
+  async function resolveConfig(input: unknown): Promise<WebDavConfig> {
+    const parsed = IpcWebDavConfigInputSchema.parse(input)
+    const password = await passwordStore.readKey()
+    if (!password) {
+      throw new Error('WebDAV password not set — enter it in the sync settings first')
+    }
+    return { url: parsed.url, username: parsed.username, password }
+  }
+
+  ipcMain.handle('sync:has-webdav-password', async () => {
+    return passwordStore.hasKey()
+  })
+
+  ipcMain.handle('sync:set-webdav-password', async (_event, input: unknown) => {
+    const parsed = IpcSetWebDavPasswordInputSchema.parse(input)
+    await passwordStore.setKey(parsed.password)
+  })
 
   ipcMain.handle('sync:test', async (_event, input: unknown) => {
-    const config = input as WebDavConfigInput
-    return manager.test(config)
+    return manager.test(await resolveConfig(input))
   })
 
   ipcMain.handle('sync:push', async (_event, input: unknown) => {
-    const config = input as WebDavConfigInput
-    const result = await manager.push(config)
+    const result = await manager.push(await resolveConfig(input))
     if (result.success) {
       return { ...result, timestamp: new Date().toISOString() }
     }
@@ -25,8 +52,7 @@ export function registerSyncIpc(dataRoot: string): void {
   })
 
   ipcMain.handle('sync:pull', async (_event, input: unknown) => {
-    const config = input as WebDavConfigInput
-    const result = await manager.pull(config)
+    const result = await manager.pull(await resolveConfig(input))
     if (result.success) {
       return { ...result, timestamp: new Date().toISOString() }
     }

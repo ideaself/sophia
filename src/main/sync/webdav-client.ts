@@ -1,8 +1,6 @@
 import { createClient, type WebDAVClient } from 'webdav'
 import type { FileStat } from 'webdav'
 
-const REMOTE_BASE = '/sophia'
-
 export interface WebDavConfig {
   url: string
   username: string
@@ -18,10 +16,12 @@ export class SyncWebDavClient {
   private client: WebDAVClient
 
   constructor(config: WebDavConfig) {
+    // Note: no remoteBasePath here — in webdav v5 it is NOT prepended to
+    // request paths, it only rewrites PROPFIND response hrefs (which produced
+    // bogus relative filenames). Callers prefix remote paths explicitly.
     this.client = createClient(config.url, {
       username: config.username,
-      password: config.password,
-      remoteBasePath: REMOTE_BASE
+      password: config.password
     })
   }
 

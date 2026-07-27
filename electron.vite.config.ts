@@ -29,6 +29,26 @@ export default defineConfig({
         '@': resolve('src/renderer/src')
       }
     },
-    plugins: [react(), removeCrossoriginPlugin()]
+    plugins: [react(), removeCrossoriginPlugin()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // Split heavy vendor stacks out of the entry chunk so the app
+            // shell can render before the markdown/math/highlighter code
+            // finishes parsing.
+            'vendor-react': ['react', 'react-dom'],
+            'vendor-markdown': [
+              'react-markdown',
+              'remark-gfm',
+              'remark-math',
+              'rehype-katex',
+              'rehype-highlight',
+              'katex'
+            ]
+          }
+        }
+      }
+    }
   }
 })

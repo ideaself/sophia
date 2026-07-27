@@ -11,6 +11,17 @@ export interface SyncResult {
   errors: string[]
 }
 
+/**
+ * A server-supplied relative path is only safe to write under dataRoot if it
+ * is non-empty, not absolute, and contains no `..` segments.
+ */
+function isSafeRelativePath(relPath: string): boolean {
+  if (!relPath) return false
+  if (relPath.startsWith('/') || relPath.startsWith('\\')) return false
+  if (/^[a-zA-Z]:/.test(relPath)) return false
+  return !relPath.split(/[/\\]/).includes('..')
+}
+
 export class SyncManager {
   constructor(private readonly dataRoot: string) {}
 
@@ -33,7 +44,7 @@ export class SyncManager {
     let count = 0
 
     for (const file of files) {
-      const remotePath = '/' + file.relativePath
+      const remotePath = REMOTE_PREFIX + '/' + file.relativePath
       try {
         const content = await readFile(file.localPath, 'utf-8')
         // Ensure parent directory exists
@@ -65,6 +76,12 @@ export class SyncManager {
       const relPath = remotePath.startsWith(REMOTE_PREFIX + '/')
         ? remotePath.slice(REMOTE_PREFIX.length + 1)
         : remotePath
+
+      // Guard against hostile or malformed server responses writing outside dataRoot
+      if (!isSafeRelativePath(relPath)) {
+        errors.push(`${relPath}: unsafe remote path, skipped`)
+        continue
+      }
 
       const localPath = join(this.dataRoot, relPath)
 
