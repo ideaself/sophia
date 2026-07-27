@@ -1,48 +1,143 @@
 @import 'tailwindcss';
 @import 'katex/dist/katex.min.css';
 
-/* Custom scrollbar for dark theme */
+/* ============================================
+   Theme Design Tokens (Tailwind v4 @theme)
+   ============================================ */
+@theme {
+  --color-bg-deep: var(--bg-deep);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-border: var(--accent-border);
+  --color-surface-border: var(--surface-border);
+  --color-surface-border-strong: var(--surface-border-strong);
+}
+
+/* ============================================
+   Theme: 暗夜 (Default Dark)
+   ============================================ */
+:root,
+[data-theme="dark"] {
+  --bg-deep: #111827;
+  --bg-surface: #1f2937;
+  --bg-elevated: #374151;
+  --text-primary: #f3f4f6;
+  --text-secondary: #d1d5db;
+  --text-muted: #9ca3af;
+  --accent: #2563eb;
+  --accent-hover: #3b82f6;
+  --accent-subtle: rgba(37, 99, 235, 0.2);
+  --accent-border: #3b82f6;
+  --surface-border: #374151;
+  --surface-border-strong: #4b5563;
+}
+
+/* ============================================
+   Theme: 午夜蓝 (Midnight Blue)
+   ============================================ */
+[data-theme="midnight"] {
+  --bg-deep: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-elevated: #334155;
+  --text-primary: #e2e8f0;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+  --accent-subtle: rgba(99, 102, 241, 0.2);
+  --accent-border: #818cf8;
+  --surface-border: #334155;
+  --surface-border-strong: #475569;
+}
+
+/* ============================================
+   Theme: 翡翠 (Emerald)
+   ============================================ */
+[data-theme="emerald"] {
+  --bg-deep: #0c1a12;
+  --bg-surface: #132a1c;
+  --bg-elevated: #1a3a24;
+  --text-primary: #d1fae5;
+  --text-secondary: #a7f3d0;
+  --text-muted: #6ee7b7;
+  --accent: #10b981;
+  --accent-hover: #34d399;
+  --accent-subtle: rgba(16, 185, 129, 0.15);
+  --accent-border: #34d399;
+  --surface-border: #1a3a24;
+  --surface-border-strong: #22c55e40;
+}
+
+/* ============================================
+   Theme: 暖光 (Warm Light)
+   ============================================ */
+[data-theme="light"] {
+  --bg-deep: #fafaf9;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f5f5f4;
+  --text-primary: #1c1917;
+  --text-secondary: #44403c;
+  --text-muted: #78716c;
+  --accent: #b45309;
+  --accent-hover: #d97706;
+  --accent-subtle: rgba(180, 83, 9, 0.12);
+  --accent-border: #d97706;
+  --surface-border: #e7e5e4;
+  --surface-border-strong: #d6d3d1;
+}
+
+/* ============================================
+   Scrollbar
+   ============================================ */
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: var(--bg-surface);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4b5563;
+  background: var(--surface-border-strong);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: var(--text-muted);
 }
 
-/* Markdown content styling */
+/* ============================================
+   Markdown Content
+   ============================================ */
 .markdown-body {
-  color: #e5e7eb;
+  color: var(--text-secondary);
   line-height: 1.7;
 }
 
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3 {
-  color: #f3f4f6;
+  color: var(--text-primary);
   margin-top: 1em;
   margin-bottom: 0.5em;
 }
 
 .markdown-body code {
-  background: #374151;
+  background: var(--bg-elevated);
   padding: 0.15em 0.4em;
   border-radius: 4px;
   font-size: 0.875em;
 }
 
 .markdown-body pre {
-  background: #111827;
-  border: 1px solid #374151;
+  background: var(--bg-deep);
+  border: 1px solid var(--surface-border);
   border-radius: 8px;
   padding: 1em;
   overflow-x: auto;
@@ -54,13 +149,13 @@
 }
 
 .markdown-body blockquote {
-  border-left: 3px solid #4b5563;
+  border-left: 3px solid var(--surface-border-strong);
   padding-left: 1em;
-  color: #9ca3af;
+  color: var(--text-muted);
 }
 
 .markdown-body a {
-  color: #60a5fa;
+  color: var(--accent-hover);
 }
 
 .markdown-body ul,

@@ -32,8 +32,8 @@ export function ChatMessage({ role, content }: ChatMessageProps): React.ReactEle
       <div
         className={`max-w-[75%] rounded-lg px-4 py-3 ${
           isUser
-            ? 'bg-blue-600 text-white'
-            : 'bg-gray-700 text-gray-100'
+            ? 'bg-accent text-white'
+            : 'bg-bg-elevated text-text-primary'
         }`}
       >
         {isUser ? (

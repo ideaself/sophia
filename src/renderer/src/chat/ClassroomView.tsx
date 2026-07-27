@@ -184,7 +184,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   if (!companion) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-center text-gray-500">
+        <div className="text-center text-text-muted">
           <p className="text-lg">请先在侧边栏选择一位学习伙伴</p>
           <p className="mt-2 text-sm">选择后即可开始苏格拉底式对话</p>
         </div>
@@ -195,15 +195,15 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="border-b border-gray-700 bg-gray-800 px-6 py-3">
+      <div className="border-b border-surface-border bg-bg-surface px-6 py-3">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="font-semibold">{companion.name}</h2>
-            <p className="text-xs text-gray-400">{companion.identity}</p>
+            <p className="text-xs text-text-muted">{companion.identity}</p>
           </div>
           <div className="flex items-center gap-3">
             {textbook && (
-              <span className="rounded-full bg-gray-700 px-3 py-1 text-xs">
+              <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs">
                 📖 {textbook.title}
               </span>
             )}
@@ -224,8 +224,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       <div className="flex-1 overflow-auto p-6 space-y-4">
         {allMessages.length === 0 && (
           <div className="flex h-full items-center justify-center">
-            <p className="text-center text-gray-500">
-              开始和 <span className="text-gray-300">{companion.name}</span> 对话吧。
+            <p className="text-center text-text-muted">
+              开始和 <span className="text-text-secondary">{companion.name}</span> 对话吧。
               <br />
               试着提出一个你想探讨的问题。
             </p>
@@ -264,7 +264,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-700 bg-gray-800 p-4">
+      <div className="border-t border-surface-border bg-bg-surface p-4">
         <div className="flex gap-3">
           <input
             ref={inputRef}
@@ -279,7 +279,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             }}
             placeholder="输入你的问题... (Enter 发送)"
             disabled={chatStream.state.isStreaming}
-            className="flex-1 rounded border border-gray-600 bg-gray-900 px-4 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none disabled:opacity-50"
+            className="flex-1 rounded border border-surface-border-strong bg-bg-deep px-4 py-2 text-sm text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none disabled:opacity-50"
           />
           {chatStream.state.isStreaming ? (
             <button
@@ -292,7 +292,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             <button
               onClick={handleSend}
               disabled={!input.trim()}
-              className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
             >
               发送
             </button>

@@ -48,6 +48,11 @@ function App(): React.ReactElement {
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    const saved = localStorage.getItem('sophia-theme') || 'dark'
+    document.documentElement.setAttribute('data-theme', saved)
+  }, [])
+
+  useEffect(() => {
     window.sophia.companions.list().then(setCompanions)
     window.sophia.data.listTextbooks(WORLD_ID).then(setTextbooks)
   }, [])
@@ -149,12 +154,12 @@ function App(): React.ReactElement {
   }
 
   return (
-    <div className="flex h-screen bg-gray-900 text-gray-100">
+    <div className="flex h-screen bg-bg-deep text-text-primary">
       {/* Sidebar */}
-      <nav className="relative flex w-56 flex-col border-r border-gray-700 bg-gray-800">
-        <div className="border-b border-gray-700 p-4">
+      <nav className="relative flex w-56 flex-col border-r border-surface-border bg-bg-surface">
+        <div className="border-b border-surface-border p-4">
           <h1 className="text-lg font-bold">Sophia</h1>
-          <p className="text-xs text-gray-400">AI 苏格拉底式学习伴侣</p>
+          <p className="text-xs text-text-muted">AI 苏格拉底式学习伴侣</p>
         </div>
         <ul className="flex-1 space-y-1 p-2">
           <NavItem
@@ -188,37 +193,37 @@ function App(): React.ReactElement {
         {showClassroomDropdown && (
           <div
             ref={dropdownRef}
-            className="absolute left-full top-0 z-50 ml-1 w-72 rounded-lg border border-gray-600 bg-gray-800 shadow-xl"
+            className="absolute left-full top-0 z-50 ml-1 w-72 rounded-lg border border-surface-border-strong bg-bg-surface shadow-xl"
           >
-            <div className="border-b border-gray-700 p-3">
+            <div className="border-b border-surface-border p-3">
               <h3 className="text-sm font-semibold">选择课堂</h3>
             </div>
             <div className="max-h-80 overflow-auto p-2">
               <button
                 onClick={() => handleNewClassroom()}
-                className="mb-1 w-full rounded-md border border-dashed border-gray-600 px-3 py-2 text-left text-sm text-gray-300 hover:border-blue-500 hover:text-blue-400"
+                className="mb-1 w-full rounded-md border border-dashed border-surface-border-strong px-3 py-2 text-left text-sm text-text-secondary hover:border-accent-border hover:text-accent-hover"
               >
                 + 新建课堂
               </button>
               {activeConversations.length === 0 && (
-                <p className="px-3 py-2 text-xs text-gray-500">没有进行中的课堂</p>
+                <p className="px-3 py-2 text-xs text-text-muted">没有进行中的课堂</p>
               )}
               {activeConversations.map((conv) => (
                 <button
                   key={conv.id}
                   onClick={() => handleResumeConversation(conv)}
-                  className="w-full rounded-md px-3 py-2 text-left hover:bg-gray-700"
+                  className="w-full rounded-md px-3 py-2 text-left hover:bg-bg-elevated"
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{conv.companionName}</span>
                     {conv.textbookTitle && (
-                      <span className="rounded bg-gray-700 px-1.5 py-0.5 text-[10px] text-gray-400">
+                      <span className="rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
                         📖 {conv.textbookTitle}
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 text-xs text-gray-400 truncate">{conv.title}</p>
-                  <p className="mt-0.5 text-[10px] text-gray-500">
+                  <p className="mt-0.5 text-xs text-text-muted truncate">{conv.title}</p>
+                  <p className="mt-0.5 text-[10px] text-text-muted">
                     {new Date(conv.updatedAt).toLocaleString()}
                   </p>
                 </button>
@@ -305,10 +310,10 @@ function NavItem({
         disabled={disabled}
         className={`w-full rounded px-3 py-2 text-left text-sm transition-colors ${
           active
-            ? 'bg-blue-600 text-white'
+            ? 'bg-accent text-white'
             : disabled
-              ? 'cursor-not-allowed text-gray-600'
-              : 'text-gray-300 hover:bg-gray-700'
+              ? 'cursor-not-allowed text-text-muted'
+              : 'text-text-secondary hover:bg-bg-elevated'
         }`}
       >
         {label}
@@ -318,6 +323,65 @@ function NavItem({
 }
 
 // ─── Settings View ───────────────────────────────────────────────
+
+
+
+interface ThemeOption {
+  id: string
+  name: string
+  preview: { bg: string; surface: string; accent: string; text: string }
+}
+
+const THEMES: ThemeOption[] = [
+  { id: 'dark', name: '暗夜', preview: { bg: '#111827', surface: '#1f2937', accent: '#2563eb', text: '#f3f4f6' } },
+  { id: 'midnight', name: '午夜蓝', preview: { bg: '#0f172a', surface: '#1e293b', accent: '#6366f1', text: '#e2e8f0' } },
+  { id: 'emerald', name: '翡翠', preview: { bg: '#0c1a12', surface: '#132a1c', accent: '#10b981', text: '#d1fae5' } },
+  { id: 'light', name: '暖光', preview: { bg: '#fafaf9', surface: '#ffffff', accent: '#b45309', text: '#1c1917' } }
+]
+
+function ThemeSwitcher(): React.ReactElement {
+  const [current, setCurrent] = useState(() => localStorage.getItem('sophia-theme') || 'dark')
+
+  const handleSelect = (themeId: string) => {
+    if (themeId === 'dark') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', themeId)
+    }
+    localStorage.setItem('sophia-theme', themeId)
+    setCurrent(themeId)
+  }
+
+  return (
+    <div className="rounded-lg border border-surface-border bg-bg-surface p-6">
+      <h3 className="mb-4 text-lg font-semibold text-text-primary">Theme</h3>
+      <div className="grid grid-cols-4 gap-3">
+        {THEMES.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => handleSelect(t.id)}
+            className={`rounded-lg border-2 p-3 transition-all ${
+              current === t.id
+                ? 'border-accent-border shadow-lg'
+                : 'border-surface-border hover:border-surface-border-strong'
+            }`}
+          >
+            <div className="mb-2 flex gap-1">
+              <div className="h-4 w-4 rounded-full" style={{ backgroundColor: t.preview.bg }} />
+              <div className="h-4 w-4 rounded-full" style={{ backgroundColor: t.preview.surface }} />
+              <div className="h-4 w-4 rounded-full" style={{ backgroundColor: t.preview.accent }} />
+              <div className="h-4 w-4 rounded-full border border-surface-border-strong" style={{ backgroundColor: t.preview.text }} />
+            </div>
+            <p className={`text-xs font-medium ${current === t.id ? 'text-text-primary' : 'text-text-secondary'}`}>
+              {t.name}
+            </p>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 
 function SettingsView(): React.ReactElement {
   const [providers, setProviders] = useState<ProviderDTO[]>([])
@@ -466,6 +530,12 @@ function SettingsView(): React.ReactElement {
 
   return (
     <div className="mx-auto max-w-2xl p-8">
+      <h2 className="mb-6 text-2xl font-bold">Settings</h2>
+
+      <ThemeSwitcher />
+
+      <div className="mb-8" />
+
       <h2 className="mb-6 text-2xl font-bold">API Provider Settings</h2>
 
       {error && (
@@ -480,8 +550,8 @@ function SettingsView(): React.ReactElement {
             key={p.id}
             className={`rounded-lg border p-4 transition-colors ${
               p.isActive
-                ? 'border-blue-500 bg-blue-900/20'
-                : 'border-gray-700 bg-gray-800'
+                ? 'border-accent-border bg-accent-subtle'
+                : 'border-surface-border bg-bg-surface'
             }`}
           >
             <div className="flex items-center justify-between">
@@ -489,19 +559,19 @@ function SettingsView(): React.ReactElement {
                 <div className="flex items-center gap-2">
                   <h4 className="font-medium">{p.name}</h4>
                   {p.isActive && (
-                    <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-medium text-white">
+                    <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-white">
                       ACTIVE
                     </span>
                   )}
-                  <span className="rounded bg-gray-700 px-1.5 py-0.5 text-[10px] text-gray-400">
+                  <span className="rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
                     {p.type}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-gray-500 truncate">{p.baseUrl}</p>
-                <p className="mt-0.5 text-xs text-gray-400">
-                  Model: {p.selectedModel || <span className="text-gray-600">none selected</span>}
+                <p className="mt-1 text-xs text-text-muted truncate">{p.baseUrl}</p>
+                <p className="mt-0.5 text-xs text-text-muted">
+                  Model: {p.selectedModel || <span className="text-text-muted">none selected</span>}
                   {p.models.length > 0 && (
-                    <span className="text-gray-600"> ({p.models.length} available)</span>
+                    <span className="text-text-muted"> ({p.models.length} available)</span>
                   )}
                 </p>
               </div>
@@ -509,14 +579,14 @@ function SettingsView(): React.ReactElement {
                 {!p.isActive && (
                   <button
                     onClick={() => handleSetActive(p.id)}
-                    className="rounded border border-blue-700 px-3 py-1 text-xs text-blue-400 hover:bg-blue-900/30"
+                    className="rounded border border-accent px-3 py-1 text-xs text-accent-hover hover:bg-accent-subtle"
                   >
                     Set Active
                   </button>
                 )}
                 <button
                   onClick={() => openEditModal(p)}
-                  className="rounded border border-gray-600 px-3 py-1 text-xs text-gray-300 hover:bg-gray-700"
+                  className="rounded border border-surface-border-strong px-3 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
                 >
                   Edit
                 </button>
@@ -530,7 +600,7 @@ function SettingsView(): React.ReactElement {
                     </button>
                     <button
                       onClick={() => setDeleteConfirmId(null)}
-                      className="rounded border border-gray-600 px-3 py-1 text-xs text-gray-400 hover:bg-gray-700"
+                      className="rounded border border-surface-border-strong px-3 py-1 text-xs text-text-muted hover:bg-bg-elevated"
                     >
                       Cancel
                     </button>
@@ -538,7 +608,7 @@ function SettingsView(): React.ReactElement {
                 ) : (
                   <button
                     onClick={() => setDeleteConfirmId(p.id)}
-                    className="rounded border border-gray-600 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30"
+                    className="rounded border border-surface-border-strong px-3 py-1 text-xs text-red-400 hover:bg-red-900/30"
                   >
                     Delete
                   </button>
@@ -549,48 +619,48 @@ function SettingsView(): React.ReactElement {
         ))}
 
         {providers.length === 0 && (
-          <div className="rounded-lg border border-dashed border-gray-700 p-8 text-center">
-            <p className="text-gray-500 mb-3">No API providers configured</p>
-            <p className="text-xs text-gray-600">Add a provider to start using the AI classroom</p>
+          <div className="rounded-lg border border-dashed border-surface-border p-8 text-center">
+            <p className="text-text-muted mb-3">No API providers configured</p>
+            <p className="text-xs text-text-muted">Add a provider to start using the AI classroom</p>
           </div>
         )}
       </div>
 
       <button
         onClick={openAddModal}
-        className="rounded-lg border border-dashed border-gray-600 w-full px-4 py-3 text-sm text-gray-400 hover:border-blue-500 hover:text-blue-400 transition-colors"
+        className="rounded-lg border border-dashed border-surface-border-strong w-full px-4 py-3 text-sm text-text-muted hover:border-accent-border hover:text-accent-hover transition-colors"
       >
         + Add Provider
       </button>
 
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="flex w-[520px] flex-col rounded-lg border border-gray-600 bg-gray-900 shadow-xl max-h-[85vh]">
-            <div className="flex items-center justify-between border-b border-gray-700 px-6 py-4">
+          <div className="flex w-[520px] flex-col rounded-lg border border-surface-border-strong bg-bg-deep shadow-xl max-h-[85vh]">
+            <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
               <h3 className="text-lg font-semibold">
                 {editingProvider ? 'Edit Provider' : 'Add Provider'}
               </h3>
               <button
                 onClick={() => setModalOpen(false)}
-                className="rounded p-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+                className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
               >
                 x
               </button>
             </div>
             <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-400">Name</label>
+                <label className="mb-1 block text-xs font-medium text-text-muted">Name</label>
                 <input
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   placeholder="My Provider"
-                  className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-400">Type</label>
+                <label className="mb-1 block text-xs font-medium text-text-muted">Type</label>
                 <div className="flex gap-2">
                   {(['deepseek', 'mimo', 'custom'] as const).map((t) => (
                     <button
@@ -604,8 +674,8 @@ function SettingsView(): React.ReactElement {
                       }
                       className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
                         form.type === t
-                          ? 'bg-blue-600 text-white'
-                          : 'border border-gray-600 text-gray-400 hover:bg-gray-700'
+                          ? 'bg-accent text-white'
+                          : 'border border-surface-border-strong text-text-muted hover:bg-bg-elevated'
                       }`}
                     >
                       {t === 'deepseek' ? 'DeepSeek' : t === 'mimo' ? 'MiMo' : 'Custom'}
@@ -615,18 +685,18 @@ function SettingsView(): React.ReactElement {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-400">Base URL</label>
+                <label className="mb-1 block text-xs font-medium text-text-muted">Base URL</label>
                 <input
                   type="text"
                   value={form.baseUrl}
                   onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
                   placeholder="https://api.deepseek.com/v1"
-                  className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-400">
+                <label className="mb-1 block text-xs font-medium text-text-muted">
                   API Key {editingProvider && '(leave blank to keep current)'}
                 </label>
                 <input
@@ -634,7 +704,7 @@ function SettingsView(): React.ReactElement {
                   value={form.apiKey}
                   onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
                   placeholder="sk-..."
-                  className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary placeholder-gray-600 focus:border-accent-border focus:outline-none"
                 />
               </div>
 
@@ -642,14 +712,14 @@ function SettingsView(): React.ReactElement {
                 <button
                   onClick={handleTestConnection}
                   disabled={testing || !form.baseUrl}
-                  className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50"
+                  className="rounded border border-surface-border-strong px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
                 >
                   {testing ? 'Testing...' : 'Test Connection'}
                 </button>
                 <button
                   onClick={handleFetchModels}
                   disabled={fetchingModels || !form.baseUrl}
-                  className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50"
+                  className="rounded border border-surface-border-strong px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
                 >
                   {fetchingModels ? 'Fetching...' : 'Fetch Models'}
                 </button>
@@ -662,13 +732,13 @@ function SettingsView(): React.ReactElement {
 
               {form.models.length > 0 && (
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-400">
+                  <label className="mb-1 block text-xs font-medium text-text-muted">
                     Model ({form.models.length} available)
                   </label>
                   <select
                     value={form.selectedModel}
                     onChange={(e) => setForm((f) => ({ ...f, selectedModel: e.target.value }))}
-                    className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                    className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
                   >
                     {form.models.map((m) => (
                       <option key={m} value={m}>{m}</option>
@@ -678,7 +748,7 @@ function SettingsView(): React.ReactElement {
               )}
               {form.models.length === 0 && (
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-400">
+                  <label className="mb-1 block text-xs font-medium text-text-muted">
                     Model (manual entry)
                   </label>
                   <input
@@ -686,23 +756,23 @@ function SettingsView(): React.ReactElement {
                     value={form.selectedModel}
                     onChange={(e) => setForm((f) => ({ ...f, selectedModel: e.target.value }))}
                     placeholder="e.g. deepseek-v4-pro"
-                    className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                    className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary placeholder-gray-600 focus:border-accent-border focus:outline-none"
                   />
                 </div>
               )}
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-gray-700 px-6 py-4">
+            <div className="flex justify-end gap-3 border-t border-surface-border px-6 py-4">
               <button
                 onClick={() => setModalOpen(false)}
-                className="rounded border border-gray-600 px-4 py-2 text-sm hover:bg-gray-700"
+                className="rounded border border-surface-border-strong px-4 py-2 text-sm hover:bg-bg-elevated"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving || !form.name.trim() || !form.baseUrl.trim()}
-                className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-50"
+                className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
               >
                 {saving ? 'Saving...' : editingProvider ? 'Update' : 'Create'}
               </button>
@@ -711,7 +781,7 @@ function SettingsView(): React.ReactElement {
         </div>
       )}
 
-      <p className="mt-6 text-xs text-gray-500">
+      <p className="mt-6 text-xs text-text-muted">
         API keys are stored locally with system encryption. They are never uploaded or shared.
       </p>
     </div>
@@ -732,26 +802,26 @@ function CompanionsView({
   return (
     <div className="p-8">
       <h2 className="mb-6 text-2xl font-bold">选择角色</h2>
-      <p className="mb-6 text-gray-400">选择一个苏格拉底式的学习伙伴开始上课。</p>
+      <p className="mb-6 text-text-muted">选择一个苏格拉底式的学习伙伴开始上课。</p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {companions.map((c) => (
           <button
             key={c.id}
             onClick={() => onSelect(c)}
-            className={`rounded-lg border p-5 text-left transition-all hover:border-blue-500 hover:shadow-lg ${
+            className={`rounded-lg border p-5 text-left transition-all hover:border-accent-border hover:shadow-lg ${
               selected?.id === c.id
-                ? 'border-blue-500 bg-blue-900/20'
-                : 'border-gray-700 bg-gray-800'
+                ? 'border-accent-border bg-accent-subtle'
+                : 'border-surface-border bg-bg-surface'
             }`}
           >
             <h3 className="text-lg font-semibold">{c.name}</h3>
-            <p className="mt-1 text-sm text-gray-400">{c.identity}</p>
+            <p className="mt-1 text-sm text-text-muted">{c.identity}</p>
             <div className="mt-3 flex flex-wrap gap-1">
               {c.personalityKeywords.map((kw) => (
                 <span
                   key={kw}
-                  className="rounded-full bg-gray-700 px-2 py-0.5 text-xs text-gray-300"
+                  className="rounded-full bg-bg-elevated px-2 py-0.5 text-xs text-text-secondary"
                 >
                   {kw}
                 </span>
@@ -762,7 +832,7 @@ function CompanionsView({
       </div>
 
       {companions.length === 0 && (
-        <p className="text-gray-500">暂无可用角色。请检查 reference 目录。</p>
+        <p className="text-text-muted">暂无可用角色。请检查 reference 目录。</p>
       )}
     </div>
   )
@@ -897,7 +967,7 @@ function TextbooksView({
       <h2 className="mb-6 text-2xl font-bold">教材</h2>
 
       {/* Import form */}
-      <div className="mb-8 rounded-lg border border-gray-700 bg-gray-800 p-6">
+      <div className="mb-8 rounded-lg border border-surface-border bg-bg-surface p-6">
         <h3 className="mb-4 text-lg font-semibold">导入教材</h3>
         <div className="space-y-3">
           <input
@@ -905,20 +975,20 @@ function TextbooksView({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="教材标题（从文件导入时可留空）"
-            className="w-full rounded border border-gray-600 bg-gray-900 px-4 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+            className="w-full rounded border border-surface-border-strong bg-bg-deep px-4 py-2 text-sm text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
           />
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="粘贴 Markdown 或文本内容..."
             rows={6}
-            className="w-full rounded border border-gray-600 bg-gray-900 px-4 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+            className="w-full rounded border border-surface-border-strong bg-bg-deep px-4 py-2 text-sm text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
           />
           <div className="flex gap-3">
             <button
               onClick={handleTextImport}
               disabled={importing || !title.trim() || !content.trim()}
-              className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
             >
               {importing ? '导入中...' : '粘贴导入'}
             </button>
@@ -941,22 +1011,22 @@ function TextbooksView({
         {textbooks.map((t) => (
           <div
             key={t.id}
-            className="flex items-center justify-between rounded-lg border border-gray-700 bg-gray-800 p-4"
+            className="flex items-center justify-between rounded-lg border border-surface-border bg-bg-surface p-4"
           >
             <div>
               <h4 className="font-medium">{t.title}</h4>
-              <p className="text-xs text-gray-500">{t.format}</p>
+              <p className="text-xs text-text-muted">{t.format}</p>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => handleViewContent(t)}
-                className="rounded border border-gray-600 px-3 py-1 text-sm hover:bg-gray-700"
+                className="rounded border border-surface-border-strong px-3 py-1 text-sm hover:bg-bg-elevated"
               >
                 查看
               </button>
               <button
                 onClick={() => handleEdit(t)}
-                className="rounded border border-gray-600 px-3 py-1 text-sm hover:bg-gray-700"
+                className="rounded border border-surface-border-strong px-3 py-1 text-sm hover:bg-bg-elevated"
               >
                 编辑
               </button>
@@ -970,7 +1040,7 @@ function TextbooksView({
                   </button>
                   <button
                     onClick={() => setDeleteConfirmId(null)}
-                    className="rounded border border-gray-600 px-3 py-1 text-sm hover:bg-gray-700"
+                    className="rounded border border-surface-border-strong px-3 py-1 text-sm hover:bg-bg-elevated"
                   >
                     取消
                   </button>
@@ -978,14 +1048,14 @@ function TextbooksView({
               ) : (
                 <button
                   onClick={() => setDeleteConfirmId(t.id)}
-                  className="rounded border border-gray-600 px-3 py-1 text-sm text-red-400 hover:bg-red-900/30"
+                  className="rounded border border-surface-border-strong px-3 py-1 text-sm text-red-400 hover:bg-red-900/30"
                 >
                   删除
                 </button>
               )}
               <button
                 onClick={() => onSelect(t)}
-                className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500"
+                className="rounded bg-accent px-3 py-1 text-sm text-white hover:bg-accent-hover"
               >
                 选择
               </button>
@@ -993,19 +1063,19 @@ function TextbooksView({
           </div>
         ))}
         {textbooks.length === 0 && (
-          <p className="text-gray-500">暂无教材。请在上方导入。</p>
+          <p className="text-text-muted">暂无教材。请在上方导入。</p>
         )}
       </div>
 
       {/* Textbook edit modal */}
       {editingTextbook && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="flex h-[80vh] w-[80vw] flex-col rounded-lg border border-gray-600 bg-gray-900 shadow-xl">
-            <div className="flex items-center justify-between border-b border-gray-700 px-6 py-4">
+          <div className="flex h-[80vh] w-[80vw] flex-col rounded-lg border border-surface-border-strong bg-bg-deep shadow-xl">
+            <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
               <h3 className="text-lg font-semibold">编辑教材</h3>
               <button
                 onClick={() => setEditingTextbook(null)}
-                className="rounded p-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+                className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
               >
                 ✕
               </button>
@@ -1016,27 +1086,27 @@ function TextbooksView({
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
                 placeholder="教材标题"
-                className="w-full rounded border border-gray-600 bg-gray-800 px-4 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                className="w-full rounded border border-surface-border-strong bg-bg-surface px-4 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
               />
               <textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 placeholder="教材内容 (Markdown)..."
-                className="h-full w-full rounded border border-gray-600 bg-gray-800 px-4 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                className="h-full w-full rounded border border-surface-border-strong bg-bg-surface px-4 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
                 style={{ minHeight: '50vh' }}
               />
             </div>
-            <div className="flex justify-end gap-3 border-t border-gray-700 px-6 py-4">
+            <div className="flex justify-end gap-3 border-t border-surface-border px-6 py-4">
               <button
                 onClick={() => setEditingTextbook(null)}
-                className="rounded border border-gray-600 px-4 py-2 text-sm hover:bg-gray-700"
+                className="rounded border border-surface-border-strong px-4 py-2 text-sm hover:bg-bg-elevated"
               >
                 取消
               </button>
               <button
                 onClick={handleSaveEdit}
                 disabled={saving || !editTitle.trim()}
-                className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-50"
+                className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
               >
                 {saving ? '保存中...' : '保存'}
               </button>
@@ -1048,24 +1118,24 @@ function TextbooksView({
       {/* Textbook content viewer modal */}
       {viewingTextbook && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="flex h-[80vh] w-[80vw] flex-col rounded-lg border border-gray-600 bg-gray-900 shadow-xl">
-            <div className="flex items-center justify-between border-b border-gray-700 px-6 py-4">
+          <div className="flex h-[80vh] w-[80vw] flex-col rounded-lg border border-surface-border-strong bg-bg-deep shadow-xl">
+            <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
               <div>
                 <h3 className="text-lg font-semibold">{viewingTextbook.title}</h3>
-                <p className="text-xs text-gray-400">{viewingTextbook.format}</p>
+                <p className="text-xs text-text-muted">{viewingTextbook.format}</p>
               </div>
               <button
                 onClick={() => setViewingTextbook(null)}
-                className="rounded p-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+                className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
               >
                 ✕
               </button>
             </div>
             <div className="flex-1 overflow-auto px-6 py-4">
               {loadingContent ? (
-                <p className="text-sm text-gray-500">加载中...</p>
+                <p className="text-sm text-text-muted">加载中...</p>
               ) : (
-                <div className="markdown-body text-sm leading-relaxed text-gray-200">
+                <div className="markdown-body text-sm leading-relaxed text-text-secondary">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {viewingContent}
                   </ReactMarkdown>
@@ -1178,12 +1248,12 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
           placeholder="搜索对话内容..."
-          className="flex-1 rounded border border-gray-600 bg-gray-800 px-4 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+          className="flex-1 rounded border border-surface-border-strong bg-bg-surface px-4 py-2 text-sm text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
         />
         <button
           onClick={handleSearch}
           disabled={searchQuery.trim().length < 2}
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
         >
           搜索
         </button>
@@ -1198,19 +1268,19 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
             </h3>
             <button
               onClick={() => setSearchResults(null)}
-              className="text-sm text-gray-400 hover:text-gray-200"
+              className="text-sm text-text-muted hover:text-text-secondary"
             >
               清除
             </button>
           </div>
           {searchResults.length === 0 ? (
-            <p className="text-gray-500">无匹配结果</p>
+            <p className="text-text-muted">无匹配结果</p>
           ) : (
             <div className="space-y-2">
               {searchResults.map((r, i) => (
-                <div key={i} className="rounded-lg border border-gray-700 bg-gray-800 p-3">
-                  <p className="text-sm text-gray-200">{r.message.content}</p>
-                  <p className="mt-1 text-xs text-gray-500">
+                <div key={i} className="rounded-lg border border-surface-border bg-bg-surface p-3">
+                  <p className="text-sm text-text-secondary">{r.message.content}</p>
+                  <p className="mt-1 text-xs text-text-muted">
                     {new Date(r.message.createdAt).toLocaleString()}
                   </p>
                 </div>
@@ -1226,7 +1296,7 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
         {conversations.map((conv) => (
           <div
             key={conv.id}
-            className="rounded-lg border border-gray-700 bg-gray-800"
+            className="rounded-lg border border-surface-border bg-bg-surface"
           >
             <button
               onClick={() => handleToggleMessages(conv.id)}
@@ -1244,22 +1314,22 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
                           if (e.key === 'Enter') handleSaveTitle(conv.id)
                           if (e.key === 'Escape') setEditingId(null)
                         }}
-                        className="flex-1 rounded border border-blue-500 bg-gray-900 px-2 py-1 text-sm text-gray-100 focus:outline-none"
+                        className="flex-1 rounded border border-accent-border bg-bg-deep px-2 py-1 text-sm text-text-primary focus:outline-none"
                         autoFocus
                       />
-                      <button onClick={() => handleSaveTitle(conv.id)} className="text-xs text-blue-400 hover:text-blue-300">保存</button>
-                      <button onClick={() => setEditingId(null)} className="text-xs text-gray-500 hover:text-gray-300">取消</button>
+                      <button onClick={() => handleSaveTitle(conv.id)} className="text-xs text-accent-hover hover:text-accent-hover">保存</button>
+                      <button onClick={() => setEditingId(null)} className="text-xs text-text-muted hover:text-text-secondary">取消</button>
                     </div>
                   ) : (
                     <h4
-                      className="font-medium cursor-pointer hover:text-blue-400"
+                      className="font-medium cursor-pointer hover:text-accent-hover"
                       onClick={(e) => { e.stopPropagation(); handleStartEdit(conv) }}
                       title="点击编辑标题"
                     >
                       {conv.title}
                     </h4>
                   )}
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-text-muted">
                     {companionMap[conv.companionId] ?? conv.companionId} · {new Date(conv.createdAt).toLocaleString()}
                     {conv.endedAt && ' · 已下课'}
                   </p>
@@ -1275,19 +1345,19 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
                         e.stopPropagation()
                         onResume(conv.id)
                       }}
-                      className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-500"
+                      className="rounded bg-accent px-3 py-1 text-xs text-white hover:bg-accent-hover"
                     >
                       继续上课
                     </button>
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id) }}
-                    className="text-xs text-gray-500 hover:text-red-400"
+                    className="text-xs text-text-muted hover:text-red-400"
                     title="删除课程"
                   >
                     🗑
                   </button>
-                  <span className="text-gray-500 text-xs">
+                  <span className="text-text-muted text-xs">
                     {expandedId === conv.id ? '▾' : '▸'}
                   </span>
                 </div>
@@ -1296,25 +1366,25 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
 
             {/* Expanded message list + artifacts */}
             {expandedId === conv.id && (
-              <div className="border-t border-gray-700 px-4 py-3 space-y-3 max-h-96 overflow-auto">
+              <div className="border-t border-surface-border px-4 py-3 space-y-3 max-h-96 overflow-auto">
                 {loadingMessages ? (
-                  <p className="text-xs text-gray-500">加载中...</p>
+                  <p className="text-xs text-text-muted">加载中...</p>
                 ) : (
                   <>
                     {/* Artifacts */}
                     {expandedArtifacts.length > 0 && (
                       <div className="space-y-2">
-                        <h5 className="text-xs font-medium text-gray-400 uppercase">学习资料</h5>
+                        <h5 className="text-xs font-medium text-text-muted uppercase">学习资料</h5>
                         {expandedArtifacts.map((art) => (
-                          <div key={art.id} className="rounded bg-gray-700/50 px-3 py-2">
-                            <p className="text-xs font-medium text-gray-300 mb-1">
+                          <div key={art.id} className="rounded bg-bg-elevated/50 px-3 py-2">
+                            <p className="text-xs font-medium text-text-secondary mb-1">
                               {art.type === 'lesson_summary' ? '📋 课堂总结' :
                                art.type === 'flashcards' ? '🃏 记忆卡片' :
                                art.type === 'diary' ? '📝 学习日记' :
                                art.type === 'progress' ? '📈 学习进展' :
                                art.type === 'handoff_tail' ? '🔗 接力尾巴' : art.type}
                             </p>
-                            <div className="markdown-body text-xs text-gray-300 max-h-32 overflow-auto">
+                            <div className="markdown-body text-xs text-text-secondary max-h-32 overflow-auto">
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                 {art.content}
                               </ReactMarkdown>
@@ -1325,22 +1395,22 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
                     )}
                     {/* Messages */}
                     {expandedMessages.length === 0 ? (
-                      <p className="text-xs text-gray-500">暂无消息记录</p>
+                      <p className="text-xs text-text-muted">暂无消息记录</p>
                     ) : (
                       <div className="space-y-2">
-                        <h5 className="text-xs font-medium text-gray-400 uppercase">对话记录</h5>
+                        <h5 className="text-xs font-medium text-text-muted uppercase">对话记录</h5>
                         {expandedMessages.map((msg) => (
                           <div key={msg.id} className={`rounded px-3 py-2 text-sm ${
                             msg.role === 'user'
-                              ? 'bg-blue-900/20 ml-8'
+                              ? 'bg-accent-subtle ml-8'
                               : msg.role === 'assistant'
-                                ? 'bg-gray-700 mr-8'
-                                : 'bg-gray-800 text-gray-400'
+                                ? 'bg-bg-elevated mr-8'
+                                : 'bg-bg-surface text-text-muted'
                           }`}>
-                            <p className="text-xs text-gray-500 mb-1">
+                            <p className="text-xs text-text-muted mb-1">
                               {msg.role === 'user' ? '你' : msg.role === 'assistant' ? 'AI' : '系统'} · {new Date(msg.createdAt).toLocaleTimeString()}
                             </p>
-                            <p className="text-gray-200 whitespace-pre-wrap">{msg.content}</p>
+                            <p className="text-text-secondary whitespace-pre-wrap">{msg.content}</p>
                           </div>
                         ))}
                       </div>
@@ -1352,7 +1422,7 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
           </div>
         ))}
         {conversations.length === 0 && (
-          <p className="text-gray-500">暂无历史记录。</p>
+          <p className="text-text-muted">暂无历史记录。</p>
         )}
       </div>
     </div>
