@@ -6,6 +6,7 @@ import { registerConversationIpc } from './ipc/data'
 import { registerCompanionIpc } from './ipc/companions'
 import { registerChatPromptIpc } from './ipc/chat-prompt'
 import { registerProviderIpc } from './ipc/providers'
+import { registerSyncIpc } from './ipc/sync'
 import { initDataDir } from './storage/initialize'
 import { resolveReferencePaths } from './storage/resolve-paths'
 import { createDeepSeekStreamAdapter } from './llm/deepseek-stream-adapter'
@@ -55,6 +56,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('app:get-platform', () => process.platform)
   const keyStore = registerSettingsIpc(dataRoot, safeStorage)
   const providerStore = registerProviderIpc(dataRoot, safeStorage)
+  registerSyncIpc(dataRoot)
   registerConversationIpc(dataRoot, providerStore)
   registerCompanionIpc(dataRoot)
   registerChatPromptIpc(dataRoot)

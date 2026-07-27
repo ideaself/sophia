@@ -32,20 +32,43 @@ interface ActiveConversation {
 const WORLD_ID = 'world_default'
 
 function App(): React.ReactElement {
-  const [view, setView] = useState<AppView>('settings')
+  const [view, setView] = useState<AppView>('classroom')
 
   const [companions, setCompanions] = useState<Companion[]>([])
   const [textbooks, setTextbooks] = useState<Textbook[]>([])
   const [selectedCompanion, setSelectedCompanion] = useState<Companion | null>(null)
   const [selectedTextbook, setSelectedTextbook] = useState<Textbook | null>(null)
 
-  // Classroom picker state
   const [showClassroomDropdown, setShowClassroomDropdown] = useState(false)
   const [activeConversations, setActiveConversations] = useState<ActiveConversation[]>([])
   const [loadConversationId, setLoadConversationId] = useState<string | null>(null)
 
+  const [editingCompanion, setEditingCompanion] = useState<CompanionDTO | null>(null)
+  const [isCreatingCompanion, setIsCreatingCompanion] = useState(false)
+
   const chatStream = useChatStream()
-  const dropdownRef = useRef<HTMLDivElement>(null)
+  const classroomDropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    (async () => {
+      const convs = await window.sophia.data.listConversations(WORLD_ID)
+      const active = convs.filter((c) => !c.endedAt).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      if (active.length > 0) {
+        const last = active[0]
+        const comp = await window.sophia.companions.get(last.companionId)
+        if (comp) setSelectedCompanion({ id: comp.id, name: comp.name, identity: comp.identity, personalityKeywords: comp.personalityKeywords })
+        if (last.textbookId) {
+          const tb = await window.sophia.data.getTextbook(last.textbookId)
+          if (tb) setSelectedTextbook({ id: tb.id, title: tb.title, format: tb.format })
+        }
+        setLoadConversationId(last.id)
+      }
+    })()
+  }, [])
+
+  const reloadCompanions = useCallback(() => {
+    window.sophia.companions.list().then(setCompanions)
+  }, [])
 
   useEffect(() => {
     const saved = localStorage.getItem('sophia-theme') || 'dark'
@@ -53,15 +76,13 @@ function App(): React.ReactElement {
   }, [])
 
   useEffect(() => {
-    window.sophia.companions.list().then(setCompanions)
+    reloadCompanions()
     window.sophia.data.listTextbooks(WORLD_ID).then(setTextbooks)
-  }, [])
+  }, [reloadCompanions])
 
-  // Fetch active conversations for the sidebar dropdown
   const fetchActiveConversations = useCallback(async () => {
     const convs = await window.sophia.data.listConversations(WORLD_ID)
     const active = convs.filter((c) => !c.endedAt)
-
     const enriched: ActiveConversation[] = []
     for (const c of active) {
       const comp = await window.sophia.companions.get(c.companionId)
@@ -71,23 +92,17 @@ function App(): React.ReactElement {
         tbTitle = tb?.title ?? null
       }
       enriched.push({
-        id: c.id,
-        companionId: c.companionId,
-        companionName: comp?.name ?? '未知角色',
-        textbookId: c.textbookId,
-        textbookTitle: tbTitle,
-        title: c.title,
-        updatedAt: c.updatedAt
+        id: c.id, companionId: c.companionId, companionName: comp?.name ?? '未知角色',
+        textbookId: c.textbookId, textbookTitle: tbTitle, title: c.title, updatedAt: c.updatedAt
       })
     }
     setActiveConversations(enriched)
   }, [])
 
-  // Close dropdown on outside click
   useEffect(() => {
     if (!showClassroomDropdown) return
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (classroomDropdownRef.current && !classroomDropdownRef.current.contains(e.target as Node)) {
         setShowClassroomDropdown(false)
       }
     }
@@ -95,236 +110,330 @@ function App(): React.ReactElement {
     return () => document.removeEventListener('mousedown', handler)
   }, [showClassroomDropdown])
 
-  // Load an active conversation into the classroom
   const handleResumeConversation = async (conv: ActiveConversation) => {
-    // Load companion
     const comp = await window.sophia.companions.get(conv.companionId)
     if (comp) {
-      setSelectedCompanion({
-        id: comp.id,
-        name: comp.name,
-        identity: comp.identity,
-        personalityKeywords: comp.personalityKeywords
-      })
+      setSelectedCompanion({ id: comp.id, name: comp.name, identity: comp.identity, personalityKeywords: comp.personalityKeywords })
     }
-
-    // Load textbook if present
     if (conv.textbookId) {
       const tb = await window.sophia.data.getTextbook(conv.textbookId)
-      if (tb) {
-        setSelectedTextbook({ id: tb.id, title: tb.title, format: tb.format })
-      }
-    } else {
-      setSelectedTextbook(null)
-    }
-
+      if (tb) setSelectedTextbook({ id: tb.id, title: tb.title, format: tb.format })
+    } else { setSelectedTextbook(null) }
     setLoadConversationId(conv.id)
     setView('classroom')
     setShowClassroomDropdown(false)
   }
 
-  // Start a new classroom (from dropdown or companion selection)
   const handleNewClassroom = (comp?: Companion) => {
-    if (comp) {
-      setSelectedCompanion(comp)
-    }
+    if (comp) setSelectedCompanion(comp)
     setLoadConversationId(null)
     setView('classroom')
     setShowClassroomDropdown(false)
   }
 
-  // Handle sidebar "课堂" click
   const handleClassroomClick = async () => {
     if (view === 'classroom' && selectedCompanion) {
-      // Already in classroom — toggle dropdown
-      if (showClassroomDropdown) {
-        setShowClassroomDropdown(false)
-      } else {
-        await fetchActiveConversations()
-        setShowClassroomDropdown(true)
-      }
+      if (showClassroomDropdown) { setShowClassroomDropdown(false) }
+      else { await fetchActiveConversations(); setShowClassroomDropdown(true) }
     } else if (selectedCompanion) {
-      // Not in classroom but have a companion — go to classroom
       setView('classroom')
     } else {
-      // No companion selected — show dropdown with options
       await fetchActiveConversations()
       setShowClassroomDropdown(true)
     }
   }
 
-  return (
-    <div className="flex h-screen bg-bg-deep text-text-primary">
-      {/* Sidebar */}
-      <nav className="relative flex w-56 flex-col border-r border-surface-border bg-bg-surface">
-        <div className="border-b border-surface-border p-4">
-          <h1 className="text-lg font-bold">Sophia</h1>
-          <p className="text-xs text-text-muted">AI 苏格拉底式学习伴侣</p>
-        </div>
-        <ul className="flex-1 space-y-1 p-2">
-          <NavItem
-            label="设置"
-            active={view === 'settings'}
-            onClick={() => setView('settings')}
-          />
-          <NavItem
-            label="角色"
-            active={view === 'companions'}
-            onClick={() => setView('companions')}
-          />
-          <NavItem
-            label="教材"
-            active={view === 'textbooks'}
-            onClick={() => setView('textbooks')}
-          />
-          <NavItem
-            label="课堂"
-            active={view === 'classroom'}
-            onClick={handleClassroomClick}
-          />
-          <NavItem
-            label="历史"
-            active={view === 'history'}
-            onClick={() => setView('history')}
-          />
-        </ul>
+  const handleEditCompanionFromDropdown = async (c: Companion) => {
+    const full = await window.sophia.companions.get(c.id)
+    if (full) setEditingCompanion(full)
+  }
 
-        {/* Classroom dropdown */}
-        {showClassroomDropdown && (
-          <div
-            ref={dropdownRef}
-            className="absolute left-full top-0 z-50 ml-1 w-72 rounded-lg border border-surface-border-strong bg-bg-surface shadow-xl"
-          >
-            <div className="border-b border-surface-border p-3">
-              <h3 className="text-sm font-semibold">选择课堂</h3>
-            </div>
-            <div className="max-h-80 overflow-auto p-2">
-              <button
-                onClick={() => handleNewClassroom()}
-                className="mb-1 w-full rounded-md border border-dashed border-surface-border-strong px-3 py-2 text-left text-sm text-text-secondary hover:border-accent-border hover:text-accent-hover"
-              >
-                + 新建课堂
-              </button>
-              {activeConversations.length === 0 && (
-                <p className="px-3 py-2 text-xs text-text-muted">没有进行中的课堂</p>
-              )}
-              {activeConversations.map((conv) => (
-                <button
-                  key={conv.id}
-                  onClick={() => handleResumeConversation(conv)}
-                  className="w-full rounded-md px-3 py-2 text-left hover:bg-bg-elevated"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{conv.companionName}</span>
-                    {conv.textbookTitle && (
-                      <span className="rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
-                        📖 {conv.textbookTitle}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-xs text-text-muted truncate">{conv.title}</p>
-                  <p className="mt-0.5 text-[10px] text-text-muted">
-                    {new Date(conv.updatedAt).toLocaleString()}
-                  </p>
-                </button>
-              ))}
-            </div>
+  const handleCreateCompanion = () => {
+    setEditingCompanion(null)
+    setIsCreatingCompanion(true)
+  }
+
+  const handleSaveCompanion = async (form: {
+    name: string; gender: string; age: number; identity: string;
+    personalityKeywords: string[]; personality: string; speakingStyle: string; emotionalExpressions: string
+  }) => {
+    if (isCreatingCompanion) {
+      await window.sophia.companions.create(form)
+    } else if (editingCompanion) {
+      await window.sophia.companions.update(editingCompanion.id, form)
+    }
+    setEditingCompanion(null)
+    setIsCreatingCompanion(false)
+    reloadCompanions()
+  }
+
+  const handleDeleteCompanion = async () => {
+    if (!editingCompanion) return
+    await window.sophia.companions.delete(editingCompanion.id)
+    setEditingCompanion(null)
+    setIsCreatingCompanion(false)
+    reloadCompanions()
+  }
+
+  return (
+    <div className="flex h-screen flex-col bg-bg-deep text-text-primary">
+      {/* Top menu bar */}
+      <header className="flex items-center border-b border-surface-border bg-bg-surface px-4">
+        <nav className="flex items-center gap-1">
+          <div className="relative" ref={classroomDropdownRef}>
+            <button onClick={handleClassroomClick}
+              className={`rounded px-3 py-2 text-sm transition-colors ${view === 'classroom' || showClassroomDropdown ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-elevated'}`}>
+              课堂
+            </button>
+            {showClassroomDropdown && (
+              <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-surface-border-strong bg-bg-surface shadow-xl">
+                <div className="border-b border-surface-border p-3">
+                  <h3 className="text-sm font-semibold">选择课堂</h3>
+                </div>
+                <div className="max-h-80 overflow-auto p-2">
+                  <button onClick={() => handleNewClassroom()}
+                    className="mb-1 w-full rounded-md border border-dashed border-surface-border-strong px-3 py-2 text-left text-sm text-text-secondary hover:border-accent-border hover:text-accent-hover">
+                    + 新建课堂
+                  </button>
+                  {activeConversations.length === 0 && (
+                    <p className="px-3 py-2 text-xs text-text-muted">没有进行中的课堂</p>
+                  )}
+                  {activeConversations.map((conv) => (
+                    <button key={conv.id} onClick={() => handleResumeConversation(conv)}
+                      className="w-full rounded-md px-3 py-2 text-left hover:bg-bg-elevated">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{conv.companionName}</span>
+                        {conv.textbookTitle && (
+                          <span className="rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">{conv.textbookTitle}</span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-text-muted truncate">{conv.title}</p>
+                      <p className="mt-0.5 text-[10px] text-text-muted">{new Date(conv.updatedAt).toLocaleString()}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </nav>
+
+          <button onClick={() => { setView('history'); setShowClassroomDropdown(false) }}
+            className={`rounded px-3 py-2 text-sm transition-colors ${view === 'history' ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-elevated'}`}>
+            历史
+          </button>
+
+          <button onClick={() => { setView('textbooks'); setShowClassroomDropdown(false) }}
+            className={`rounded px-3 py-2 text-sm transition-colors ${view === 'textbooks' ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-elevated'}`}>
+            教材
+          </button>
+
+          <button onClick={() => { setView('companions'); setShowClassroomDropdown(false) }}
+            className={`rounded px-3 py-2 text-sm transition-colors ${view === 'companions' ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-elevated'}`}>
+            角色
+          </button>
+
+          <button onClick={() => { setView('settings'); setShowClassroomDropdown(false) }}
+            className={`rounded px-3 py-2 text-sm transition-colors ${view === 'settings' ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-elevated'}`}>
+            设置
+          </button>
+        </nav>
+      </header>
 
       {/* Main content */}
       <main className="flex-1 overflow-auto">
         {view === 'settings' && <SettingsView />}
         {view === 'companions' && (
-          <CompanionsView
+          <CompanionsManageView
             companions={companions}
-            selected={selectedCompanion}
-            onSelect={(c) => handleNewClassroom(c)}
+            onEdit={(c) => handleEditCompanionFromDropdown(c)}
+            onAdd={() => handleCreateCompanion()}
+            onRefresh={reloadCompanions}
           />
         )}
         {view === 'textbooks' && (
-          <TextbooksView
-            textbooks={textbooks}
-            onRefresh={() =>
-              window.sophia.data.listTextbooks(WORLD_ID).then(setTextbooks)
-            }
-            onSelect={(t) => setSelectedTextbook(t)}
-          />
+          <TextbooksView textbooks={textbooks}
+            onRefresh={() => window.sophia.data.listTextbooks(WORLD_ID).then(setTextbooks)}
+            onSelect={(t) => setSelectedTextbook(t)} />
         )}
         {view === 'history' && (
           <HistoryView onResume={(convId) => {
-            // Load conversation by ID — need to fetch companion/textbook
             window.sophia.data.getConversation(convId).then(async (conv) => {
               if (!conv) return
               const comp = await window.sophia.companions.get(conv.companionId)
-              if (comp) {
-                setSelectedCompanion({
-                  id: comp.id,
-                  name: comp.name,
-                  identity: comp.identity,
-                  personalityKeywords: comp.personalityKeywords
-                })
-              }
+              if (comp) setSelectedCompanion({ id: comp.id, name: comp.name, identity: comp.identity, personalityKeywords: comp.personalityKeywords })
               if (conv.textbookId) {
                 const tb = await window.sophia.data.getTextbook(conv.textbookId)
                 if (tb) setSelectedTextbook({ id: tb.id, title: tb.title, format: tb.format })
-              } else {
-                setSelectedTextbook(null)
-              }
+              } else { setSelectedTextbook(null) }
               setLoadConversationId(convId)
               setView('classroom')
             })
           }} />
         )}
-        {/* Always-mounted ClassroomView — hidden via CSS when not active */}
         <div className={view === 'classroom' ? 'h-full' : 'hidden h-full'}>
-          <ClassroomView
-            companion={selectedCompanion}
-            textbook={selectedTextbook}
-            chatStream={chatStream}
-            loadConversationId={loadConversationId}
-            onConversationLoaded={() => setLoadConversationId(null)}
-          />
+          <ClassroomView companion={selectedCompanion} textbook={selectedTextbook} chatStream={chatStream}
+            loadConversationId={loadConversationId} onConversationLoaded={() => setLoadConversationId(null)} />
         </div>
       </main>
+
+      {/* Companion edit/create modal */}
+      {(editingCompanion || isCreatingCompanion) && (
+        <CompanionEditModal companion={editingCompanion} isCreating={isCreatingCompanion}
+          onSave={handleSaveCompanion} onDelete={!isCreatingCompanion ? handleDeleteCompanion : undefined}
+          onClose={() => { setEditingCompanion(null); setIsCreatingCompanion(false) }} />
+      )}
     </div>
   )
 }
-
-function NavItem({
-  label,
-  active,
-  onClick,
-  disabled
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-  disabled?: boolean
-}): React.ReactElement {
-  return (
-    <li>
-      <button
-        onClick={onClick}
-        disabled={disabled}
-        className={`w-full rounded px-3 py-2 text-left text-sm transition-colors ${
-          active
-            ? 'bg-accent text-white'
-            : disabled
-              ? 'cursor-not-allowed text-text-muted'
-              : 'text-text-secondary hover:bg-bg-elevated'
-        }`}
-      >
-        {label}
-      </button>
-    </li>
-  )
-}
-
 // ─── Settings View ───────────────────────────────────────────────
 
 
+
+function CompanionEditModal({
+  companion,
+  isCreating,
+  onSave,
+  onDelete,
+  onClose
+}: {
+  companion: CompanionDTO | null
+  isCreating: boolean
+  onSave: (form: {
+    name: string
+    gender: string
+    age: number
+    identity: string
+    personalityKeywords: string[]
+    personality: string
+    speakingStyle: string
+    emotionalExpressions: string
+  }) => Promise<void>
+  onDelete?: () => Promise<void>
+  onClose: () => void
+}): React.ReactElement {
+  const [form, setForm] = useState({
+    name: companion?.name ?? '',
+    gender: companion?.gender ?? 'female',
+    age: companion?.age ?? 20,
+    identity: companion?.identity ?? '',
+    personalityKeywords: companion?.personalityKeywords.join(', ') ?? '',
+    personality: companion?.personality ?? '',
+    speakingStyle: companion?.speakingStyle ?? '',
+    emotionalExpressions: companion?.emotionalExpressions ?? ''
+  })
+  const [saving, setSaving] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await onSave({
+        name: form.name.trim(),
+        gender: form.gender,
+        age: form.age,
+        identity: form.identity.trim(),
+        personalityKeywords: form.personalityKeywords.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+        personality: form.personality.trim(),
+        speakingStyle: form.speakingStyle.trim(),
+        emotionalExpressions: form.emotionalExpressions.trim()
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="flex w-[520px] flex-col rounded-lg border border-surface-border-strong bg-bg-deep shadow-xl max-h-[85vh]">
+        <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
+          <h3 className="text-lg font-semibold">
+            {isCreating ? '添加自定义角色' : `编辑: ${companion?.name}`}
+          </h3>
+          <button onClick={onClose}
+            className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-secondary">x</button>
+        </div>
+        <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-text-muted">名字</label>
+            <input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="角色名称"
+              className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-text-muted">性别</label>
+              <select value={form.gender} onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value }))}
+                className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none">
+                <option value="male">男</option>
+                <option value="female">女</option>
+                <option value="other">其他</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-text-muted">年龄</label>
+              <input type="number" value={form.age} onChange={(e) => setForm((f) => ({ ...f, age: parseInt(e.target.value) || 0 }))}
+                className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none" />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-text-muted">身份</label>
+            <input type="text" value={form.identity} onChange={(e) => setForm((f) => ({ ...f, identity: e.target.value }))}
+              placeholder="如：苏格拉底式哲学导师"
+              className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-text-muted">性格关键词 (逗号分隔)</label>
+            <input type="text" value={form.personalityKeywords} onChange={(e) => setForm((f) => ({ ...f, personalityKeywords: e.target.value }))}
+              placeholder="如：温和, 耐心, 幽默"
+              className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-text-muted">性格描述</label>
+            <textarea value={form.personality} onChange={(e) => setForm((f) => ({ ...f, personality: e.target.value }))}
+              rows={3} placeholder="描述角色的性格特征..."
+              className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-text-muted">说话风格</label>
+            <textarea value={form.speakingStyle} onChange={(e) => setForm((f) => ({ ...f, speakingStyle: e.target.value }))}
+              rows={2} placeholder="描述角色的说话方式..."
+              className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-text-muted">情感表达</label>
+            <textarea value={form.emotionalExpressions} onChange={(e) => setForm((f) => ({ ...f, emotionalExpressions: e.target.value }))}
+              rows={2} placeholder="描述角色的情感表达方式..."
+              className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none" />
+          </div>
+        </div>
+        <div className="flex justify-between border-t border-surface-border px-6 py-4">
+          <div>
+            {!isCreating && onDelete && (
+              deleteConfirm ? (
+                <div className="flex gap-2">
+                  <button onClick={onDelete}
+                    className="rounded bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-500">确认删除</button>
+                  <button onClick={() => setDeleteConfirm(false)}
+                    className="rounded border border-surface-border-strong px-3 py-1.5 text-xs text-text-muted hover:bg-bg-elevated">取消</button>
+                </div>
+              ) : (
+                <button onClick={() => setDeleteConfirm(true)}
+                  className="rounded border border-surface-border-strong px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/30">删除角色</button>
+              )
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button onClick={onClose}
+              className="rounded border border-surface-border-strong px-4 py-2 text-sm hover:bg-bg-elevated">取消</button>
+            <button onClick={handleSave} disabled={saving || !form.name.trim() || !form.identity.trim()}
+              className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50">
+              {saving ? '保存中...' : isCreating ? '创建' : '保存'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 interface ThemeOption {
   id: string
@@ -334,8 +443,8 @@ interface ThemeOption {
 
 const THEMES: ThemeOption[] = [
   { id: 'dark', name: '暗夜', preview: { bg: '#111827', surface: '#1f2937', accent: '#2563eb', text: '#f3f4f6' } },
-  { id: 'midnight', name: '午夜蓝', preview: { bg: '#0f172a', surface: '#1e293b', accent: '#6366f1', text: '#e2e8f0' } },
-  { id: 'emerald', name: '翡翠', preview: { bg: '#0c1a12', surface: '#132a1c', accent: '#10b981', text: '#d1fae5' } },
+  { id: 'midnight', name: '午夜蓝', preview: { bg: '#0a0e1a', surface: '#111832', accent: '#3b82f6', text: '#f0f4ff' } },
+  { id: 'emerald', name: '森林', preview: { bg: '#11130f', surface: '#1a1e16', accent: '#84cc16', text: '#e8ebe4' } },
   { id: 'light', name: '暖光', preview: { bg: '#fafaf9', surface: '#ffffff', accent: '#b45309', text: '#1c1917' } }
 ]
 
@@ -378,6 +487,183 @@ function ThemeSwitcher(): React.ReactElement {
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+
+
+function WebDavSyncView(): React.ReactElement {
+  const [url, setUrl] = useState(() => localStorage.getItem('webdav-url') || '')
+  const [username, setUsername] = useState(() => localStorage.getItem('webdav-username') || '')
+  const [password, setPassword] = useState(() => localStorage.getItem('webdav-password') || '')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [pushing, setPushing] = useState(false)
+  const [pulling, setPulling] = useState(false)
+  const [lastPush, setLastPush] = useState(() => localStorage.getItem('webdav-last-push') || '')
+  const [lastPull, setLastPull] = useState(() => localStorage.getItem('webdav-last-pull') || '')
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  const getConfig = () => ({ url: url.trim(), username: username.trim(), password })
+
+  const saveToStorage = () => {
+    localStorage.setItem('webdav-url', url.trim())
+    localStorage.setItem('webdav-username', username.trim())
+    localStorage.setItem('webdav-password', password)
+  }
+
+  const handleTest = async () => {
+    saveToStorage()
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await window.sophia.sync.test(getConfig())
+      setTestResult({ ok: res.success, msg: res.message || 'Unknown result' })
+    } catch (e) {
+      setTestResult({ ok: false, msg: e instanceof Error ? e.message : 'Failed' })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const handlePush = async () => {
+    saveToStorage()
+    setPushing(true)
+    setResult(null)
+    try {
+      const res = await window.sophia.sync.push(getConfig())
+      if (res.success) {
+        setResult({ ok: true, msg: `Pushed ${res.count} files` })
+        if (res.timestamp) {
+          setLastPush(res.timestamp)
+          localStorage.setItem('webdav-last-push', res.timestamp)
+        }
+      } else {
+        setResult({ ok: false, msg: `Pushed ${res.count} files, ${res.errors.length} errors: ${res.errors[0]}` })
+      }
+    } catch (e) {
+      setResult({ ok: false, msg: e instanceof Error ? e.message : 'Push failed' })
+    } finally {
+      setPushing(false)
+    }
+  }
+
+  const handlePull = async () => {
+    saveToStorage()
+    if (lastPush) {
+      const ago = Date.now() - new Date(lastPush).getTime()
+      const hours = Math.floor(ago / 3600000)
+      if (!confirm(`Local data may have been modified since last push (${hours > 0 ? hours + 'h' : '<1h'} ago). Pull will overwrite local data. Continue?`)) {
+        return
+      }
+    }
+    setPulling(true)
+    setResult(null)
+    try {
+      const res = await window.sophia.sync.pull(getConfig())
+      if (res.success) {
+        setResult({ ok: true, msg: `Pulled ${res.count} files` })
+        if (res.timestamp) {
+          setLastPull(res.timestamp)
+          localStorage.setItem('webdav-last-pull', res.timestamp)
+        }
+      } else {
+        setResult({ ok: false, msg: `Pulled ${res.count} files, ${res.errors.length} errors: ${res.errors[0]}` })
+      }
+    } catch (e) {
+      setResult({ ok: false, msg: e instanceof Error ? e.message : 'Pull failed' })
+    } finally {
+      setPulling(false)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-surface-border bg-bg-surface p-6">
+      <h3 className="mb-4 text-lg font-semibold text-text-primary">WebDAV Sync</h3>
+
+      <div className="space-y-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-text-secondary">Server URL</label>
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://dav.example.com"
+            className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:border-accent-border focus:outline-none"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-text-secondary">Username</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:border-accent-border focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-text-secondary">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:border-accent-border focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={handleTest}
+            disabled={testing || !url.trim()}
+            className="rounded border border-surface-border-strong px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
+          >
+            {testing ? 'Testing...' : 'Test Connection'}
+          </button>
+        </div>
+
+        {testResult && (
+          <p className={`text-xs ${testResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+            {testResult.ok ? 'OK: ' : 'Error: '}{testResult.msg}
+          </p>
+        )}
+
+        <div className="border-t border-surface-border pt-3">
+          <div className="flex items-center gap-3 mb-2">
+            <button
+              onClick={handlePush}
+              disabled={pushing || !url.trim()}
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {pushing ? 'Pushing...' : 'Push (Upload)'}
+            </button>
+            <button
+              onClick={handlePull}
+              disabled={pulling || !url.trim()}
+              className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
+            >
+              {pulling ? 'Pulling...' : 'Pull (Download)'}
+            </button>
+          </div>
+
+          <div className="text-xs text-text-muted">
+            <p>Last push: {lastPush ? new Date(lastPush).toLocaleString() : 'never'}</p>
+            <p>Last pull: {lastPull ? new Date(lastPull).toLocaleString() : 'never'}</p>
+          </div>
+        </div>
+
+        {result && (
+          <p className={`text-xs ${result.ok ? 'text-green-400' : 'text-red-400'}`}>
+            {result.ok ? 'OK: ' : 'Error: '}{result.msg}
+          </p>
+        )}
+      </div>
+
+      <p className="mt-4 text-xs text-text-muted">
+        Credentials are stored locally in your browser. API keys are never synced.
+      </p>
     </div>
   )
 }
@@ -533,6 +819,8 @@ function SettingsView(): React.ReactElement {
       <h2 className="mb-6 text-2xl font-bold">Settings</h2>
 
       <ThemeSwitcher />
+
+      <WebDavSyncView />
 
       <div className="mb-8" />
 
@@ -790,49 +1078,86 @@ function SettingsView(): React.ReactElement {
 
 // ─── Companions View ─────────────────────────────────────────────
 
-function CompanionsView({
+function CompanionsManageView({
   companions,
-  selected,
-  onSelect
+  onEdit,
+  onAdd,
+  onRefresh
 }: {
   companions: Companion[]
-  selected: Companion | null
-  onSelect: (c: Companion) => void
+  onEdit: (c: Companion) => void
+  onAdd: () => void
+  onRefresh: () => void
 }): React.ReactElement {
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+
+  const handleDelete = async (id: string) => {
+    await window.sophia.companions.delete(id)
+    setDeleteConfirmId(null)
+    onRefresh()
+  }
+
   return (
     <div className="p-8">
-      <h2 className="mb-6 text-2xl font-bold">选择角色</h2>
-      <p className="mb-6 text-text-muted">选择一个苏格拉底式的学习伙伴开始上课。</p>
+      <h2 className="mb-6 text-2xl font-bold">角色管理</h2>
+      <p className="mb-6 text-text-muted">点击角色卡片查看或编辑设定，或在底部添加自定义角色。</p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {companions.map((c) => (
-          <button
+          <div
             key={c.id}
-            onClick={() => onSelect(c)}
-            className={`rounded-lg border p-5 text-left transition-all hover:border-accent-border hover:shadow-lg ${
-              selected?.id === c.id
-                ? 'border-accent-border bg-accent-subtle'
-                : 'border-surface-border bg-bg-surface'
-            }`}
+            className="rounded-lg border border-surface-border bg-bg-surface p-5 transition-all hover:border-accent-border hover:shadow-lg"
           >
-            <h3 className="text-lg font-semibold">{c.name}</h3>
-            <p className="mt-1 text-sm text-text-muted">{c.identity}</p>
-            <div className="mt-3 flex flex-wrap gap-1">
-              {c.personalityKeywords.map((kw) => (
-                <span
-                  key={kw}
-                  className="rounded-full bg-bg-elevated px-2 py-0.5 text-xs text-text-secondary"
-                >
-                  {kw}
-                </span>
-              ))}
+            <button
+              onClick={() => onEdit(c)}
+              className="w-full text-left"
+            >
+              <h3 className="text-lg font-semibold">{c.name}</h3>
+              <p className="mt-1 text-sm text-text-muted">{c.identity}</p>
+              <div className="mt-3 flex flex-wrap gap-1">
+                {c.personalityKeywords.map((kw) => (
+                  <span
+                    key={kw}
+                    className="rounded-full bg-bg-elevated px-2 py-0.5 text-xs text-text-secondary"
+                  >
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            </button>
+            <div className="mt-3 flex justify-end">
+              {deleteConfirmId === c.id ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleDelete(c.id)}
+                    className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-500"
+                  >确认删除</button>
+                  <button
+                    onClick={() => setDeleteConfirmId(null)}
+                    className="rounded border border-surface-border-strong px-2 py-1 text-xs text-text-muted hover:bg-bg-elevated"
+                  >取消</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setDeleteConfirmId(c.id)}
+                  className="text-xs text-text-muted hover:text-red-400"
+                  title="删除角色"
+                >删除</button>
+              )}
             </div>
-          </button>
+          </div>
         ))}
       </div>
 
+      <button
+        onClick={onAdd}
+        className="mt-6 w-full rounded-lg border border-dashed border-surface-border-strong px-4 py-4 text-sm text-text-muted hover:border-accent-border hover:text-accent-hover transition-colors"
+      >
+        + 添加自定义角色
+      </button>
+
       {companions.length === 0 && (
-        <p className="text-text-muted">暂无可用角色。请检查 reference 目录。</p>
+        <p className="mt-4 text-text-muted">暂无可用角色。</p>
       )}
     </div>
   )

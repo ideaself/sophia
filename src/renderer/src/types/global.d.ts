@@ -130,6 +130,18 @@ declare global {
   interface CompanionAPI {
     list: () => Promise<CompanionDTO[]>
     get: (companionId: string) => Promise<CompanionDTO | null>
+    create: (input: {
+      name: string
+      gender: string
+      age: number
+      identity: string
+      personalityKeywords: string[]
+      personality: string
+      speakingStyle: string
+      emotionalExpressions: string
+    }) => Promise<CompanionDTO>
+    update: (companionId: string, updates: Partial<Pick<CompanionDTO, 'name' | 'gender' | 'age' | 'identity' | 'personalityKeywords' | 'personality' | 'speakingStyle' | 'emotionalExpressions'>>) => Promise<CompanionDTO | null>
+    delete: (companionId: string) => Promise<boolean>
   }
 
   interface DialogAPI {
@@ -171,6 +183,25 @@ declare global {
     testConnection: (baseUrl: string, apiKey: string) => Promise<{ success: boolean; models?: string[]; message?: string; error?: string }>
   }
 
+  interface SyncWebDavConfig {
+    url: string
+    username: string
+    password: string
+  }
+
+  interface SyncResult {
+    success: boolean
+    count: number
+    errors: string[]
+    timestamp?: string
+  }
+
+  interface SyncAPI {
+    test: (config: SyncWebDavConfig) => Promise<{ success: boolean; message?: string }>
+    push: (config: SyncWebDavConfig) => Promise<SyncResult>
+    pull: (config: SyncWebDavConfig) => Promise<SyncResult>
+  }
+
   interface SophiaAPI {
     getVersion: () => Promise<string>
     getPlatform: () => Promise<string>
@@ -180,6 +211,7 @@ declare global {
     companions: CompanionAPI
     dialog: DialogAPI
     providers: ProviderAPI
+    sync: SyncAPI
   }
 
   interface Window {

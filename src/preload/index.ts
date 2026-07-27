@@ -169,6 +169,18 @@ export interface CompanionDTO {
 export interface CompanionAPI {
   list: () => Promise<CompanionDTO[]>
   get: (companionId: string) => Promise<CompanionDTO | null>
+  create: (input: {
+    name: string
+    gender: string
+    age: number
+    identity: string
+    personalityKeywords: string[]
+    personality: string
+    speakingStyle: string
+    emotionalExpressions: string
+  }) => Promise<CompanionDTO>
+  update: (companionId: string, updates: Partial<Pick<CompanionDTO, 'name' | 'gender' | 'age' | 'identity' | 'personalityKeywords' | 'personality' | 'speakingStyle' | 'emotionalExpressions'>>) => Promise<CompanionDTO | null>
+  delete: (companionId: string) => Promise<boolean>
 }
 
 // ---------------------------------------------------------------
@@ -222,6 +234,25 @@ export interface ProviderAPI {
 // SophiaAPI
 // ---------------------------------------------------------------
 
+export interface SyncWebDavConfig {
+  url: string
+  username: string
+  password: string
+}
+
+export interface SyncResult {
+  success: boolean
+  count: number
+  errors: string[]
+  timestamp?: string
+}
+
+export interface SyncAPI {
+  test: (config: SyncWebDavConfig) => Promise<{ success: boolean; message?: string }>
+  push: (config: SyncWebDavConfig) => Promise<SyncResult>
+  pull: (config: SyncWebDavConfig) => Promise<SyncResult>
+}
+
 export interface SophiaAPI {
   getVersion: () => Promise<string>
   getPlatform: () => Promise<string>
@@ -231,6 +262,7 @@ export interface SophiaAPI {
   companions: CompanionAPI
   dialog: DialogAPI
   providers: ProviderAPI
+  sync: SyncAPI
 }
 
 // ---------------------------------------------------------------
@@ -348,7 +380,10 @@ const sophia: SophiaAPI = {
   },
   companions: {
     list: () => ipcRenderer.invoke('companion:list'),
-    get: (companionId: string) => ipcRenderer.invoke('companion:get', { companionId })
+    get: (companionId: string) => ipcRenderer.invoke('companion:get', { companionId }),
+    create: (input) => ipcRenderer.invoke('companion:create', input),
+    update: (companionId, updates) => ipcRenderer.invoke('companion:update', { companionId, ...updates }),
+    delete: (companionId: string) => ipcRenderer.invoke('companion:delete', { companionId })
   },
   dialog: {
     openFile: (options) => ipcRenderer.invoke('dialog:openFile', options)
@@ -365,6 +400,11 @@ const sophia: SophiaAPI = {
     hasApiKey: (id) => ipcRenderer.invoke('providers:has-api-key', { id }),
     fetchModels: (baseUrl, apiKey) => ipcRenderer.invoke('providers:fetch-models', { baseUrl, apiKey }),
     testConnection: (baseUrl, apiKey) => ipcRenderer.invoke('providers:test-connection', { baseUrl, apiKey })
+  },
+  sync: {
+    test: (config) => ipcRenderer.invoke('sync:test', config),
+    push: (config) => ipcRenderer.invoke('sync:push', config),
+    pull: (config) => ipcRenderer.invoke('sync:pull', config)
   }
 }
 
