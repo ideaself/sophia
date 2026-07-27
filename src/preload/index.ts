@@ -115,6 +115,7 @@ export interface DataAPI {
   getConversation: (conversationId: string, worldId?: string) => Promise<ConversationDTO | null>
   listConversations: (worldId: string) => Promise<ConversationDTO[]>
   deleteConversation: (conversationId: string, worldId?: string) => Promise<boolean>
+  updateTitle: (conversationId: string, title: string, worldId?: string) => Promise<ConversationDTO | null>
   sendMessage: (input: {
     conversationId: string
     content: string
@@ -123,7 +124,7 @@ export interface DataAPI {
   }) => Promise<MessageDTO>
   listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
   searchMessages: (worldId: string, query: string) => Promise<SearchResultDTO[]>
-  endConversation: (conversationId: string, worldId?: string) => Promise<boolean>
+  endConversation: (conversationId: string, worldId?: string) => Promise<{ success: boolean; artifacts: number }>
   createTextbook: (input: {
     worldId: string
     title: string
@@ -134,6 +135,7 @@ export interface DataAPI {
   getTextbook: (textbookId: string, worldId?: string) => Promise<TextbookDTO | null>
   listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
   updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
+  updateTextbook: (textbookId: string, updates: { title?: string; content?: string }, worldId?: string) => Promise<TextbookDTO | null>
   deleteTextbook: (textbookId: string, worldId?: string) => Promise<boolean>
   createArtifact: (input: {
     conversationId: string
@@ -275,6 +277,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('conversation:list', { worldId }),
     deleteConversation: (conversationId, worldId = 'world_default') =>
       ipcRenderer.invoke('conversation:delete', { conversationId, worldId }),
+    updateTitle: (conversationId, title, worldId = 'world_default') =>
+      ipcRenderer.invoke('conversation:update-title', { conversationId, title, worldId }),
     sendMessage: (input) =>
       ipcRenderer.invoke('message:send', input),
     listMessages: (conversationId, worldId = 'world_default') =>
@@ -291,6 +295,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('textbook:list', { worldId }),
     updateTextbookContent: (textbookId, content, worldId = 'world_default') =>
       ipcRenderer.invoke('textbook:update-content', { textbookId, content, worldId }),
+    updateTextbook: (textbookId, updates, worldId = 'world_default') =>
+      ipcRenderer.invoke('textbook:update', { textbookId, ...updates, worldId }),
     deleteTextbook: (textbookId, worldId = 'world_default') =>
       ipcRenderer.invoke('textbook:delete', { textbookId, worldId }),
     createArtifact: (input) =>

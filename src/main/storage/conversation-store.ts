@@ -165,6 +165,21 @@ export class ConversationStore {
     return true
   }
 
+  async updateTitle(conversationId: string, worldId: string, title: string): Promise<Conversation | null> {
+    const conv = await this.get(conversationId, worldId)
+    if (!conv) return null
+
+    conv.title = title
+    conv.updatedAt = new Date().toISOString()
+
+    await writeFile(
+      conversationPath(this.dataRoot, conversationId, worldId),
+      JSON.stringify(conv, null, 2),
+      'utf-8'
+    )
+    return conv
+  }
+
   async searchMessages(worldId: string, query: string): Promise<Array<{ conversationId: string; message: Message }>> {
     const conversations = await this.list(worldId)
     const results: Array<{ conversationId: string; message: Message }> = []

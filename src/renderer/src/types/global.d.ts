@@ -94,6 +94,7 @@ declare global {
     getConversation: (conversationId: string, worldId?: string) => Promise<ConversationDTO | null>
     listConversations: (worldId: string) => Promise<ConversationDTO[]>
     deleteConversation: (conversationId: string, worldId?: string) => Promise<boolean>
+    updateTitle: (conversationId: string, title: string, worldId?: string) => Promise<ConversationDTO | null>
     sendMessage: (input: {
       conversationId: string
       content: string
@@ -113,6 +114,7 @@ declare global {
     getTextbook: (textbookId: string, worldId?: string) => Promise<TextbookDTO | null>
     listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
     updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
+    updateTextbook: (textbookId: string, updates: { title?: string; content?: string }, worldId?: string) => Promise<TextbookDTO | null>
     deleteTextbook: (textbookId: string, worldId?: string) => Promise<boolean>
     createArtifact: (input: {
       conversationId: string

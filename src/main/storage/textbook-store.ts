@@ -119,6 +119,30 @@ export class TextbookStore {
     return tb
   }
 
+  async update(textbookId: string, worldId: string, updates: { title?: string; content?: string }): Promise<Textbook | null> {
+    const tb = await this.get(textbookId, worldId)
+    if (!tb) return null
+
+    if (updates.title !== undefined) tb.title = updates.title
+    if (updates.content !== undefined) tb.content = updates.content
+    tb.updatedAt = new Date().toISOString()
+
+    await writeFile(
+      textbookPath(this.dataRoot, textbookId, worldId),
+      JSON.stringify(tb, null, 2),
+      'utf-8'
+    )
+    if (updates.content !== undefined) {
+      await writeFile(
+        textbookContentPath(this.dataRoot, textbookId, worldId),
+        updates.content,
+        'utf-8'
+      )
+    }
+
+    return tb
+  }
+
   async delete(textbookId: string, worldId: string): Promise<boolean> {
     try {
       const dir = textbookDir(this.dataRoot, textbookId, worldId)

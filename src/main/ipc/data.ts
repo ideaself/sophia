@@ -53,16 +53,49 @@ export function registerConversationIpc(
     return conversationStore.delete(parsed.conversationId, worldId)
   })
 
+  ipcMain.handle('conversation:update-title', async (_event, input: unknown) => {
+    const { conversationId, title, worldId = 'world_default' } = input as {
+      conversationId: string
+      title: string
+      worldId?: string
+    }
+    return conversationStore.updateTitle(conversationId, worldId, title)
+  })
+
   ipcMain.handle('conversation:end', async (_event, input: unknown) => {
     const { conversationId, worldId = 'world_default' } = input as { conversationId: string; worldId?: string }
     const success = await conversationStore.endConversation(conversationId, worldId)
     if (!success) return { success: false, artifacts: 0 }
 
-    // Generate artifacts (best-effort)
-    const messages = await conversationStore.getMessages(conversationId, worldId)
-    // Note: API key would be needed for artifact generation
-    // For now, just mark the conversation as ended
-    return { success: true, artifacts: 0 }
+    // Generate artifacts automatically (best-effort)
+    let artifactCount = 0
+    try {
+      // Get API key from keychain
+      const { safeStorage } = require('electron') as typeof import('electron')
+      const { readFileSync } = require('node:fs') as typeof import('node:fs')
+      const { join } = require('node:path') as typeof import('node:path')
+      const keyPath = join(dataRoot, '.deepseek-key.enc')
+      let apiKey = ''
+      try {
+        const encrypted = readFileSync(keyPath)
+        apiKey = safeStorage.decryptString(encrypted)
+      } catch {
+        // No key stored
+      }
+
+      if (apiKey) {
+        const messages = await conversationStore.getMessages(conversationId, worldId)
+        const results = await generateArtifacts(messages, apiKey)
+        for (const result of results) {
+          await artifactStore.create(conversationId as any, worldId as WorldId, result.type, result.content)
+          artifactCount++
+        }
+      }
+    } catch {
+      // Best-effort: don't fail end-class if artifact generation fails
+    }
+
+    return { success: true, artifacts: artifactCount }
   })
 
   ipcMain.handle('artifact:generate', async (_event, input: unknown) => {
@@ -170,6 +203,12 @@ export function registerConversationIpc(
     const parsed = input as { textbookId: string; worldId?: string; content: string }
     const worldId = parsed.worldId ?? 'world_default'
     return textbookStore.updateContent(parsed.textbookId, worldId, parsed.content)
+  })
+
+  ipcMain.handle('textbook:update', async (_event, input: unknown) => {
+    const parsed = input as { textbookId: string; worldId?: string; title?: string; content?: string }
+    const worldId = parsed.worldId ?? 'world_default'
+    return textbookStore.update(parsed.textbookId, worldId, { title: parsed.title, content: parsed.content })
   })
 
   ipcMain.handle('textbook:delete', async (_event, input: unknown) => {

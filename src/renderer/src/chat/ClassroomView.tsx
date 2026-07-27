@@ -154,12 +154,15 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   }
 
   // Handle end class
+  const [endResult, setEndResult] = useState<{ artifacts: number } | null>(null)
   const handleEndClass = async () => {
     if (!conversationId) return
     setIsLoading(true)
+    setEndResult(null)
     try {
       const result = await window.sophia.data.endConversation(conversationId, WORLD_ID)
       if (result.success) {
+        setEndResult({ artifacts: result.artifacts })
         setConversationId(null)
         setMessages([])
       }
@@ -247,6 +250,14 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                 </button>
               )}
             </div>
+          </div>
+        )}
+        {endResult && (
+          <div className="rounded border border-green-800 bg-green-900/30 px-4 py-3 text-sm text-green-300">
+            <p className="font-medium">课程已结束</p>
+            <p className="mt-1 text-xs text-green-400">
+              已自动生成 {endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
+            </p>
           </div>
         )}
         <div ref={messagesEndRef} />

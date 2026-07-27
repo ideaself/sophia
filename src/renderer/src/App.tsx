@@ -489,6 +489,11 @@ function TextbooksView({
   const [viewingTextbook, setViewingTextbook] = useState<Textbook | null>(null)
   const [viewingContent, setViewingContent] = useState('')
   const [loadingContent, setLoadingContent] = useState(false)
+  const [editingTextbook, setEditingTextbook] = useState<Textbook | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editContent, setEditContent] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
   const handleTextImport = async () => {
     if (!title.trim()) return
@@ -559,6 +564,37 @@ function TextbooksView({
     }
   }
 
+  const handleEdit = async (t: Textbook) => {
+    setEditingTextbook(t)
+    setEditTitle(t.title)
+    try {
+      const full = await window.sophia.data.getTextbook(t.id)
+      setEditContent(full?.content ?? "")
+    } catch {
+      setEditContent("")
+    }
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingTextbook || !editTitle.trim()) return
+    setSaving(true)
+    try {
+      await window.sophia.data.updateTextbook(editingTextbook.id, { title: editTitle.trim(), content: editContent })
+      setEditingTextbook(null)
+      onRefresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存失败")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const confirmDelete = async (t: Textbook) => {
+    await window.sophia.data.deleteTextbook(t.id)
+    setDeleteConfirmId(null)
+    onRefresh()
+  }
+
   return (
     <div className="p-8">
       <h2 className="mb-6 text-2xl font-bold">教材</h2>
@@ -622,6 +658,35 @@ function TextbooksView({
                 查看
               </button>
               <button
+                onClick={() => handleEdit(t)}
+                className="rounded border border-gray-600 px-3 py-1 text-sm hover:bg-gray-700"
+              >
+                编辑
+              </button>
+              {deleteConfirmId === t.id ? (
+                <>
+                  <button
+                    onClick={() => confirmDelete(t)}
+                    className="rounded bg-red-600 px-3 py-1 text-sm text-white hover:bg-red-500"
+                  >
+                    确认删除
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirmId(null)}
+                    className="rounded border border-gray-600 px-3 py-1 text-sm hover:bg-gray-700"
+                  >
+                    取消
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setDeleteConfirmId(t.id)}
+                  className="rounded border border-gray-600 px-3 py-1 text-sm text-red-400 hover:bg-red-900/30"
+                >
+                  删除
+                </button>
+              )}
+              <button
                 onClick={() => onSelect(t)}
                 className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500"
               >
@@ -634,6 +699,54 @@ function TextbooksView({
           <p className="text-gray-500">暂无教材。请在上方导入。</p>
         )}
       </div>
+
+      {/* Textbook edit modal */}
+      {editingTextbook && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="flex h-[80vh] w-[80vw] flex-col rounded-lg border border-gray-600 bg-gray-900 shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-700 px-6 py-4">
+              <h3 className="text-lg font-semibold">编辑教材</h3>
+              <button
+                onClick={() => setEditingTextbook(null)}
+                className="rounded p-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="教材标题"
+                className="w-full rounded border border-gray-600 bg-gray-800 px-4 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+              />
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                placeholder="教材内容 (Markdown)..."
+                className="h-full w-full rounded border border-gray-600 bg-gray-800 px-4 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                style={{ minHeight: '50vh' }}
+              />
+            </div>
+            <div className="flex justify-end gap-3 border-t border-gray-700 px-6 py-4">
+              <button
+                onClick={() => setEditingTextbook(null)}
+                className="rounded border border-gray-600 px-4 py-2 text-sm hover:bg-gray-700"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={saving || !editTitle.trim()}
+                className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-50"
+              >
+                {saving ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Textbook content viewer modal */}
       {viewingTextbook && (
@@ -677,11 +790,42 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
   const [searchResults, setSearchResults] = useState<SearchResultDTO[] | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [expandedMessages, setExpandedMessages] = useState<MessageDTO[]>([])
+  const [expandedArtifacts, setExpandedArtifacts] = useState<ArtifactDTO[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
 
   useEffect(() => {
     window.sophia.data.listConversations(WORLD_ID).then(setConversations)
   }, [])
+
+  const handleStartEdit = (conv: ConversationDTO) => {
+    setEditingId(conv.id)
+    setEditingTitle(conv.title)
+  }
+
+  const handleSaveTitle = async (convId: string) => {
+    if (!editingTitle.trim()) {
+      setEditingId(null)
+      return
+    }
+    await window.sophia.data.updateTitle(convId, editingTitle.trim())
+    setConversations((prev) =>
+      prev.map((c) => (c.id === convId ? { ...c, title: editingTitle.trim() } : c))
+    )
+    setEditingId(null)
+  }
+
+  const handleDeleteConversation = async (convId: string) => {
+    if (!confirm('确定删除这个课程记录？')) return
+    await window.sophia.data.deleteConversation(convId)
+    setConversations((prev) => prev.filter((c) => c.id !== convId))
+    if (expandedId === convId) {
+      setExpandedId(null)
+      setExpandedMessages([])
+      setExpandedArtifacts([])
+    }
+  }
 
   const handleSearch = async () => {
     if (searchQuery.trim().length < 2) return
@@ -693,15 +837,21 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
     if (expandedId === convId) {
       setExpandedId(null)
       setExpandedMessages([])
+      setExpandedArtifacts([])
       return
     }
     setLoadingMessages(true)
     setExpandedId(convId)
     try {
-      const msgs = await window.sophia.data.listMessages(convId)
+      const [msgs, artifacts] = await Promise.all([
+        window.sophia.data.listMessages(convId),
+        window.sophia.data.listArtifacts(convId)
+      ])
       setExpandedMessages(msgs)
+      setExpandedArtifacts(artifacts)
     } catch {
       setExpandedMessages([])
+      setExpandedArtifacts([])
     } finally {
       setLoadingMessages(false)
     }
@@ -786,8 +936,32 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
               className="w-full p-4 text-left"
             >
               <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-medium">{conv.title}</h4>
+                <div className="flex-1 min-w-0">
+                  {editingId === conv.id ? (
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="text"
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveTitle(conv.id)
+                          if (e.key === 'Escape') setEditingId(null)
+                        }}
+                        className="flex-1 rounded border border-blue-500 bg-gray-900 px-2 py-1 text-sm text-gray-100 focus:outline-none"
+                        autoFocus
+                      />
+                      <button onClick={() => handleSaveTitle(conv.id)} className="text-xs text-blue-400 hover:text-blue-300">保存</button>
+                      <button onClick={() => setEditingId(null)} className="text-xs text-gray-500 hover:text-gray-300">取消</button>
+                    </div>
+                  ) : (
+                    <h4
+                      className="font-medium cursor-pointer hover:text-blue-400"
+                      onClick={(e) => { e.stopPropagation(); handleStartEdit(conv) }}
+                      title="点击编辑标题"
+                    >
+                      {conv.title}
+                    </h4>
+                  )}
                   <p className="text-xs text-gray-500">
                     {companionMap[conv.companionId] ?? conv.companionId} · {new Date(conv.createdAt).toLocaleString()}
                     {conv.endedAt && ' · 已下课'}
@@ -809,6 +983,13 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
                       继续上课
                     </button>
                   )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id) }}
+                    className="text-xs text-gray-500 hover:text-red-400"
+                    title="删除课程"
+                  >
+                    🗑
+                  </button>
                   <span className="text-gray-500 text-xs">
                     {expandedId === conv.id ? '▾' : '▸'}
                   </span>
@@ -816,28 +997,58 @@ function HistoryView({ onResume }: { onResume: (conversationId: string) => void 
               </div>
             </button>
 
-            {/* Expanded message list */}
+            {/* Expanded message list + artifacts */}
             {expandedId === conv.id && (
-              <div className="border-t border-gray-700 px-4 py-3 space-y-2 max-h-96 overflow-auto">
+              <div className="border-t border-gray-700 px-4 py-3 space-y-3 max-h-96 overflow-auto">
                 {loadingMessages ? (
                   <p className="text-xs text-gray-500">加载中...</p>
-                ) : expandedMessages.length === 0 ? (
-                  <p className="text-xs text-gray-500">暂无消息记录</p>
                 ) : (
-                  expandedMessages.map((msg) => (
-                    <div key={msg.id} className={`rounded px-3 py-2 text-sm ${
-                      msg.role === 'user'
-                        ? 'bg-blue-900/20 ml-8'
-                        : msg.role === 'assistant'
-                          ? 'bg-gray-700 mr-8'
-                          : 'bg-gray-800 text-gray-400'
-                    }`}>
-                      <p className="text-xs text-gray-500 mb-1">
-                        {msg.role === 'user' ? '你' : msg.role === 'assistant' ? 'AI' : '系统'} · {new Date(msg.createdAt).toLocaleTimeString()}
-                      </p>
-                      <p className="text-gray-200 whitespace-pre-wrap">{msg.content}</p>
-                    </div>
-                  ))
+                  <>
+                    {/* Artifacts */}
+                    {expandedArtifacts.length > 0 && (
+                      <div className="space-y-2">
+                        <h5 className="text-xs font-medium text-gray-400 uppercase">学习资料</h5>
+                        {expandedArtifacts.map((art) => (
+                          <div key={art.id} className="rounded bg-gray-700/50 px-3 py-2">
+                            <p className="text-xs font-medium text-gray-300 mb-1">
+                              {art.type === 'lesson_summary' ? '📋 课堂总结' :
+                               art.type === 'flashcards' ? '🃏 记忆卡片' :
+                               art.type === 'diary' ? '📝 学习日记' :
+                               art.type === 'progress' ? '📈 学习进展' :
+                               art.type === 'handoff_tail' ? '🔗 接力尾巴' : art.type}
+                            </p>
+                            <div className="markdown-body text-xs text-gray-300 max-h-32 overflow-auto">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {art.content}
+                              </ReactMarkdown>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Messages */}
+                    {expandedMessages.length === 0 ? (
+                      <p className="text-xs text-gray-500">暂无消息记录</p>
+                    ) : (
+                      <div className="space-y-2">
+                        <h5 className="text-xs font-medium text-gray-400 uppercase">对话记录</h5>
+                        {expandedMessages.map((msg) => (
+                          <div key={msg.id} className={`rounded px-3 py-2 text-sm ${
+                            msg.role === 'user'
+                              ? 'bg-blue-900/20 ml-8'
+                              : msg.role === 'assistant'
+                                ? 'bg-gray-700 mr-8'
+                                : 'bg-gray-800 text-gray-400'
+                          }`}>
+                            <p className="text-xs text-gray-500 mb-1">
+                              {msg.role === 'user' ? '你' : msg.role === 'assistant' ? 'AI' : '系统'} · {new Date(msg.createdAt).toLocaleTimeString()}
+                            </p>
+                            <p className="text-gray-200 whitespace-pre-wrap">{msg.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
