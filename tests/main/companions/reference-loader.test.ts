@@ -12,7 +12,7 @@ import { loadReferenceCompanions, type LoadCompanionsOptions } from '../../../sr
 
 const TEST_ID = `sophia-loader-${randomUUID()}`
 const tempDir = join(tmpdir(), TEST_ID)
-const projectsRoot = join('D:', 'Sophia-Local')
+const projectsRoot = join(__dirname, '..', '..', '..')
 const candidatesDir = join(projectsRoot, 'reference', '角色设定', 'candidates')
 
 beforeAll(async () => {

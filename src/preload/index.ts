@@ -21,15 +21,60 @@ export interface StreamUsageData {
 }
 
 // ---------------------------------------------------------------
+// Domain types (lightweight — full types come from shared/schemas)
+// ---------------------------------------------------------------
+
+export interface ConversationDTO {
+  id: string
+  worldId: string
+  companionId: string
+  textbookId: string | null
+  title: string
+  createdAt: string
+  updatedAt: string
+  endedAt: string | null
+}
+
+export interface MessageDTO {
+  id: string
+  conversationId: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  createdAt: string
+}
+
+export interface TextbookDTO {
+  id: string
+  worldId: string
+  title: string
+  format: 'markdown' | 'text' | 'pdf' | 'epub'
+  sourceFile: string
+  content: string
+  progress: { currentPage: number; totalPages: number | null }
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ArtifactDTO {
+  id: string
+  conversationId: string
+  type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail'
+  content: string
+  createdAt: string
+}
+
+export interface SearchResultDTO {
+  conversationId: string
+  message: MessageDTO
+}
+
+// ---------------------------------------------------------------
 // Settings API
 // ---------------------------------------------------------------
 
 export interface SettingsAPI {
-  /** Check whether a DeepSeek API key has been configured */
   hasDeepSeekKey: () => Promise<boolean>
-  /** Save a DeepSeek API key (encrypted on disk) */
   setDeepSeekKey: (key: string) => Promise<void>
-  /** Remove the stored DeepSeek API key */
   deleteDeepSeekKey: () => Promise<void>
 }
 
@@ -38,53 +83,100 @@ export interface SettingsAPI {
 // ---------------------------------------------------------------
 
 export interface ChatAPI {
-  /**
-   * Start a streaming chat session.
-   *
-   * @param messages  Ordered conversation messages (system/user/assistant).
-   * @param model     Optional model override (defaults to deepseek-v4-pro).
-   * @returns         A unique session ID used to subscribe to events.
-   */
   startStream: (
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
     model?: string
   ) => Promise<string>
-
-  /**
-   * Cancel an active streaming session.
-   *
-   * Safe to call on already-completed sessions (no-op).
-   */
   cancelStream: (sessionId: string) => Promise<void>
-
-  /**
-   * Subscribe to token events for a given session.
-   *
-   * @returns A function that unsubscribes the callback.
-   */
   onToken: (sessionId: string, callback: (token: string) => void) => () => void
-
-  /**
-   * Subscribe to error events for a given session.
-   *
-   * @returns A function that unsubscribes the callback.
-   */
   onError: (sessionId: string, callback: (error: StreamErrorData) => void) => () => void
-
-  /**
-   * Subscribe to end events for a given session.
-   *
-   * @param callback  Receives the finish_reason string.
-   * @returns A function that unsubscribes the callback.
-   */
   onEnd: (sessionId: string, callback: (finishReason: string) => void) => () => void
-
-  /**
-   * Subscribe to usage events for a given session.
-   *
-   * @returns A function that unsubscribes the callback.
-   */
   onUsage: (sessionId: string, callback: (usage: StreamUsageData) => void) => () => void
+  getPromptMessages: (input: {
+    conversationId: string
+    companionId: string
+    textbookId?: string | null
+    userMessage: string
+    worldId?: string
+  }) => Promise<Array<{ role: 'system' | 'user' | 'assistant'; content: string }>>
+}
+
+// ---------------------------------------------------------------
+// Data API (conversations, textbooks, artifacts)
+// ---------------------------------------------------------------
+
+export interface DataAPI {
+  createConversation: (input: {
+    worldId: string
+    companionId: string
+    textbookId?: string
+    title: string
+  }) => Promise<ConversationDTO>
+  getConversation: (conversationId: string, worldId?: string) => Promise<ConversationDTO | null>
+  listConversations: (worldId: string) => Promise<ConversationDTO[]>
+  deleteConversation: (conversationId: string, worldId?: string) => Promise<boolean>
+  sendMessage: (input: {
+    conversationId: string
+    content: string
+    role?: string
+    worldId?: string
+  }) => Promise<MessageDTO>
+  listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
+  searchMessages: (worldId: string, query: string) => Promise<SearchResultDTO[]>
+  endConversation: (conversationId: string, worldId?: string) => Promise<boolean>
+  createTextbook: (input: {
+    worldId: string
+    title: string
+    format: 'markdown' | 'text' | 'pdf' | 'epub'
+    sourceFile?: string
+    content?: string
+  }) => Promise<TextbookDTO>
+  getTextbook: (textbookId: string, worldId?: string) => Promise<TextbookDTO | null>
+  listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
+  updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
+  deleteTextbook: (textbookId: string, worldId?: string) => Promise<boolean>
+  createArtifact: (input: {
+    conversationId: string
+    type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail'
+    content: string
+    worldId?: string
+  }) => Promise<ArtifactDTO>
+  getArtifact: (artifactId: string, conversationId: string, worldId?: string) => Promise<ArtifactDTO | null>
+  listArtifacts: (conversationId: string, worldId?: string) => Promise<ArtifactDTO[]>
+  generateArtifacts: (conversationId: string, apiKey: string, worldId?: string) => Promise<{ count: number; types: string[] }>
+}
+
+// ---------------------------------------------------------------
+// Companion API
+// ---------------------------------------------------------------
+
+export interface CompanionDTO {
+  id: string
+  source: string
+  name: string
+  gender: string
+  age: number
+  identity: string
+  personalityKeywords: string[]
+  personality: string
+  speakingStyle: string
+  emotionalExpressions: string
+  originalFile: string
+}
+
+export interface CompanionAPI {
+  list: () => Promise<CompanionDTO[]>
+  get: (companionId: string) => Promise<CompanionDTO | null>
+}
+
+// ---------------------------------------------------------------
+// Dialog API
+// ---------------------------------------------------------------
+
+export interface DialogAPI {
+  openFile: (options?: {
+    filters?: Array<{ name: string; extensions: string[] }>
+  }) => Promise<{ canceled: boolean; filePaths: string[] }>
 }
 
 // ---------------------------------------------------------------
@@ -92,27 +184,19 @@ export interface ChatAPI {
 // ---------------------------------------------------------------
 
 export interface SophiaAPI {
-  /** Retrieve the application version string */
   getVersion: () => Promise<string>
-  /** Retrieve the current OS platform identifier */
   getPlatform: () => Promise<string>
-  /** Settings operations (API key management) */
   settings: SettingsAPI
-  /** Chat streaming operations */
   chat: ChatAPI
+  data: DataAPI
+  companions: CompanionAPI
+  dialog: DialogAPI
 }
 
 // ---------------------------------------------------------------
 // Event listener helpers (internal — not exposed)
 // ---------------------------------------------------------------
 
-/**
- * Generic helper: subscribe to an IPC event channel with a sessionId
- * filter, and return an unsubscribe function.
- *
- * The sessionId is stripped from the payload before invoking the
- * user callback so the renderer never sees it.
- */
 function createEventSubscriber<P>(
   channel: string,
   sessionId: string,
@@ -120,7 +204,6 @@ function createEventSubscriber<P>(
 ): () => void {
   const handler = (_event: Electron.IpcRendererEvent, payload: P & { sessionId: string }) => {
     if (payload.sessionId === sessionId) {
-      // Strip sessionId before passing to user callback
       const { sessionId: _sid, ...rest } = payload
       callback(rest as unknown as P)
     }
@@ -178,7 +261,53 @@ const sophia: SophiaAPI = {
         CHAT_STREAM_EVENT.usage,
         sessionId,
         callback
-      )
+      ),
+
+    getPromptMessages: (input) =>
+      ipcRenderer.invoke('chat:get-prompt-messages', input)
+  },
+  data: {
+    createConversation: (input) =>
+      ipcRenderer.invoke('conversation:create', input),
+    getConversation: (conversationId, worldId = 'world_default') =>
+      ipcRenderer.invoke('conversation:get', { conversationId, worldId }),
+    listConversations: (worldId) =>
+      ipcRenderer.invoke('conversation:list', { worldId }),
+    deleteConversation: (conversationId, worldId = 'world_default') =>
+      ipcRenderer.invoke('conversation:delete', { conversationId, worldId }),
+    sendMessage: (input) =>
+      ipcRenderer.invoke('message:send', input),
+    listMessages: (conversationId, worldId = 'world_default') =>
+      ipcRenderer.invoke('message:list', { conversationId, worldId }),
+    searchMessages: (worldId, query) =>
+      ipcRenderer.invoke('message:search', { worldId, query }),
+    endConversation: (conversationId, worldId = 'world_default') =>
+      ipcRenderer.invoke('conversation:end', { conversationId, worldId }),
+    createTextbook: (input) =>
+      ipcRenderer.invoke('textbook:create', input),
+    getTextbook: (textbookId, worldId = 'world_default') =>
+      ipcRenderer.invoke('textbook:get', { textbookId, worldId }),
+    listTextbooks: (worldId) =>
+      ipcRenderer.invoke('textbook:list', { worldId }),
+    updateTextbookContent: (textbookId, content, worldId = 'world_default') =>
+      ipcRenderer.invoke('textbook:update-content', { textbookId, content, worldId }),
+    deleteTextbook: (textbookId, worldId = 'world_default') =>
+      ipcRenderer.invoke('textbook:delete', { textbookId, worldId }),
+    createArtifact: (input) =>
+      ipcRenderer.invoke('artifact:create', input),
+    getArtifact: (artifactId, conversationId, worldId = 'world_default') =>
+      ipcRenderer.invoke('artifact:get', { artifactId, conversationId, worldId }),
+    listArtifacts: (conversationId, worldId = 'world_default') =>
+      ipcRenderer.invoke('artifact:list', { conversationId, worldId }),
+    generateArtifacts: (conversationId, apiKey, worldId = 'world_default') =>
+      ipcRenderer.invoke('artifact:generate', { conversationId, apiKey, worldId })
+  },
+  companions: {
+    list: () => ipcRenderer.invoke('companion:list'),
+    get: (companionId: string) => ipcRenderer.invoke('companion:get', { companionId })
+  },
+  dialog: {
+    openFile: (options) => ipcRenderer.invoke('dialog:openFile', options)
   }
 }
 

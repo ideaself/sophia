@@ -53,6 +53,9 @@ export function useChatStream(): CreateChatStreamControllerResult {
       return controllerRef.current!.state
     },
     send,
-    cancel
+    cancel,
+    get streamEnd() {
+      return controllerRef.current!.streamEnd
+    }
   }
 }

@@ -1,4 +1,4 @@
-import type { SophiaAPI, StreamErrorData, StreamUsageData } from './index'
+import type { SophiaAPI } from './index'
 
 declare global {
   interface Window {
@@ -6,4 +6,4 @@ declare global {
   }
 }
 
-export type { StreamErrorData, StreamUsageData }
+export {}

@@ -8,7 +8,7 @@ import { CompanionSource, CompanionGender } from '../../../src/shared/types/ids'
 import { loadReferenceCompanions } from '../../../src/main/companions/reference-loader'
 import { buildSystemPrompt, buildMessages } from '../../../src/main/prompt/prompt-builder'
 
-const projectsRoot = 'D:\\Sophia-Local'
+const projectsRoot = join(__dirname, '..', '..', '..')
 const candidatesDir = join(projectsRoot, 'reference', '角色设定', 'candidates')
 const worldPath = join(projectsRoot, 'reference', 'world_preset.md')
 

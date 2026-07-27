@@ -2,6 +2,9 @@ import { app, BrowserWindow, ipcMain, shell, safeStorage } from 'electron'
 import { join } from 'path'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerChatStreamIpc } from './ipc/chat-stream'
+import { registerConversationIpc } from './ipc/data'
+import { registerCompanionIpc } from './ipc/companions'
+import { registerChatPromptIpc } from './ipc/chat-prompt'
 import { initDataDir } from './storage/initialize'
 import { resolveReferencePaths } from './storage/resolve-paths'
 import { createDeepSeekStreamAdapter } from './llm/deepseek-stream-adapter'
@@ -50,6 +53,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('app:get-version', () => app.getVersion())
   ipcMain.handle('app:get-platform', () => process.platform)
   const keyStore = registerSettingsIpc(dataRoot, safeStorage)
+  registerConversationIpc(dataRoot)
+  registerCompanionIpc(dataRoot)
+  registerChatPromptIpc(dataRoot)
 
   createWindow()
 

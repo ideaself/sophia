@@ -47,6 +47,8 @@ export interface CreateChatStreamControllerResult {
   readonly state: ChatStreamState
   send(messages: ChatMessage[], model?: string): Promise<void>
   cancel(): Promise<void>
+  /** Promise that resolves when the current stream ends. null if not streaming. */
+  readonly streamEnd: Promise<{ content: string; finishReason: string }> | null
 }
 
 // --------------- controller ---------------
@@ -65,6 +67,10 @@ export function createChatStreamController(
 
   /** All active unsubscribe callbacks.  Cleared on every reset. */
   let unsubscribers: Array<() => void> = []
+
+  /** Resolve for the current stream's end promise */
+  let streamEndResolve: ((value: { content: string; finishReason: string }) => void) | null = null
+  let currentStreamEnd: Promise<{ content: string; finishReason: string }> | null = null
 
   function notify(): void {
     onStateChange?.({
@@ -153,6 +159,11 @@ export function createChatStreamController(
 
     update({ sessionId })
 
+    // Create a promise that resolves when the stream ends
+    currentStreamEnd = new Promise<{ content: string; finishReason: string }>((resolve) => {
+      streamEndResolve = resolve
+    })
+
     // Subscribe to stream events
     const unsubToken = api.onToken(sessionId, (token: string) => {
       update({ assistantContent: state.assistantContent + token })
@@ -161,11 +172,19 @@ export function createChatStreamController(
     const unsubError = api.onError(sessionId, (err: StreamError) => {
       unsubscribeAll()
       update({ error: err, isStreaming: false })
+      // Resolve instead of reject to avoid unhandled rejections
+      // when nobody is awaiting streamEnd
+      streamEndResolve?.({ content: state.assistantContent, finishReason: `error:${err.code}` })
+      streamEndResolve = null
+      currentStreamEnd = null
     })
 
     const unsubEnd = api.onEnd(sessionId, (_finishReason: string) => {
       unsubscribeAll()
       update({ isStreaming: false })
+      streamEndResolve?.({ content: state.assistantContent, finishReason: _finishReason })
+      streamEndResolve = null
+      currentStreamEnd = null
     })
 
     const unsubUsage = api.onUsage(sessionId, (usage: StreamUsage) => {
@@ -186,6 +205,9 @@ export function createChatStreamController(
       }
     },
     send,
-    cancel
+    cancel,
+    get streamEnd() {
+      return currentStreamEnd
+    }
   }
 }

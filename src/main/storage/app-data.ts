@@ -75,3 +75,98 @@ export function companionDir(
 export function configDir(dataRoot: string): string {
   return join(dataRoot, 'config')
 }
+
+// --- Textbook paths ---
+
+export function textbooksDir(
+  dataRoot: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(worldDir(dataRoot, worldId, profileId), 'textbooks')
+}
+
+export function textbookDir(
+  dataRoot: string,
+  textbookId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(textbooksDir(dataRoot, worldId, profileId), textbookId)
+}
+
+export function textbookPath(
+  dataRoot: string,
+  textbookId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(textbookDir(dataRoot, textbookId, worldId, profileId), 'textbook.json')
+}
+
+export function textbookContentPath(
+  dataRoot: string,
+  textbookId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(textbookDir(dataRoot, textbookId, worldId, profileId), 'source.md')
+}
+
+// --- Conversation paths ---
+
+export function conversationsDir(
+  dataRoot: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(worldDir(dataRoot, worldId, profileId), 'conversations')
+}
+
+export function conversationDir(
+  dataRoot: string,
+  conversationId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(conversationsDir(dataRoot, worldId, profileId), conversationId)
+}
+
+export function conversationPath(
+  dataRoot: string,
+  conversationId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(conversationDir(dataRoot, conversationId, worldId, profileId), 'conversation.json')
+}
+
+export function conversationMessagesPath(
+  dataRoot: string,
+  conversationId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(conversationDir(dataRoot, conversationId, worldId, profileId), 'messages.json')
+}
+
+// --- Artifact paths ---
+
+export function artifactsDir(
+  dataRoot: string,
+  conversationId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(conversationDir(dataRoot, conversationId, worldId, profileId), 'artifacts')
+}
+
+export function artifactPath(
+  dataRoot: string,
+  conversationId: string,
+  artifactId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(artifactsDir(dataRoot, conversationId, worldId, profileId), `${artifactId}.json`)
+}

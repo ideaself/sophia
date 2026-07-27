@@ -15,7 +15,7 @@ import {
 
 const TEST_ID = `sophia-init-${randomUUID()}`
 const tempDir = join(tmpdir(), TEST_ID)
-const projectsRoot = join('D:', 'Sophia-Local')
+const projectsRoot = join(__dirname, '..', '..', '..')
 const referenceDir = join(projectsRoot, 'reference', '角色设定', 'candidates')
 const worldPresetPath = join(projectsRoot, 'reference', 'world_preset.md')
 
