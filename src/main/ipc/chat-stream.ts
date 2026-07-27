@@ -28,7 +28,7 @@ import {
 } from '../../shared/channel-names'
 
 // ---------------------------------------------------------------
-// Known DeepSeek model identifiers
+// Known DeepSeek model identifiers (fallback defaults)
 // ---------------------------------------------------------------
 
 export const DEEPSEEK_MODELS = ['deepseek-v4-pro', 'deepseek-v4-flash'] as const
@@ -51,8 +51,8 @@ export const ChatStreamStartInputSchema = z.object({
     .min(1, 'At least one message is required')
     .max(200, 'Maximum 200 messages per request'),
   model: z
-    .enum(DEEPSEEK_MODELS)
-    .optional()
+    .string()
+    .min(1)
     .default('deepseek-v4-pro')
 }).refine(
   (input) => {

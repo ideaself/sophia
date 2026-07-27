@@ -33,7 +33,7 @@ const WORLD_ID = 'world_default'
 
 function App(): React.ReactElement {
   const [view, setView] = useState<AppView>('settings')
-  const [hasKey, setHasKey] = useState<boolean | null>(null)
+
   const [companions, setCompanions] = useState<Companion[]>([])
   const [textbooks, setTextbooks] = useState<Textbook[]>([])
   const [selectedCompanion, setSelectedCompanion] = useState<Companion | null>(null)
@@ -48,7 +48,6 @@ function App(): React.ReactElement {
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    window.sophia.settings.hasDeepSeekKey().then(setHasKey)
     window.sophia.companions.list().then(setCompanions)
     window.sophia.data.listTextbooks(WORLD_ID).then(setTextbooks)
   }, [])
@@ -184,15 +183,6 @@ function App(): React.ReactElement {
             onClick={() => setView('history')}
           />
         </ul>
-        <div className="border-t border-gray-700 p-3 text-xs text-gray-500">
-          {hasKey === null ? (
-            <span>检查 API Key...</span>
-          ) : hasKey ? (
-            <span className="text-green-400">● API Key 已配置</span>
-          ) : (
-            <span className="text-yellow-400">● 需要 API Key</span>
-          )}
-        </div>
 
         {/* Classroom dropdown */}
         {showClassroomDropdown && (
@@ -240,7 +230,7 @@ function App(): React.ReactElement {
 
       {/* Main content */}
       <main className="flex-1 overflow-auto">
-        {view === 'settings' && <SettingsView onKeySet={() => setHasKey(true)} />}
+        {view === 'settings' && <SettingsView />}
         {view === 'companions' && (
           <CompanionsView
             companions={companions}
@@ -329,94 +319,401 @@ function NavItem({
 
 // ─── Settings View ───────────────────────────────────────────────
 
-function SettingsView({ onKeySet }: { onKeySet: () => void }): React.ReactElement {
-  const [key, setKey] = useState('')
-  const [saving, setSaving] = useState(false)
+function SettingsView(): React.ReactElement {
+  const [providers, setProviders] = useState<ProviderDTO[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [hasKey, setHasKey] = useState(false)
 
-  useEffect(() => {
-    window.sophia.settings.hasDeepSeekKey().then(setHasKey)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingProvider, setEditingProvider] = useState<ProviderDTO | null>(null)
+  const [form, setForm] = useState({
+    name: '',
+    type: 'custom' as string,
+    baseUrl: '',
+    apiKey: '',
+    models: [] as string[],
+    selectedModel: ''
+  })
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+
+  const loadProviders = useCallback(async () => {
+    const list = await window.sophia.providers.list()
+    setProviders(list)
+    const active = await window.sophia.providers.getActive()
+    setActiveId(active?.id ?? null)
   }, [])
 
-  const handleSave = async () => {
-    if (!key.trim()) {
-      setError('API Key 不能为空')
-      return
+  useEffect(() => {
+    loadProviders()
+  }, [loadProviders])
+
+  const openAddModal = () => {
+    setEditingProvider(null)
+    setForm({ name: '', type: 'custom', baseUrl: 'https://api.deepseek.com/v1', apiKey: '', models: [], selectedModel: '' })
+    setTestResult(null)
+    setModalOpen(true)
+  }
+
+  const openEditModal = async (p: ProviderDTO) => {
+    setEditingProvider(p)
+    setForm({
+      name: p.name,
+      type: p.type,
+      baseUrl: p.baseUrl,
+      apiKey: '',
+      models: p.models,
+      selectedModel: p.selectedModel
+    })
+    setTestResult(null)
+    setModalOpen(true)
+  }
+
+  const handleFetchModels = async () => {
+    setFetchingModels(true)
+    setTestResult(null)
+    try {
+      const key = form.apiKey || '__skip__'
+      const result = await window.sophia.providers.testConnection(form.baseUrl, key)
+      if (result.success && result.models && result.models.length > 0) {
+        setForm((f) => ({ ...f, models: result.models!, selectedModel: result.models![0] }))
+        setTestResult({ ok: true, msg: `Found ${result.models.length} models` })
+      } else {
+        setTestResult({ ok: false, msg: result.error || result.message || 'No models found' })
+      }
+    } catch (e) {
+      setTestResult({ ok: false, msg: e instanceof Error ? e.message : 'Failed' })
+    } finally {
+      setFetchingModels(false)
     }
+  }
+
+  const handleTestConnection = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const key = form.apiKey || '__skip__'
+      const result = await window.sophia.providers.testConnection(form.baseUrl, key)
+      if (result.success) {
+        setTestResult({ ok: true, msg: result.message || 'Connection successful' })
+        if (result.models && result.models.length > 0) {
+          setForm((f) => ({ ...f, models: result.models!, selectedModel: result.models![0] }))
+        }
+      } else {
+        setTestResult({ ok: false, msg: result.error || 'Connection failed' })
+      }
+    } catch (e) {
+      setTestResult({ ok: false, msg: e instanceof Error ? e.message : 'Failed' })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const handleSave = async () => {
+    if (!form.name.trim() || !form.baseUrl.trim()) return
     setSaving(true)
     setError(null)
     try {
-      await window.sophia.settings.setDeepSeekKey(key.trim())
-      setKey('')
-      setHasKey(true)
-      onKeySet()
+      if (editingProvider) {
+        await window.sophia.providers.update(editingProvider.id, {
+          name: form.name.trim(),
+          type: form.type,
+          baseUrl: form.baseUrl.trim(),
+          models: form.models,
+          selectedModel: form.selectedModel
+        })
+        if (form.apiKey) {
+          await window.sophia.providers.setApiKey(editingProvider.id, form.apiKey)
+        }
+      } else {
+        await window.sophia.providers.create({
+          name: form.name.trim(),
+          type: form.type,
+          baseUrl: form.baseUrl.trim(),
+          apiKey: form.apiKey,
+          models: form.models,
+          selectedModel: form.selectedModel
+        })
+      }
+      setModalOpen(false)
+      await loadProviders()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败')
+      setError(e instanceof Error ? e.message : 'Save failed')
     } finally {
       setSaving(false)
     }
   }
 
-  const handleDelete = async () => {
-    try {
-      await window.sophia.settings.deleteDeepSeekKey()
-      setHasKey(false)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '删除失败')
-    }
+  const handleSetActive = async (id: string) => {
+    await window.sophia.providers.setActive(id)
+    await loadProviders()
+  }
+
+  const handleDelete = async (id: string) => {
+    await window.sophia.providers.delete(id)
+    setDeleteConfirmId(null)
+    await loadProviders()
+  }
+
+  const PRESET_URLS: Record<string, string> = {
+    deepseek: 'https://api.deepseek.com/v1',
+    mimo: 'https://api.mimo.com/v1',
+    custom: ''
   }
 
   return (
-    <div className="mx-auto max-w-xl p-8">
-      <h2 className="mb-6 text-2xl font-bold">设置</h2>
+    <div className="mx-auto max-w-2xl p-8">
+      <h2 className="mb-6 text-2xl font-bold">API Provider Settings</h2>
 
-      <div className="rounded-lg border border-gray-700 bg-gray-800 p-6">
-        <h3 className="mb-4 text-lg font-semibold">DeepSeek API Key</h3>
+      {error && (
+        <div className="mb-4 rounded border border-red-800 bg-red-900/30 px-4 py-2 text-sm text-red-300">
+          {error}
+        </div>
+      )}
 
-        {hasKey && (
-          <div className="mb-4 rounded border border-green-800 bg-green-900/30 px-4 py-2 text-sm text-green-300">
-            API Key 已配置。您可以随时更新或删除它。
+      <div className="space-y-3 mb-6">
+        {providers.map((p) => (
+          <div
+            key={p.id}
+            className={`rounded-lg border p-4 transition-colors ${
+              p.isActive
+                ? 'border-blue-500 bg-blue-900/20'
+                : 'border-gray-700 bg-gray-800'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-medium">{p.name}</h4>
+                  {p.isActive && (
+                    <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-medium text-white">
+                      ACTIVE
+                    </span>
+                  )}
+                  <span className="rounded bg-gray-700 px-1.5 py-0.5 text-[10px] text-gray-400">
+                    {p.type}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-gray-500 truncate">{p.baseUrl}</p>
+                <p className="mt-0.5 text-xs text-gray-400">
+                  Model: {p.selectedModel || <span className="text-gray-600">none selected</span>}
+                  {p.models.length > 0 && (
+                    <span className="text-gray-600"> ({p.models.length} available)</span>
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 ml-4">
+                {!p.isActive && (
+                  <button
+                    onClick={() => handleSetActive(p.id)}
+                    className="rounded border border-blue-700 px-3 py-1 text-xs text-blue-400 hover:bg-blue-900/30"
+                  >
+                    Set Active
+                  </button>
+                )}
+                <button
+                  onClick={() => openEditModal(p)}
+                  className="rounded border border-gray-600 px-3 py-1 text-xs text-gray-300 hover:bg-gray-700"
+                >
+                  Edit
+                </button>
+                {deleteConfirmId === p.id ? (
+                  <>
+                    <button
+                      onClick={() => handleDelete(p.id)}
+                      className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-500"
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      onClick={() => setDeleteConfirmId(null)}
+                      className="rounded border border-gray-600 px-3 py-1 text-xs text-gray-400 hover:bg-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setDeleteConfirmId(p.id)}
+                    className="rounded border border-gray-600 px-3 py-1 text-xs text-red-400 hover:bg-red-900/30"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {providers.length === 0 && (
+          <div className="rounded-lg border border-dashed border-gray-700 p-8 text-center">
+            <p className="text-gray-500 mb-3">No API providers configured</p>
+            <p className="text-xs text-gray-600">Add a provider to start using the AI classroom</p>
           </div>
         )}
+      </div>
 
-        <div className="space-y-3">
-          <input
-            type="password"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            placeholder="sk-..."
-            className="w-full rounded border border-gray-600 bg-gray-900 px-4 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
-          />
+      <button
+        onClick={openAddModal}
+        className="rounded-lg border border-dashed border-gray-600 w-full px-4 py-3 text-sm text-gray-400 hover:border-blue-500 hover:text-blue-400 transition-colors"
+      >
+        + Add Provider
+      </button>
 
-          {error && (
-            <p className="text-sm text-red-400">{error}</p>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-            >
-              {saving ? '保存中...' : '保存'}
-            </button>
-
-            {hasKey && (
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="flex w-[520px] flex-col rounded-lg border border-gray-600 bg-gray-900 shadow-xl max-h-[85vh]">
+            <div className="flex items-center justify-between border-b border-gray-700 px-6 py-4">
+              <h3 className="text-lg font-semibold">
+                {editingProvider ? 'Edit Provider' : 'Add Provider'}
+              </h3>
               <button
-                onClick={handleDelete}
-                className="rounded border border-red-700 px-4 py-2 text-sm text-red-400 hover:bg-red-900/30"
+                onClick={() => setModalOpen(false)}
+                className="rounded p-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
               >
-                删除 Key
+                x
               </button>
-            )}
+            </div>
+            <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-400">Name</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="My Provider"
+                  className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-400">Type</label>
+                <div className="flex gap-2">
+                  {(['deepseek', 'mimo', 'custom'] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() =>
+                        setForm((f) => ({
+                          ...f,
+                          type: t,
+                          baseUrl: PRESET_URLS[t] || f.baseUrl
+                        }))
+                      }
+                      className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                        form.type === t
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-gray-600 text-gray-400 hover:bg-gray-700'
+                      }`}
+                    >
+                      {t === 'deepseek' ? 'DeepSeek' : t === 'mimo' ? 'MiMo' : 'Custom'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-400">Base URL</label>
+                <input
+                  type="text"
+                  value={form.baseUrl}
+                  onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
+                  placeholder="https://api.deepseek.com/v1"
+                  className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-400">
+                  API Key {editingProvider && '(leave blank to keep current)'}
+                </label>
+                <input
+                  type="password"
+                  value={form.apiKey}
+                  onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
+                  placeholder="sk-..."
+                  className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleTestConnection}
+                  disabled={testing || !form.baseUrl}
+                  className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50"
+                >
+                  {testing ? 'Testing...' : 'Test Connection'}
+                </button>
+                <button
+                  onClick={handleFetchModels}
+                  disabled={fetchingModels || !form.baseUrl}
+                  className="rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50"
+                >
+                  {fetchingModels ? 'Fetching...' : 'Fetch Models'}
+                </button>
+              </div>
+              {testResult && (
+                <p className={`text-xs ${testResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+                  {testResult.ok ? 'OK: ' : 'Error: '}{testResult.msg}
+                </p>
+              )}
+
+              {form.models.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-400">
+                    Model ({form.models.length} available)
+                  </label>
+                  <select
+                    value={form.selectedModel}
+                    onChange={(e) => setForm((f) => ({ ...f, selectedModel: e.target.value }))}
+                    className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                  >
+                    {form.models.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {form.models.length === 0 && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-400">
+                    Model (manual entry)
+                  </label>
+                  <input
+                    type="text"
+                    value={form.selectedModel}
+                    onChange={(e) => setForm((f) => ({ ...f, selectedModel: e.target.value }))}
+                    placeholder="e.g. deepseek-v4-pro"
+                    className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-gray-700 px-6 py-4">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="rounded border border-gray-600 px-4 py-2 text-sm hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving || !form.name.trim() || !form.baseUrl.trim()}
+                className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : editingProvider ? 'Update' : 'Create'}
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        <p className="mt-4 text-xs text-gray-500">
-          API Key 仅保存在本地，使用系统加密存储。不会上传到任何服务器。
-        </p>
-      </div>
+      <p className="mt-6 text-xs text-gray-500">
+        API keys are stored locally with system encryption. They are never uploaded or shared.
+      </p>
     </div>
   )
 }

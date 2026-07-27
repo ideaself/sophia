@@ -2,6 +2,7 @@ import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { ConversationStore } from '../storage/conversation-store'
 import { TextbookStore } from '../storage/textbook-store'
 import { ArtifactStore } from '../storage/artifact-store'
+import type { ProviderStore } from '../storage/provider-store'
 import { generateArtifacts } from '../artifacts/generate'
 import { extractText } from '../parsers'
 import {
@@ -16,7 +17,8 @@ import {
 import type { WorldId } from '../../shared/types/ids'
 
 export function registerConversationIpc(
-  dataRoot: string
+  dataRoot: string,
+  providerStore?: ProviderStore
 ): { conversationStore: ConversationStore; textbookStore: TextbookStore; artifactStore: ArtifactStore } {
   const conversationStore = new ConversationStore(dataRoot)
   const textbookStore = new TextbookStore(dataRoot)
@@ -62,7 +64,7 @@ export function registerConversationIpc(
     return conversationStore.updateTitle(conversationId, worldId, title)
   })
 
-  ipcMain.handle('conversation:end', async (_event, input: unknown) => {
+    ipcMain.handle('conversation:end', async (_event, input: unknown) => {
     const { conversationId, worldId = 'world_default' } = input as { conversationId: string; worldId?: string }
     const success = await conversationStore.endConversation(conversationId, worldId)
     if (!success) return { success: false, artifacts: 0 }
@@ -70,22 +72,25 @@ export function registerConversationIpc(
     // Generate artifacts automatically (best-effort)
     let artifactCount = 0
     try {
-      // Get API key from keychain
-      const { safeStorage } = require('electron') as typeof import('electron')
-      const { readFileSync } = require('node:fs') as typeof import('node:fs')
-      const { join } = require('node:path') as typeof import('node:path')
-      const keyPath = join(dataRoot, '.deepseek-key.enc')
       let apiKey = ''
-      try {
-        const encrypted = readFileSync(keyPath)
-        apiKey = safeStorage.decryptString(encrypted)
-      } catch {
-        // No key stored
+      let model = 'deepseek-v4-flash'
+      let baseUrl = 'https://api.deepseek.com'
+
+      if (providerStore) {
+        const active = await providerStore.getActive()
+        if (active) {
+          const key = await providerStore.readApiKey(active.id)
+          if (key) {
+            apiKey = key
+            model = active.selectedModel || model
+            baseUrl = active.baseUrl || baseUrl
+          }
+        }
       }
 
       if (apiKey) {
         const messages = await conversationStore.getMessages(conversationId, worldId)
-        const results = await generateArtifacts(messages, apiKey)
+        const results = await generateArtifacts(messages, { apiKey, model, baseUrl })
         for (const result of results) {
           await artifactStore.create(conversationId as any, worldId as WorldId, result.type, result.content)
           artifactCount++
@@ -99,13 +104,31 @@ export function registerConversationIpc(
   })
 
   ipcMain.handle('artifact:generate', async (_event, input: unknown) => {
-    const { conversationId, worldId = 'world_default', apiKey } = input as {
+    const { conversationId, worldId = 'world_default' } = input as {
       conversationId: string
       worldId?: string
-      apiKey: string
     }
+
+    let apiKey = ''
+    let model = 'deepseek-v4-flash'
+    let baseUrl = 'https://api.deepseek.com'
+
+    if (providerStore) {
+      const active = await providerStore.getActive()
+      if (active) {
+        const key = await providerStore.readApiKey(active.id)
+        if (key) {
+          apiKey = key
+          model = active.selectedModel || model
+          baseUrl = active.baseUrl || baseUrl
+        }
+      }
+    }
+
+    if (!apiKey) return { count: 0, types: [] as string[] }
+
     const messages = await conversationStore.getMessages(conversationId, worldId)
-    const results = await generateArtifacts(messages, apiKey)
+    const results = await generateArtifacts(messages, { apiKey, model, baseUrl })
 
     // Save generated artifacts
     for (const result of results) {

@@ -44,18 +44,23 @@ export function createDeepSeekStreamAdapter(options?: {
   endpoint?: string
   fetchImpl?: typeof fetch
 }): DeepSeekStreamAdapter {
-  const endpoint = options?.endpoint ?? DEFAULT_ENDPOINT
+  const defaultEndpoint = options?.endpoint ?? DEFAULT_ENDPOINT
+  const fetchImpl = options?.fetchImpl ?? fetch
 
-  if (endpoint.startsWith('http://')) {
+  if (defaultEndpoint.startsWith('http://')) {
     throw new Error('Endpoint must use HTTPS')
   }
-
-  const fetchImpl = options?.fetchImpl ?? fetch
 
   return {
     streamChat: async function* (
       params: DeepSeekStreamParams
     ): AsyncIterable<DeepSeekStreamChunk> {
+      // Use per-request endpoint override if provided
+      let endpoint = defaultEndpoint
+      if (params._endpoint) {
+        const base = params._endpoint.replace(/\/$/, '')
+        endpoint = base.endsWith('/chat/completions') ? base : `${base}/chat/completions`
+      }
       const response = await fetchImpl(endpoint, {
         method: 'POST',
         headers: {

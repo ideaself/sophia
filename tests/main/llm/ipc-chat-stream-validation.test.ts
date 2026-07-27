@@ -120,12 +120,12 @@ describe('ChatStreamStartInputSchema — model validation', () => {
     expect(result.data!.model).toBe('deepseek-v4-flash')
   })
 
-  it('rejects unknown model', () => {
+  it('accepts any non-empty model string', () => {
     const result = ChatStreamStartInputSchema.safeParse({
       messages: [{ role: 'user', content: 'Hi' }],
       model: 'gpt-4'
     })
-    expect(result.success).toBe(false)
+    expect(result.success).toBe(true)
   })
 
   it('rejects empty model string', () => {

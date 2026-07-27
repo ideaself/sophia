@@ -8,13 +8,16 @@ import { DeepSeekClient } from '../llm/deepseek-client'
 import { createDeepSeekHttpAdapter } from '../llm/deepseek-http-adapter'
 import type { Message } from '../../shared/schemas/message'
 import { ArtifactType } from '../../shared/types/ids'
-import type { DeepSeekModel } from '../llm/types'
-
-const ARTIFACT_GENERATION_MODEL: DeepSeekModel = 'deepseek-v4-flash'
 
 interface ArtifactResult {
   type: ArtifactType
   content: string
+}
+
+export interface ArtifactProviderConfig {
+  apiKey: string
+  model: string
+  baseUrl: string
 }
 
 /**
@@ -26,10 +29,11 @@ interface ArtifactResult {
  */
 export async function generateArtifacts(
   messages: Message[],
-  apiKey: string
+  config: ArtifactProviderConfig
 ): Promise<ArtifactResult[]> {
-  const adapter = createDeepSeekHttpAdapter()
-  const client = new DeepSeekClient(apiKey, adapter, ARTIFACT_GENERATION_MODEL)
+  const endpoint = config.baseUrl.replace(/\/$/, '') + '/chat/completions'
+  const adapter = createDeepSeekHttpAdapter({ endpoint })
+  const client = new DeepSeekClient(config.apiKey, adapter, config.model as any)
   const results: ArtifactResult[] = []
 
   // Build conversation transcript for context

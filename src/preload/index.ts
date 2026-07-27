@@ -182,6 +182,43 @@ export interface DialogAPI {
 }
 
 // ---------------------------------------------------------------
+// Provider API
+// ---------------------------------------------------------------
+
+export interface ProviderDTO {
+  id: string
+  name: string
+  type: string
+  baseUrl: string
+  models: string[]
+  selectedModel: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProviderAPI {
+  list: () => Promise<ProviderDTO[]>
+  get: (id: string) => Promise<ProviderDTO | null>
+  getActive: () => Promise<ProviderDTO | null>
+  create: (input: {
+    name: string
+    type: string
+    baseUrl: string
+    apiKey: string
+    models?: string[]
+    selectedModel?: string
+  }) => Promise<ProviderDTO>
+  update: (id: string, updates: Record<string, unknown>) => Promise<ProviderDTO | null>
+  delete: (id: string) => Promise<boolean>
+  setActive: (id: string) => Promise<ProviderDTO | null>
+  setApiKey: (id: string, apiKey: string) => Promise<void>
+  hasApiKey: (id: string) => Promise<boolean>
+  fetchModels: (baseUrl: string, apiKey: string) => Promise<string[]>
+  testConnection: (baseUrl: string, apiKey: string) => Promise<{ success: boolean; models?: string[]; message?: string; error?: string }>
+}
+
+// ---------------------------------------------------------------
 // SophiaAPI
 // ---------------------------------------------------------------
 
@@ -193,6 +230,7 @@ export interface SophiaAPI {
   data: DataAPI
   companions: CompanionAPI
   dialog: DialogAPI
+  providers: ProviderAPI
 }
 
 // ---------------------------------------------------------------
@@ -314,6 +352,19 @@ const sophia: SophiaAPI = {
   },
   dialog: {
     openFile: (options) => ipcRenderer.invoke('dialog:openFile', options)
+  },
+  providers: {
+    list: () => ipcRenderer.invoke('providers:list'),
+    get: (id) => ipcRenderer.invoke('providers:get', { id }),
+    getActive: () => ipcRenderer.invoke('providers:get-active'),
+    create: (input) => ipcRenderer.invoke('providers:create', input),
+    update: (id, updates) => ipcRenderer.invoke('providers:update', { id, ...updates }),
+    delete: (id) => ipcRenderer.invoke('providers:delete', { id }),
+    setActive: (id) => ipcRenderer.invoke('providers:set-active', { id }),
+    setApiKey: (id, apiKey) => ipcRenderer.invoke('providers:set-api-key', { id, apiKey }),
+    hasApiKey: (id) => ipcRenderer.invoke('providers:has-api-key', { id }),
+    fetchModels: (baseUrl, apiKey) => ipcRenderer.invoke('providers:fetch-models', { baseUrl, apiKey }),
+    testConnection: (baseUrl, apiKey) => ipcRenderer.invoke('providers:test-connection', { baseUrl, apiKey })
   }
 }
 

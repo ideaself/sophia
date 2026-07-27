@@ -73,6 +73,8 @@ export interface DeepSeekStreamParams {
   model: string
   messages: DeepSeekChatMessage[]
   apiKey: string
+  /** Override the default endpoint URL (injected by the IPC handler). */
+  _endpoint?: string
   /** AbortSignal for true cancellation. The adapter MUST observe this. */
   signal?: AbortSignal
 }

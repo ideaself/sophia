@@ -5,6 +5,7 @@ import { registerChatStreamIpc } from './ipc/chat-stream'
 import { registerConversationIpc } from './ipc/data'
 import { registerCompanionIpc } from './ipc/companions'
 import { registerChatPromptIpc } from './ipc/chat-prompt'
+import { registerProviderIpc } from './ipc/providers'
 import { initDataDir } from './storage/initialize'
 import { resolveReferencePaths } from './storage/resolve-paths'
 import { createDeepSeekStreamAdapter } from './llm/deepseek-stream-adapter'
@@ -53,21 +54,33 @@ app.whenReady().then(async () => {
   ipcMain.handle('app:get-version', () => app.getVersion())
   ipcMain.handle('app:get-platform', () => process.platform)
   const keyStore = registerSettingsIpc(dataRoot, safeStorage)
-  registerConversationIpc(dataRoot)
+  const providerStore = registerProviderIpc(dataRoot, safeStorage)
+  registerConversationIpc(dataRoot, providerStore)
   registerCompanionIpc(dataRoot)
   registerChatPromptIpc(dataRoot)
 
   createWindow()
 
-  // Register chat streaming IPC (needs window reference + key store)
+  // Register chat streaming IPC (needs window reference + provider store)
   registerChatStreamIpc(
     () => {
       const win = BrowserWindow.getAllWindows()[0]
       if (!win) throw new Error('No BrowserWindow available')
       return win.webContents
     },
-    (params) => createDeepSeekStreamAdapter().streamChat(params),
-    () => keyStore.readKey()
+    (params) => {
+      // Use active provider's endpoint if available, else default
+      return createDeepSeekStreamAdapter({ endpoint: params._endpoint }).streamChat(params)
+    },
+    async () => {
+      // Try active provider first, fallback to legacy key store
+      const activeProvider = await providerStore.getActive()
+      if (activeProvider) {
+        const key = await providerStore.readApiKey(activeProvider.id)
+        if (key) return key
+      }
+      return keyStore.readKey()
+    }
   )
 
   app.on('activate', () => {

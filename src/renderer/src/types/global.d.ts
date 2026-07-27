@@ -138,6 +138,39 @@ declare global {
     }) => Promise<{ canceled: boolean; filePaths: string[] }>
   }
 
+  interface ProviderDTO {
+    id: string
+    name: string
+    type: string
+    baseUrl: string
+    models: string[]
+    selectedModel: string
+    isActive: boolean
+    createdAt: string
+    updatedAt: string
+  }
+
+  interface ProviderAPI {
+    list: () => Promise<ProviderDTO[]>
+    get: (id: string) => Promise<ProviderDTO | null>
+    getActive: () => Promise<ProviderDTO | null>
+    create: (input: {
+      name: string
+      type: string
+      baseUrl: string
+      apiKey: string
+      models?: string[]
+      selectedModel?: string
+    }) => Promise<ProviderDTO>
+    update: (id: string, updates: Partial<Pick<ProviderDTO, 'name' | 'type' | 'baseUrl' | 'models' | 'selectedModel' | 'isActive'>>) => Promise<ProviderDTO | null>
+    delete: (id: string) => Promise<boolean>
+    setActive: (id: string) => Promise<ProviderDTO | null>
+    setApiKey: (id: string, apiKey: string) => Promise<void>
+    hasApiKey: (id: string) => Promise<boolean>
+    fetchModels: (baseUrl: string, apiKey: string) => Promise<string[]>
+    testConnection: (baseUrl: string, apiKey: string) => Promise<{ success: boolean; models?: string[]; message?: string; error?: string }>
+  }
+
   interface SophiaAPI {
     getVersion: () => Promise<string>
     getPlatform: () => Promise<string>
@@ -146,6 +179,7 @@ declare global {
     data: DataAPI
     companions: CompanionAPI
     dialog: DialogAPI
+    providers: ProviderAPI
   }
 
   interface Window {
