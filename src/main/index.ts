@@ -15,7 +15,7 @@ function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    show: false,
+    show: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -24,8 +24,16 @@ function createWindow(): void {
     }
   })
 
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error(`Renderer failed to load: ${errorCode} - ${errorDescription}`)
+  })
+
+  mainWindow.webContents.on('crashed', () => {
+    console.error('Renderer process crashed')
+  })
+
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow.focus()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -41,15 +49,21 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
-  const dataRoot = join(app.getPath('userData'), 'Sophia-Local')
+  const dataRoot = join(app.getPath('userData'), 'SophiaLocal')
   const { candidatesDir, worldPresetPath } = resolveReferencePaths(app.getAppPath())
 
   // Initialize local data layout (idempotent — safe to call on every start)
-  await initDataDir({
-    dataRoot,
-    referenceDir: candidatesDir,
-    worldPresetPath
-  })
+  try {
+    await initDataDir({
+      dataRoot,
+      referenceDir: candidatesDir,
+      worldPresetPath
+    })
+  } catch (err) {
+    // Don't let a data-init failure abort startup silently — an unhandled
+    // rejection here would skip createWindow() and leave a zombie process.
+    console.error('Failed to initialize data directory:', err)
+  }
 
   // Register IPC handlers that don't need the window
   ipcMain.handle('app:get-version', () => app.getVersion())

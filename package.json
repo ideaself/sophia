@@ -1,11 +1,37 @@
 {
   "name": "sophia",
   "version": "0.1.0",
-  "description": "Sophia-Local: AI Socratic learning companion",
+  "description": "SophiaLocal: AI Socratic learning companion",
   "main": "./out/main/index.js",
+  "build": {
+    "appId": "com.sophia.sophialocal",
+    "productName": "SophiaLocal",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "reference/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "SophiaLocal"
+    }
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:win": "npm run build && electron-builder --win",
     "preview": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
@@ -36,6 +62,7 @@
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
     "electron": "^43.0.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^3.1.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^4.1.6",

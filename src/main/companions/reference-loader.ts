@@ -1,4 +1,4 @@
-import { readdir, readFile, copyFile, writeFile, access, mkdir } from 'node:fs/promises'
+import { readdir, readFile, copyFile, writeFile, mkdir } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import type { Companion } from '../../shared/schemas/companion'
 import { CompanionSchema } from '../../shared/schemas/companion'
@@ -169,8 +169,9 @@ export async function loadReferenceCompanions(
 ): Promise<LoadCompanionsResult> {
   const { candidatesDir, companionDir } = options
 
-  // Verify candidates directory exists
-  await access(candidatesDir)
+  // Note: no fs.access() pre-check here — Electron's asar fs layer reports
+  // ENOENT for directories even when they exist (files work fine). The
+  // readdir below already throws ENOENT if the directory is truly missing.
 
   // Ensure companion directory exists
   await mkdir(companionDir, { recursive: true })
