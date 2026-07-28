@@ -1,6 +1,6 @@
-import { readFile, writeFile, mkdir, rm, stat } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, rm, stat, readdir, rmdir } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
-import { dirname, join, extname } from 'node:path'
+import { dirname, join, extname, resolve, sep } from 'node:path'
 import { SyncWebDavClient, type WebDavConfig, type WebDavRemoteFile } from './webdav-client'
 import { collectSyncableFiles, isSyncableRelPath, type SyncableFile } from './file-walker'
 import { runPool } from './async-pool'
@@ -277,6 +277,53 @@ export class SyncManager {
     await saveSyncState(this.dataRoot, state)
   }
 
+  /**
+   * Remove remote directories left empty by `deletedRemotePaths`, deepest
+   * first. WebDAV DELETE on a non-empty collection may delete its contents
+   * recursively, so emptiness is verified with a fresh listing first.
+   */
+  private async pruneEmptyRemoteDirs(
+    client: SyncWebDavClient,
+    deletedRemotePaths: string[]
+  ): Promise<void> {
+    const candidates = new Set<string>()
+    for (const p of deletedRemotePaths) {
+      let dir = dirname(p).replace(/\\/g, '/')
+      // REMOTE_PREFIX itself is never a candidate
+      while (dir.startsWith(REMOTE_PREFIX + '/')) {
+        candidates.add(dir)
+        dir = dirname(dir)
+      }
+    }
+    const deepestFirst = [...candidates].sort((a, b) => b.length - a.length)
+    for (const dir of deepestFirst) {
+      try {
+        const entries = await client.listFiles(dir)
+        if (entries.length === 0) await client.deleteFile(dir)
+      } catch {
+        // Best effort — a leftover empty directory is harmless
+      }
+    }
+  }
+
+  /** Remove local directories left empty by `deletedLocalPaths`, up to dataRoot. */
+  private async pruneEmptyLocalDirs(deletedLocalPaths: string[]): Promise<void> {
+    const root = resolve(this.dataRoot)
+    const starts = new Set(deletedLocalPaths.map((p) => dirname(p)))
+    for (const start of starts) {
+      let dir = start
+      while (dir !== root && dir.startsWith(root + sep)) {
+        try {
+          if ((await readdir(dir)).length > 0) break
+          await rmdir(dir)
+        } catch {
+          break // already gone or unreadable — nothing more to prune here
+        }
+        dir = dirname(dir)
+      }
+    }
+  }
+
   async planPush(config: WebDavConfig): Promise<SyncPlanSummary> {
     const plan = await this.buildPushPlan(this.createClient(config))
     return {
@@ -348,6 +395,8 @@ export class SyncManager {
       }
     })
 
+    await this.pruneEmptyRemoteDirs(client, plan.remoteDeletions.map((d) => d.remotePath))
+
     await this.rebuildStateAfterPush(client)
 
     return { success: errors.length === 0, transferred, skipped: plan.skipped, deleted, errors }
@@ -396,6 +445,8 @@ export class SyncManager {
         errors.push(`${del.relPath}: ${e instanceof Error ? e.message : 'unknown error'}`)
       }
     })
+
+    await this.pruneEmptyLocalDirs(plan.localDeletions.map((d) => d.localPath))
 
     await this.rebuildStateAfterPull(client)
 

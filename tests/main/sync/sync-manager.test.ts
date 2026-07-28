@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
 import { SyncManager, type SyncProgress } from '../../../src/main/sync/sync-manager'
 import { saveSyncState, type SyncStateEntry } from '../../../src/main/sync/sync-state'
-import type { WebDavConfig, WebDavRemoteFile } from '../../../src/main/sync/webdav-client'
+import type { WebDavConfig, WebDavFile, WebDavRemoteFile } from '../../../src/main/sync/webdav-client'
 
 const CONFIG: WebDavConfig = { url: 'https://example.com/dav', username: 'u', password: 'p' }
 
@@ -42,8 +42,25 @@ class FakeClient {
     this.setRemote(path, buf)
   }
   async ensureDir(_dir: string): Promise<void> {}
+  async listFiles(dir: string): Promise<WebDavFile[]> {
+    const children = new Map<string, boolean>()
+    for (const key of this.remote.keys()) {
+      if (!key.startsWith(dir + '/')) continue
+      const rest = key.slice(dir.length + 1)
+      children.set(rest.split('/')[0], rest.includes('/'))
+    }
+    return [...children.entries()].map(([name, isDir]) => ({ path: `${dir}/${name}`, isDir }))
+  }
   async deleteFile(path: string): Promise<void> {
-    if (!this.remote.delete(path)) throw new Error(`no such remote file: ${path}`)
+    if (this.remote.delete(path)) {
+      this.deletions.push(path)
+      return
+    }
+    // Directory deletion: the real server would refuse (or worse, recurse)
+    // on a non-empty collection, so the fake does too.
+    for (const key of this.remote.keys()) {
+      if (key.startsWith(path + '/')) throw new Error(`directory not empty: ${path}`)
+    }
     this.deletions.push(path)
   }
   async listAllFilesDetailed(dir: string): Promise<WebDavRemoteFile[]> {
@@ -325,8 +342,85 @@ describe('SyncManager — sync-set filtering (junk from old versions)', () => {
 
     const result = await makeManager(dataRoot, fake).push(CONFIG)
 
-    expect(fake.deletions.sort()).toEqual([R('config/api.key.enc'), R('sync-state.json')].sort())
+    // The emptied /sophia/config directory is pruned along with the junk
+    expect(fake.deletions.sort()).toEqual(
+      [R('config/api.key.enc'), R('sync-state.json'), R('config')].sort()
+    )
     expect(result.deleted).toBe(2)
+  })
+})
+
+describe('SyncManager — empty directory pruning', () => {
+  it('pull removes local directories emptied by mirror deletion', async () => {
+    const md = 'profiles/p/worlds/w/textbooks/tb_1/source.md'
+    const pdf = 'profiles/p/worlds/w/textbooks/tb_1/source.pdf'
+    await touch(md, 'md')
+    await touch(pdf, 'pdf')
+    await touch('profiles/p/worlds/w/textbooks/tb_2/keep.md', 'keep') // never synced
+    const s1 = await localStat(md)
+    const s2 = await localStat(pdf)
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: {
+        [md]: entry(s1, { size: 2, lastmod: 'm1' }),
+        [pdf]: entry(s2, { size: 3, lastmod: 'm2' })
+      }
+    })
+    const fake = new FakeClient() // remote side lost both files
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.deleted).toBe(2)
+    // tb_1 is gone entirely — no empty husk left behind
+    await expect(
+      access(join(dataRoot, 'profiles', 'p', 'worlds', 'w', 'textbooks', 'tb_1'))
+    ).rejects.toThrow()
+    // non-empty directories and dataRoot itself survive
+    expect(
+      await readFile(join(dataRoot, 'profiles', 'p', 'worlds', 'w', 'textbooks', 'tb_2', 'keep.md'), 'utf-8')
+    ).toBe('keep')
+    await access(dataRoot)
+  })
+
+  it('push deletes remote directories emptied by mirror deletion, deepest first', async () => {
+    const md = 'profiles/p/worlds/w/textbooks/tb_1/source.md'
+    const pdf = 'profiles/p/worlds/w/textbooks/tb_1/source.pdf'
+    const fake = new FakeClient()
+    fake.setRemote(R(md), 'md', 'm1')
+    fake.setRemote(R(pdf), 'pdf', 'm2')
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: {
+        [md]: entry({ size: 2, mtimeMs: 1 }, { size: 2, lastmod: 'm1' }),
+        [pdf]: entry({ size: 3, mtimeMs: 2 }, { size: 3, lastmod: 'm2' })
+      }
+    })
+
+    const result = await makeManager(dataRoot, fake).push(CONFIG)
+
+    expect(result.deleted).toBe(2)
+    expect(fake.deletions).toContain(R('profiles/p/worlds/w/textbooks/tb_1'))
+    expect(fake.deletions).toContain(R('profiles'))
+    // the remote prefix itself is never a deletion candidate
+    expect(fake.deletions).not.toContain('/sophia')
+  })
+
+  it('push keeps remote directories that still contain files', async () => {
+    const fake = new FakeClient()
+    fake.setRemote(R('textbooks/a/source.md'), 'md', 'm1')
+    fake.setRemote(R('textbooks/b/keep.md'), 'keep', 'm2') // unknown, left alone
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: {
+        'textbooks/a/source.md': entry({ size: 2, mtimeMs: 1 }, { size: 2, lastmod: 'm1' })
+      }
+    })
+
+    const result = await makeManager(dataRoot, fake).push(CONFIG)
+
+    expect(result.deleted).toBe(1)
+    expect(fake.deletions).toContain(R('textbooks/a'))
+    expect(fake.deletions).not.toContain(R('textbooks'))
   })
 })
 
