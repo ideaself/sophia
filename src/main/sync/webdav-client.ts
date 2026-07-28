@@ -1,5 +1,7 @@
 import { createClient, type WebDAVClient } from 'webdav'
 import type { FileStat } from 'webdav'
+import { createWriteStream } from 'node:fs'
+import { Readable } from 'node:stream'
 
 export interface WebDavConfig {
   url: string
@@ -38,6 +40,59 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
 /** Per-request timeout for sync operations (large PDFs on slow servers need headroom). */
 const REQUEST_TIMEOUT_MS = 120_000
 
+/** Idle limit for streaming downloads: fails only when NO bytes arrive for this long. */
+const STREAM_IDLE_TIMEOUT_MS = 60_000
+
+/** Total limit for streamed uploads (no byte-level progress signal available). */
+const STREAM_UPLOAD_TIMEOUT_MS = 600_000
+
+/**
+ * Pipes a readable stream to a local file, failing only if the stream goes
+ * silent for `idleMs`. Unlike a total-duration timeout this lets large files
+ * take as long as they need while still surfacing genuinely stalled transfers.
+ */
+export function pipeToFileWithIdleTimeout(
+  readable: Readable,
+  localPath: string,
+  idleMs: number,
+  label: string
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const writable = createWriteStream(localPath)
+    let timer = setTimeout(onIdle, idleMs)
+
+    function resetTimer(): void {
+      clearTimeout(timer)
+      timer = setTimeout(onIdle, idleMs)
+    }
+
+    function onIdle(): void {
+      clearTimeout(timer)
+      readable.destroy()
+      writable.destroy()
+      reject(new Error(`Download idle for ${Math.round(idleMs / 1000)}s: ${label}`))
+    }
+
+    readable.on('data', resetTimer)
+    readable.on('error', (err) => {
+      clearTimeout(timer)
+      writable.destroy()
+      reject(err)
+    })
+    writable.on('error', (err) => {
+      clearTimeout(timer)
+      readable.destroy()
+      reject(err)
+    })
+    writable.on('finish', () => {
+      clearTimeout(timer)
+      resolve()
+    })
+
+    readable.pipe(writable)
+  })
+}
+
 export class SyncWebDavClient {
   private client: WebDAVClient
 
@@ -63,10 +118,11 @@ export class SyncWebDavClient {
     }
   }
 
-  async uploadFile(remotePath: string, content: string | Buffer): Promise<void> {
+  async uploadFile(remotePath: string, content: string | Buffer | Readable): Promise<void> {
+    const timeout = content instanceof Readable ? STREAM_UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS
     await withTimeout(
       this.client.putFileContents(remotePath, content, { overwrite: true }),
-      REQUEST_TIMEOUT_MS,
+      timeout,
       `PUT ${remotePath}`
     )
   }
@@ -89,6 +145,15 @@ export class SyncWebDavClient {
       `GET ${remotePath}`
     )
     return Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
+  }
+
+  /**
+   * Streams a remote file straight to disk. Large binaries (100MB+ PDFs)
+   * must not be buffered in memory or bound by a total-duration timeout.
+   */
+  async downloadToFile(remotePath: string, localPath: string): Promise<void> {
+    const stream = this.client.createReadStream(remotePath)
+    await pipeToFileWithIdleTimeout(stream, localPath, STREAM_IDLE_TIMEOUT_MS, `GET ${remotePath}`)
   }
 
   async listFiles(remoteDir: string): Promise<WebDavFile[]> {

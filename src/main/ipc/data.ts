@@ -18,7 +18,7 @@ import {
 import type { WorldId } from '../../shared/types/ids'
 
 /** In-app reader loads the whole file into memory — cap it. */
-const MAX_ORIGINAL_SIZE = 100 * 1024 * 1024
+const MAX_ORIGINAL_SIZE = 512 * 1024 * 1024
 
 export function registerConversationIpc(
   dataRoot: string,
@@ -242,7 +242,7 @@ export function registerConversationIpc(
     const result = await textbookStore.readOriginal(parsed.textbookId, worldId)
     if (!result) return null
     if (result.data.length > MAX_ORIGINAL_SIZE) {
-      throw new Error('原件超过 100MB，无法在应用内打开')
+      throw new Error('原件超过 512MB，无法在应用内打开')
     }
     return { data: result.data, fileName: result.fileName }
   })

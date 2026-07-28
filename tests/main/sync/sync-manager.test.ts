@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, rm, access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { Readable } from 'node:stream'
 import { SyncManager, type SyncProgress } from '../../../src/main/sync/sync-manager'
 import type { WebDavConfig } from '../../../src/main/sync/webdav-client'
 
@@ -9,14 +10,24 @@ const CONFIG: WebDavConfig = { url: 'https://example.com/dav', username: 'u', pa
 
 /** In-memory stand-in for SyncWebDavClient — records calls, serves canned data. */
 class FakeClient {
-  uploads: { path: string; content: string | Buffer }[] = []
+  uploads: { path: string; content: Buffer }[] = []
   ensuredDirs: string[] = []
   remoteFiles: string[] = []
   remoteContents = new Map<string, string>()
   remoteBuffers = new Map<string, Buffer>()
 
-  async uploadFile(path: string, content: string | Buffer): Promise<void> {
-    this.uploads.push({ path, content })
+  async uploadFile(path: string, content: string | Buffer | Readable): Promise<void> {
+    // Normalize to Buffer so assertions don't care whether a stream was passed
+    if (content instanceof Readable) {
+      const chunks: Buffer[] = []
+      for await (const chunk of content) chunks.push(Buffer.from(chunk))
+      this.uploads.push({ path, content: Buffer.concat(chunks) })
+    } else {
+      this.uploads.push({
+        path,
+        content: Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf-8')
+      })
+    }
   }
   async ensureDir(dir: string): Promise<void> {
     this.ensuredDirs.push(dir)
@@ -29,10 +40,10 @@ class FakeClient {
     if (content === undefined) throw new Error(`no such remote file: ${path}`)
     return content
   }
-  async downloadFileBuffer(path: string): Promise<Buffer> {
+  async downloadToFile(path: string, localPath: string): Promise<void> {
     const content = this.remoteBuffers.get(path)
     if (content === undefined) throw new Error(`no such remote file: ${path}`)
-    return content
+    await writeFile(localPath, content)
   }
 }
 

@@ -1,4 +1,5 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
 import { dirname, join, extname } from 'node:path'
 import { SyncWebDavClient, type WebDavConfig } from './webdav-client'
 import { collectSyncableFiles } from './file-walker'
@@ -66,8 +67,9 @@ export class SyncManager {
       onProgress?.({ direction: 'push', current: i + 1, total: files.length, file: file.relativePath })
       const remotePath = REMOTE_PREFIX + '/' + file.relativePath
       try {
+        // Binary files stream from disk instead of being buffered whole in memory
         const content = isBinaryFile(file.relativePath)
-          ? await readFile(file.localPath)
+          ? createReadStream(file.localPath)
           : await readFile(file.localPath, 'utf-8')
         // Ensure parent directory exists
         const parentDir = dirname(remotePath).replace(/\\/g, '/')
@@ -111,12 +113,14 @@ export class SyncManager {
       onProgress?.({ direction: 'pull', current: i + 1, total: remoteFiles.length, file: relPath })
 
       try {
-        const content = isBinaryFile(relPath)
-          ? await client.downloadFileBuffer(remotePath)
-          : await client.downloadFile(remotePath)
-        // Ensure local directory exists
         await mkdir(dirname(localPath), { recursive: true })
-        await writeFile(localPath, content)
+        if (isBinaryFile(relPath)) {
+          // Streamed straight to disk — survives multi-hundred-MB files
+          await client.downloadToFile(remotePath, localPath)
+        } else {
+          const content = await client.downloadFile(remotePath)
+          await writeFile(localPath, content, 'utf-8')
+        }
         count++
       } catch (e) {
         errors.push(`${relPath}: ${e instanceof Error ? e.message : 'unknown error'}`)
