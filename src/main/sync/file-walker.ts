@@ -2,8 +2,10 @@ import { readdir } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 
 const EXCLUDE_PATTERNS = [
-  /[/\\]config[/\\][^/\\]+\.key\.enc$/,
-  /[/\\]companions/
+  // Encrypted secrets (API keys, WebDAV password) never leave this machine.
+  // Note: relPath has no leading separator, so the anchor must allow
+  // string start; and not all secret files end in ".key.enc".
+  /(^|[/\\])config[/\\][^/\\]+\.enc$/
 ]
 
 export interface SyncableFile {

@@ -20,7 +20,7 @@ interface PromptMessagesInput {
   companionId: string
   textbookId?: string | null
   userMessage: string
-  worldId?: string
+  worldId: string
 }
 
 function validateInput(input: unknown): PromptMessagesInput {
@@ -115,7 +115,7 @@ async function loadCompanion(dataRoot: string, companionId: string): Promise<Com
   try {
     const indexPath = join(companionDir(dataRoot), 'index.json')
     const content = await readFile(indexPath, 'utf-8')
-    const companions = CompanionSchema.array().parse(JSON.parse(content))
+    const companions = CompanionSchema.array().parse(JSON.parse(content)) as Companion[]
     return companions.find((c) => c.id === companionId) ?? null
   } catch {
     return null

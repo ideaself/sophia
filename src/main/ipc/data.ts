@@ -5,6 +5,7 @@ import { ArtifactStore } from '../storage/artifact-store'
 import type { ProviderStore } from '../storage/provider-store'
 import { generateArtifacts } from '../artifacts/generate'
 import { extractText } from '../parsers'
+import { PickedFileRegistry } from './picked-files'
 import {
   IpcCreateConversationInputSchema,
   IpcGetConversationInputSchema,
@@ -23,6 +24,9 @@ export function registerConversationIpc(
   const conversationStore = new ConversationStore(dataRoot)
   const textbookStore = new TextbookStore(dataRoot)
   const artifactStore = new ArtifactStore(dataRoot)
+  // Files the user explicitly picked via the native dialog — the only
+  // paths renderer-supplied file reads are allowed to touch.
+  const pickedFiles = new PickedFileRegistry()
 
   // --- Conversation CRUD ---
 
@@ -175,6 +179,9 @@ export function registerConversationIpc(
         { name: '文本', extensions: ['md', 'txt'] }
       ]
     })
+    for (const filePath of result.filePaths) {
+      pickedFiles.add(filePath)
+    }
     return result
   })
 
@@ -193,6 +200,11 @@ export function registerConversationIpc(
 
     // For pdf/epub, parse the file to extract text
     if ((parsed.format === 'pdf' || parsed.format === 'epub') && parsed.sourceFile) {
+      // Only read files the user explicitly picked through the native dialog —
+      // never arbitrary renderer-supplied paths.
+      if (!pickedFiles.has(parsed.sourceFile)) {
+        throw new Error('Source file must be selected through the file dialog')
+      }
       try {
         const result = await extractText(parsed.sourceFile)
         content = result.content

@@ -209,7 +209,7 @@ export async function loadReferenceCompanions(
   let existing: Companion[] = []
   try {
     const raw = await readFile(indexPath, 'utf-8')
-    existing = CompanionSchema.array().parse(JSON.parse(raw))
+    existing = CompanionSchema.array().parse(JSON.parse(raw)) as Companion[]
   } catch {
     // No existing index — that's fine
   }

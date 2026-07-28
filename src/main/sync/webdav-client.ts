@@ -47,7 +47,9 @@ export class SyncWebDavClient {
     const data = await this.client.getFileContents(remotePath, {
       format: 'text'
     })
-    return typeof data === 'string' ? data : Buffer.from(data).toString('utf-8')
+    if (typeof data === 'string') return data
+    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
+    return buf.toString('utf-8')
   }
 
   async listFiles(remoteDir: string): Promise<WebDavFile[]> {
