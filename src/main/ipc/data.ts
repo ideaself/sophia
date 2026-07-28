@@ -17,6 +17,9 @@ import {
 } from '../../shared/schemas/ipc'
 import type { WorldId } from '../../shared/types/ids'
 
+/** In-app reader loads the whole file into memory — cap it. */
+const MAX_ORIGINAL_SIZE = 100 * 1024 * 1024
+
 export function registerConversationIpc(
   dataRoot: string,
   providerStore?: ProviderStore
@@ -218,8 +221,12 @@ export function registerConversationIpc(
       worldId: parsed.worldId as WorldId,
       title: parsed.title,
       format: parsed.format,
-      sourceFile: parsed.sourceFile,
-      content
+      // sourceFile 只保留文件名作展示（不再依赖绝对路径）
+      sourceFile: parsed.sourceFile?.split(/[/\\]/).pop() ?? parsed.sourceFile,
+      content,
+      // PDF 原件随导入保存（sourceFile 已通过 PickedFileRegistry 校验）
+      originalSourcePath:
+        parsed.format === 'pdf' && parsed.sourceFile ? parsed.sourceFile : undefined
     })
   })
 
@@ -227,6 +234,17 @@ export function registerConversationIpc(
     const parsed = input as { textbookId: string; worldId?: string }
     const worldId = parsed.worldId ?? 'world_default'
     return textbookStore.get(parsed.textbookId, worldId)
+  })
+
+  ipcMain.handle('textbook:read-original', async (_event, input: unknown) => {
+    const parsed = input as { textbookId: string; worldId?: string }
+    const worldId = parsed.worldId ?? 'world_default'
+    const result = await textbookStore.readOriginal(parsed.textbookId, worldId)
+    if (!result) return null
+    if (result.data.length > MAX_ORIGINAL_SIZE) {
+      throw new Error('原件超过 100MB，无法在应用内打开')
+    }
+    return { data: result.data, fileName: result.fileName }
   })
 
   ipcMain.handle('textbook:list', async (_event, input: unknown) => {

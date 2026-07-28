@@ -92,6 +92,7 @@ function validTextbook(): Textbook {
     title: 'Introduction to Chemistry',
     format: 'markdown',
     sourceFile: '/path/to/chem.md',
+    originalFile: '',
     content: '# Chemistry\n\nAtoms and molecules...',
     progress: { currentPage: 1, totalPages: null },
     createdAt: '2026-07-06T12:00:00.000Z',
