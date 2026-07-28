@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, extname } from 'node:path'
 import { SyncWebDavClient, type WebDavConfig } from './webdav-client'
 import { collectSyncableFiles } from './file-walker'
 
@@ -20,6 +20,13 @@ function isSafeRelativePath(relPath: string): boolean {
   if (relPath.startsWith('/') || relPath.startsWith('\\')) return false
   if (/^[a-zA-Z]:/.test(relPath)) return false
   return !relPath.split(/[/\\]/).includes('..')
+}
+
+/** Extensions synced as raw bytes instead of utf-8 text. */
+const BINARY_EXTENSIONS = new Set(['.pdf'])
+
+function isBinaryFile(relPath: string): boolean {
+  return BINARY_EXTENSIONS.has(extname(relPath).toLowerCase())
 }
 
 export class SyncManager {
@@ -46,7 +53,9 @@ export class SyncManager {
     for (const file of files) {
       const remotePath = REMOTE_PREFIX + '/' + file.relativePath
       try {
-        const content = await readFile(file.localPath, 'utf-8')
+        const content = isBinaryFile(file.relativePath)
+          ? await readFile(file.localPath)
+          : await readFile(file.localPath, 'utf-8')
         // Ensure parent directory exists
         const parentDir = dirname(remotePath).replace(/\\/g, '/')
         await client.ensureDir(parentDir)
@@ -86,10 +95,12 @@ export class SyncManager {
       const localPath = join(this.dataRoot, relPath)
 
       try {
-        const content = await client.downloadFile(remotePath)
+        const content = isBinaryFile(relPath)
+          ? await client.downloadFileBuffer(remotePath)
+          : await client.downloadFile(remotePath)
         // Ensure local directory exists
         await mkdir(dirname(localPath), { recursive: true })
-        await writeFile(localPath, content, 'utf-8')
+        await writeFile(localPath, content)
         count++
       } catch (e) {
         errors.push(`${relPath}: ${e instanceof Error ? e.message : 'unknown error'}`)

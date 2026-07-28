@@ -37,7 +37,7 @@ export class SyncWebDavClient {
     }
   }
 
-  async uploadFile(remotePath: string, content: string): Promise<void> {
+  async uploadFile(remotePath: string, content: string | Buffer): Promise<void> {
     await this.client.putFileContents(remotePath, content, {
       overwrite: true
     })
@@ -50,6 +50,13 @@ export class SyncWebDavClient {
     if (typeof data === 'string') return data
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
     return buf.toString('utf-8')
+  }
+
+  async downloadFileBuffer(remotePath: string): Promise<Buffer> {
+    const data = await this.client.getFileContents(remotePath, {
+      format: 'binary'
+    })
+    return Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
   }
 
   async listFiles(remoteDir: string): Promise<WebDavFile[]> {

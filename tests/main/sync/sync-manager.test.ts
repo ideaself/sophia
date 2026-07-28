@@ -9,12 +9,13 @@ const CONFIG: WebDavConfig = { url: 'https://example.com/dav', username: 'u', pa
 
 /** In-memory stand-in for SyncWebDavClient — records calls, serves canned data. */
 class FakeClient {
-  uploads: { path: string; content: string }[] = []
+  uploads: { path: string; content: string | Buffer }[] = []
   ensuredDirs: string[] = []
   remoteFiles: string[] = []
   remoteContents = new Map<string, string>()
+  remoteBuffers = new Map<string, Buffer>()
 
-  async uploadFile(path: string, content: string): Promise<void> {
+  async uploadFile(path: string, content: string | Buffer): Promise<void> {
     this.uploads.push({ path, content })
   }
   async ensureDir(dir: string): Promise<void> {
@@ -25,6 +26,11 @@ class FakeClient {
   }
   async downloadFile(path: string): Promise<string> {
     const content = this.remoteContents.get(path)
+    if (content === undefined) throw new Error(`no such remote file: ${path}`)
+    return content
+  }
+  async downloadFileBuffer(path: string): Promise<Buffer> {
+    const content = this.remoteBuffers.get(path)
     if (content === undefined) throw new Error(`no such remote file: ${path}`)
     return content
   }
@@ -130,5 +136,39 @@ describe('SyncManager.pull', () => {
 
     expect(result.count).toBe(0)
     expect(result.errors.length).toBeGreaterThan(0)
+  })
+})
+
+describe('SyncManager — binary files (.pdf)', () => {
+  const PDF_BYTES = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff, 0xfe, 0x80, 0x7f, 0x0a, 0x0d])
+
+  it('pushes .pdf files as binary and pulls them back byte-identical', async () => {
+    const relPdf = join(
+      'profiles', 'prof_default', 'worlds', 'world_default',
+      'textbooks', 'tb_1', 'source.pdf'
+    )
+    await mkdir(join(dataRoot, 'profiles', 'prof_default', 'worlds', 'world_default', 'textbooks', 'tb_1'), { recursive: true })
+    await writeFile(join(dataRoot, relPdf), PDF_BYTES)
+
+    const fake = new FakeClient()
+    await makeManager(dataRoot, fake).push(CONFIG)
+
+    expect(fake.uploads).toHaveLength(1)
+    expect(fake.uploads[0].path).toBe('/sophia/profiles/prof_default/worlds/world_default/textbooks/tb_1/source.pdf')
+    // Content must be the raw bytes, not a utf-8-decoded string
+    const uploaded = fake.uploads[0].content
+    const uploadedBuf = Buffer.isBuffer(uploaded) ? uploaded : Buffer.from(uploaded as string, 'utf-8')
+    expect(uploadedBuf.equals(PDF_BYTES)).toBe(true)
+
+    // Round-trip: pull into a fresh dataRoot
+    await rm(join(dataRoot, relPdf))
+    fake.remoteFiles = [fake.uploads[0].path]
+    fake.remoteBuffers.set(fake.uploads[0].path, uploadedBuf)
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+    expect(result.count).toBe(1)
+
+    const pulled = await readFile(join(dataRoot, relPdf))
+    expect(pulled.equals(PDF_BYTES)).toBe(true)
   })
 })
