@@ -243,7 +243,9 @@ export interface SyncWebDavConfig {
 
 export interface SyncResult {
   success: boolean
-  count: number
+  transferred: number
+  skipped: number
+  deleted: number
   errors: string[]
   timestamp?: string
 }
@@ -255,8 +257,17 @@ export interface SyncProgress {
   file: string
 }
 
+export interface SyncPlanSummary {
+  transferCount: number
+  skipCount: number
+  deleteCount: number
+  deleteSample: string[]
+}
+
 export interface SyncAPI {
   test: (config: SyncWebDavConfig) => Promise<{ success: boolean; message?: string }>
+  planPush: (config: SyncWebDavConfig) => Promise<SyncPlanSummary>
+  planPull: (config: SyncWebDavConfig) => Promise<SyncPlanSummary>
   push: (config: SyncWebDavConfig) => Promise<SyncResult>
   pull: (config: SyncWebDavConfig) => Promise<SyncResult>
   hasWebdavPassword: () => Promise<boolean>
@@ -417,6 +428,8 @@ const sophia: SophiaAPI = {
   },
   sync: {
     test: (config) => ipcRenderer.invoke('sync:test', config),
+    planPush: (config) => ipcRenderer.invoke('sync:plan-push', config),
+    planPull: (config) => ipcRenderer.invoke('sync:plan-pull', config),
     push: (config) => ipcRenderer.invoke('sync:push', config),
     pull: (config) => ipcRenderer.invoke('sync:pull', config),
     hasWebdavPassword: () => ipcRenderer.invoke('sync:has-webdav-password'),

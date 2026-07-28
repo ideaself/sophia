@@ -43,6 +43,14 @@ export function registerSyncIpc(dataRoot: string, safeStorage: SafeStorageAdapte
     return manager.test(await resolveConfig(input))
   })
 
+  ipcMain.handle('sync:plan-push', async (_event, input: unknown) => {
+    return manager.planPush(await resolveConfig(input))
+  })
+
+  ipcMain.handle('sync:plan-pull', async (_event, input: unknown) => {
+    return manager.planPull(await resolveConfig(input))
+  })
+
   ipcMain.handle('sync:push', async (event, input: unknown) => {
     const result = await manager.push(await resolveConfig(input), (progress) => {
       if (!event.sender.isDestroyed()) event.sender.send('sync:progress', progress)

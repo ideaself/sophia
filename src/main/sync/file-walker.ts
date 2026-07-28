@@ -5,7 +5,9 @@ const EXCLUDE_PATTERNS = [
   // Encrypted secrets (API keys, WebDAV password) never leave this machine.
   // Note: relPath has no leading separator, so the anchor must allow
   // string start; and not all secret files end in ".key.enc".
-  /(^|[/\\])config[/\\][^/\\]+\.enc$/
+  /(^|[/\\])config[/\\][^/\\]+\.enc$/,
+  // Local sync bookkeeping is per-device and must not sync.
+  /(^|[/\\])sync-state\.json$/
 ]
 
 export interface SyncableFile {

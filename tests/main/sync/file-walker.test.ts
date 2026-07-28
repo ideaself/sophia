@@ -69,4 +69,12 @@ describe('collectSyncableFiles', () => {
     const files = await collected()
     expect(files).toEqual(['config/providers.json'])
   })
+
+  it('excludes the local sync-state bookkeeping file', async () => {
+    await touch('sync-state.json')
+    await touch('profiles/prof_default/worlds/world_default/story.md')
+
+    const files = await collected()
+    expect(files).toEqual(['profiles/prof_default/worlds/world_default/story.md'])
+  })
 })

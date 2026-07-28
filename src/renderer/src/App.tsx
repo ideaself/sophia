@@ -557,19 +557,32 @@ function WebDavSyncView(): React.ReactElement {
 
   const handlePush = async () => {
     await saveToStorage()
+    try {
+      const plan = await window.sophia.sync.planPush(getConfig())
+      if (plan.deleteCount > 0) {
+        const sample = plan.deleteSample.slice(0, 10).join('\n')
+        const more = plan.deleteCount > 10 ? `\n... and ${plan.deleteCount - 10} more` : ''
+        if (!confirm(`Push will DELETE ${plan.deleteCount} remote file(s) that no longer exist locally:\n${sample}${more}\n\nContinue?`)) {
+          return
+        }
+      }
+    } catch (e) {
+      setResult({ ok: false, msg: e instanceof Error ? e.message : 'Push planning failed' })
+      return
+    }
     setPushing(true)
     setResult(null)
     setProgress(null)
     try {
       const res = await window.sophia.sync.push(getConfig())
       if (res.success) {
-        setResult({ ok: true, msg: `Pushed ${res.count} files` })
+        setResult({ ok: true, msg: `Pushed ${res.transferred}, skipped ${res.skipped}, deleted ${res.deleted}` })
         if (res.timestamp) {
           setLastPush(res.timestamp)
           localStorage.setItem('webdav-last-push', res.timestamp)
         }
       } else {
-        setResult({ ok: false, msg: `Pushed ${res.count} files, ${res.errors.length} errors: ${res.errors[0]}` })
+        setResult({ ok: false, msg: `Pushed ${res.transferred}, skipped ${res.skipped}, deleted ${res.deleted}, ${res.errors.length} errors: ${res.errors[0]}` })
       }
     } catch (e) {
       setResult({ ok: false, msg: e instanceof Error ? e.message : 'Push failed' })
@@ -588,19 +601,32 @@ function WebDavSyncView(): React.ReactElement {
         return
       }
     }
+    try {
+      const plan = await window.sophia.sync.planPull(getConfig())
+      if (plan.deleteCount > 0) {
+        const sample = plan.deleteSample.slice(0, 10).join('\n')
+        const more = plan.deleteCount > 10 ? `\n... and ${plan.deleteCount - 10} more` : ''
+        if (!confirm(`Pull will DELETE ${plan.deleteCount} local file(s) that no longer exist on the server:\n${sample}${more}\n\nContinue?`)) {
+          return
+        }
+      }
+    } catch (e) {
+      setResult({ ok: false, msg: e instanceof Error ? e.message : 'Pull planning failed' })
+      return
+    }
     setPulling(true)
     setResult(null)
     setProgress(null)
     try {
       const res = await window.sophia.sync.pull(getConfig())
       if (res.success) {
-        setResult({ ok: true, msg: `Pulled ${res.count} files` })
+        setResult({ ok: true, msg: `Pulled ${res.transferred}, skipped ${res.skipped}, deleted ${res.deleted}` })
         if (res.timestamp) {
           setLastPull(res.timestamp)
           localStorage.setItem('webdav-last-pull', res.timestamp)
         }
       } else {
-        setResult({ ok: false, msg: `Pulled ${res.count} files, ${res.errors.length} errors: ${res.errors[0]}` })
+        setResult({ ok: false, msg: `Pulled ${res.transferred}, skipped ${res.skipped}, deleted ${res.deleted}, ${res.errors.length} errors: ${res.errors[0]}` })
       }
     } catch (e) {
       setResult({ ok: false, msg: e instanceof Error ? e.message : 'Pull failed' })

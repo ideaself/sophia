@@ -192,7 +192,9 @@ declare global {
 
   interface SyncResult {
     success: boolean
-    count: number
+    transferred: number
+    skipped: number
+    deleted: number
     errors: string[]
     timestamp?: string
   }
@@ -204,8 +206,17 @@ declare global {
     file: string
   }
 
+  interface SyncPlanSummary {
+    transferCount: number
+    skipCount: number
+    deleteCount: number
+    deleteSample: string[]
+  }
+
   interface SyncAPI {
     test: (config: SyncWebDavConfig) => Promise<{ success: boolean; message?: string }>
+    planPush: (config: SyncWebDavConfig) => Promise<SyncPlanSummary>
+    planPull: (config: SyncWebDavConfig) => Promise<SyncPlanSummary>
     push: (config: SyncWebDavConfig) => Promise<SyncResult>
     pull: (config: SyncWebDavConfig) => Promise<SyncResult>
     hasWebdavPassword: () => Promise<boolean>

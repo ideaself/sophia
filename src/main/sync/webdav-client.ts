@@ -14,6 +14,12 @@ export interface WebDavFile {
   isDir: boolean
 }
 
+export interface WebDavRemoteFile {
+  path: string
+  size: number
+  lastmod: string
+}
+
 /**
  * Rejects with a descriptive error if `promise` does not settle within `ms`.
  * The webdav v5 client exposes no request timeout, so without this a hung
@@ -197,6 +203,24 @@ export class SyncWebDavClient {
     return files
   }
 
+  /**
+   * Recursively list all files with the metadata mirror sync needs for
+   * change detection (size + server-side lastmod).
+   */
+  async listAllFilesDetailed(remoteDir: string): Promise<WebDavRemoteFile[]> {
+    const files: WebDavRemoteFile[] = []
+    await this.walkRemoteDetailed(remoteDir, files)
+    return files
+  }
+
+  async deleteFile(remotePath: string): Promise<void> {
+    await withTimeout(
+      this.client.deleteFile(remotePath),
+      REQUEST_TIMEOUT_MS,
+      `DELETE ${remotePath}`
+    )
+  }
+
   private async walkRemote(dir: string, files: string[]): Promise<void> {
     try {
       const entries = await withTimeout(
@@ -210,6 +234,26 @@ export class SyncWebDavClient {
           await this.walkRemote(entry.filename, files)
         } else {
           files.push(entry.filename)
+        }
+      }
+    } catch {
+      // Directory doesn't exist yet
+    }
+  }
+
+  private async walkRemoteDetailed(dir: string, files: WebDavRemoteFile[]): Promise<void> {
+    try {
+      const entries = await withTimeout(
+        this.client.getDirectoryContents(dir),
+        REQUEST_TIMEOUT_MS,
+        `PROPFIND ${dir}`
+      )
+      for (const entry of entries) {
+        if (entry.basename === '') continue
+        if (entry.type === 'directory') {
+          await this.walkRemoteDetailed(entry.filename, files)
+        } else {
+          files.push({ path: entry.filename, size: entry.size, lastmod: entry.lastmod })
         }
       }
     } catch {
