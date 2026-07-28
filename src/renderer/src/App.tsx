@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ClassroomView } from './chat/ClassroomView'
 import { useChatStream } from './chat/useChatStream'
+import { PdfReaderView } from './reader/PdfReaderView'
 
 type AppView = 'settings' | 'companions' | 'textbooks' | 'classroom' | 'history'
 
@@ -17,6 +18,7 @@ interface Textbook {
   id: string
   title: string
   format: string
+  originalFile: string
 }
 
 interface ActiveConversation {
@@ -60,7 +62,7 @@ function App(): React.ReactElement {
         if (comp) setSelectedCompanion({ id: comp.id, name: comp.name, identity: comp.identity, personalityKeywords: comp.personalityKeywords })
         if (last.textbookId) {
           const tb = await window.sophia.data.getTextbook(last.textbookId)
-          if (tb) setSelectedTextbook({ id: tb.id, title: tb.title, format: tb.format })
+          if (tb) setSelectedTextbook({ id: tb.id, title: tb.title, format: tb.format, originalFile: tb.originalFile })
         }
         setLoadConversationId(last.id)
       }
@@ -118,7 +120,7 @@ function App(): React.ReactElement {
     }
     if (conv.textbookId) {
       const tb = await window.sophia.data.getTextbook(conv.textbookId)
-      if (tb) setSelectedTextbook({ id: tb.id, title: tb.title, format: tb.format })
+      if (tb) setSelectedTextbook({ id: tb.id, title: tb.title, format: tb.format, originalFile: tb.originalFile })
     } else { setSelectedTextbook(null) }
     setLoadConversationId(conv.id)
     setView('classroom')
@@ -274,7 +276,7 @@ function App(): React.ReactElement {
               if (comp) setSelectedCompanion({ id: comp.id, name: comp.name, identity: comp.identity, personalityKeywords: comp.personalityKeywords })
               if (conv.textbookId) {
                 const tb = await window.sophia.data.getTextbook(conv.textbookId)
-                if (tb) setSelectedTextbook({ id: tb.id, title: tb.title, format: tb.format })
+                if (tb) setSelectedTextbook({ id: tb.id, title: tb.title, format: tb.format, originalFile: tb.originalFile })
               } else { setSelectedTextbook(null) }
               setLoadConversationId(convId)
               setView('classroom')
@@ -1209,6 +1211,7 @@ function TextbooksView({
   const [content, setContent] = useState('')
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
+  const [readingTextbook, setReadingTextbook] = useState<Textbook | null>(null)
   const [viewingTextbook, setViewingTextbook] = useState<Textbook | null>(null)
   const [viewingContent, setViewingContent] = useState('')
   const [loadingContent, setLoadingContent] = useState(false)
@@ -1374,6 +1377,14 @@ function TextbooksView({
               <p className="text-xs text-text-muted">{t.format}</p>
             </div>
             <div className="flex items-center gap-2">
+              {t.originalFile && (
+                <button
+                  onClick={() => setReadingTextbook(t)}
+                  className="rounded border border-surface-border-strong px-3 py-1 text-sm hover:bg-bg-elevated"
+                >
+                  阅读原件
+                </button>
+              )}
               <button
                 onClick={() => handleViewContent(t)}
                 className="rounded border border-surface-border-strong px-3 py-1 text-sm hover:bg-bg-elevated"
@@ -1500,6 +1511,14 @@ function TextbooksView({
             </div>
           </div>
         </div>
+      )}
+
+      {readingTextbook && (
+        <PdfReaderView
+          textbookId={readingTextbook.id}
+          title={readingTextbook.title}
+          onClose={() => setReadingTextbook(null)}
+        />
       )}
     </div>
   )
