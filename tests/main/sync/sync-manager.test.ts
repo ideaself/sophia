@@ -272,6 +272,64 @@ describe('SyncManager.pull — basic behaviour', () => {
   })
 })
 
+describe('SyncManager — sync-set filtering (junk from old versions)', () => {
+  it('pull never downloads files that push would never upload', async () => {
+    const fake = new FakeClient()
+    // Junk left on the server by the old full-upload sync
+    fake.setRemote(R('sync-state.json'), '{"version":1}', 'mod-1')
+    fake.setRemote(R('config/webdav.key.enc'), 'a1b2c3', 'mod-2')
+    fake.setRemote(R('profiles/prof_default/profile.json'), '{"id":"x"}', 'mod-3')
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.transferred).toBe(1)
+    expect(fake.downloads).toEqual([R('profiles/prof_default/profile.json')])
+    await expect(access(join(dataRoot, 'config', 'webdav.key.enc'))).rejects.toThrow()
+  })
+
+  it('pull removes previously-synced junk that is no longer in the sync set', async () => {
+    // Machine already polluted by an earlier pull: junk on disk AND in state
+    await touch('config/api.key.enc', 'deadbeef')
+    const ls = await localStat('config/api.key.enc')
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: { 'config/api.key.enc': entry(ls, { size: 8, lastmod: 'mod-1' }) }
+    })
+    const fake = new FakeClient()
+    fake.setRemote(R('config/api.key.enc'), 'deadbeef', 'mod-1')
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(fake.downloads).toHaveLength(0)
+    expect(result.deleted).toBe(1)
+    await expect(access(join(dataRoot, 'config', 'api.key.enc'))).rejects.toThrow()
+  })
+
+  it('pull does not record junk in the rebuilt sync state', async () => {
+    const fake = new FakeClient()
+    fake.setRemote(R('sync-state.json'), '{"version":1}', 'mod-1')
+    fake.setRemote(R('a.md'), 'hello', 'mod-2')
+
+    await makeManager(dataRoot, fake).pull(CONFIG)
+
+    const state = JSON.parse(await readFile(join(dataRoot, 'sync-state.json'), 'utf-8'))
+    expect(Object.keys(state.files)).toEqual(['a.md'])
+  })
+
+  it('push deletes remote junk that is not in the sync set, even without a state record', async () => {
+    const fake = new FakeClient()
+    fake.setRemote(R('sync-state.json'), '{"version":1}', 'mod-1')
+    fake.setRemote(R('config/api.key.enc'), 'deadbeef', 'mod-2')
+    fake.setRemote(R('alien.md'), 'valid but unknown — leave alone', 'mod-3')
+    await saveSyncState(dataRoot, { version: 1, files: {} })
+
+    const result = await makeManager(dataRoot, fake).push(CONFIG)
+
+    expect(fake.deletions.sort()).toEqual([R('config/api.key.enc'), R('sync-state.json')].sort())
+    expect(result.deleted).toBe(2)
+  })
+})
+
 describe('SyncManager.pull — incremental mirror', () => {
   it('skips files unchanged on both sides', async () => {
     await touch('a.md', 'hello')

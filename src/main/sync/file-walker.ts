@@ -15,6 +15,16 @@ export interface SyncableFile {
   relativePath: string
 }
 
+/**
+ * The single definition of the sync set, used by BOTH directions:
+ * push never uploads these paths, pull never downloads them, and any remote
+ * file failing this test is junk (e.g. left by the old full-upload sync)
+ * that push garbage-collects from the server.
+ */
+export function isSyncableRelPath(relPath: string): boolean {
+  return !EXCLUDE_PATTERNS.some((p) => p.test(relPath))
+}
+
 export async function collectSyncableFiles(dataRoot: string): Promise<SyncableFile[]> {
   const files: SyncableFile[] = []
   await walkDir(dataRoot, dataRoot, files)
@@ -33,10 +43,10 @@ async function walkDir(
     const relPath = relative(dataRoot, fullPath).replace(/\\/g, '/')
 
     if (entry.isDirectory()) {
-      if (EXCLUDE_PATTERNS.some((p) => p.test(relPath))) continue
+      if (!isSyncableRelPath(relPath)) continue
       await walkDir(fullPath, dataRoot, files)
     } else if (entry.isFile()) {
-      if (EXCLUDE_PATTERNS.some((p) => p.test(relPath))) continue
+      if (!isSyncableRelPath(relPath)) continue
       files.push({ localPath: fullPath, relativePath: relPath })
     }
   }

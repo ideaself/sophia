@@ -2,7 +2,8 @@ import { readFile, writeFile, mkdir, rm, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { dirname, join, extname } from 'node:path'
 import { SyncWebDavClient, type WebDavConfig, type WebDavRemoteFile } from './webdav-client'
-import { collectSyncableFiles, type SyncableFile } from './file-walker'
+import { collectSyncableFiles, isSyncableRelPath, type SyncableFile } from './file-walker'
+import { runPool } from './async-pool'
 import {
   loadSyncState,
   saveSyncState,
@@ -55,6 +56,12 @@ function isSafeRelativePath(relPath: string): boolean {
 
 /** Extensions synced as raw bytes instead of utf-8 text. */
 const BINARY_EXTENSIONS = new Set(['.pdf'])
+
+/**
+ * Concurrent transfers / listings during one sync run. Kept low: common
+ * WebDAV hosts (e.g. 坚果云) rate-limit bursty clients.
+ */
+const SYNC_CONCURRENCY = 4
 
 function isBinaryFile(relPath: string): boolean {
   return BINARY_EXTENSIONS.has(extname(relPath).toLowerCase())
@@ -113,16 +120,20 @@ export class SyncManager {
 
   /**
    * Load the sync state, or — on first run — seed it from the remote
-   * listing. Seeding marks every remote file as "previously synced" so the
-   * very first push can clean up junk left by the old full-upload sync,
-   * while local files (localSize null ≠ actual stat) are all (re)uploaded.
+   * listing. Seeding marks every syncable remote file as "previously synced"
+   * so the very first push can clean up junk left by the old full-upload
+   * sync, while local files (localSize null ≠ actual stat) are all
+   * (re)uploaded. Non-syncable remote files are not seeded — the push plan
+   * deletes them outright as junk.
    */
   private async loadStateForPush(remoteList: WebDavRemoteFile[]): Promise<SyncState> {
     const state = await loadSyncState(this.dataRoot)
     if (state) return state
     const seeded = emptySyncState()
     for (const f of remoteList) {
-      seeded.files[stripPrefix(f.path)] = {
+      const rel = stripPrefix(f.path)
+      if (!isSyncableRelPath(rel)) continue
+      seeded.files[rel] = {
         localSize: null,
         localMtimeMs: null,
         remoteSize: f.size,
@@ -161,12 +172,15 @@ export class SyncManager {
       }
     }
 
-    // Mirror deletion: only files recorded as previously synced are eligible;
-    // remote files we know nothing about are left alone.
+    // Mirror deletion. Two kinds of remote files are removed:
+    // - previously-synced files that are gone locally (recorded in state);
+    // - junk that fails the sync-set rules (sync-state.json, config/*.enc
+    //   uploaded by old versions) — deleted outright, no state needed.
+    // Valid remote files we know nothing about are left alone.
     const remoteDeletions: FileTransfer[] = []
     for (const [rel, remote] of remoteByRel) {
       if (localRelSet.has(rel)) continue
-      if (!(rel in state.files)) continue
+      if (isSyncableRelPath(rel) && !(rel in state.files)) continue
       remoteDeletions.push({ relPath: rel, localPath: '', remotePath: remote.path })
     }
 
@@ -189,6 +203,11 @@ export class SyncManager {
         unsafePaths.push(rel)
         continue
       }
+      // The sync set is defined by the app, not by whatever is on the
+      // server: junk left by old versions (sync-state.json, config/*.enc)
+      // is never downloaded. It is also kept OUT of remoteRelSet, so a
+      // previously-synced copy on disk gets cleaned up by mirror deletion.
+      if (!isSyncableRelPath(rel)) continue
       remoteRelSet.add(rel)
       const entry = state.files[rel]
       const local = await this.statLocal(rel)
@@ -246,6 +265,7 @@ export class SyncManager {
     for (const remote of remoteList) {
       const rel = stripPrefix(remote.path)
       if (!isSafeRelativePath(rel)) continue
+      if (!isSyncableRelPath(rel)) continue
       const local = await this.statLocal(rel)
       state.files[rel] = {
         localSize: local?.size ?? null,
@@ -279,7 +299,8 @@ export class SyncManager {
 
   /**
    * Push: upload changed local files, delete previously-synced remote files
-   * that no longer exist locally. Unchanged files are skipped.
+   * that no longer exist locally (plus non-syncable junk left by old
+   * versions). Unchanged files are skipped.
    */
   async push(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
     const client = this.createClient(config)
@@ -288,36 +309,44 @@ export class SyncManager {
     let transferred = 0
     let deleted = 0
     const total = plan.uploads.length + plan.remoteDeletions.length
-    let step = 0
 
-    for (const up of plan.uploads) {
-      step++
-      onProgress?.({ direction: 'push', current: step, total, file: up.relPath })
+    // Create each needed remote directory once, up front — previously every
+    // single upload paid an extra exists+mkdir round-trip.
+    const parentDirs = [
+      ...new Set(plan.uploads.map((up) => dirname(up.remotePath).replace(/\\/g, '/')))
+    ]
+    await runPool(parentDirs, SYNC_CONCURRENCY, async (dir) => {
+      await client.ensureDir(dir)
+    })
+
+    await runPool(plan.uploads, SYNC_CONCURRENCY, async (up, index) => {
+      onProgress?.({ direction: 'push', current: index + 1, total, file: up.relPath })
       try {
         // Binary files stream from disk instead of being buffered whole in memory
         const content = isBinaryFile(up.relPath)
           ? createReadStream(up.localPath)
           : await readFile(up.localPath, 'utf-8')
-        // Ensure parent directory exists
-        const parentDir = dirname(up.remotePath).replace(/\\/g, '/')
-        await client.ensureDir(parentDir)
         await client.uploadFile(up.remotePath, content)
         transferred++
       } catch (e) {
         errors.push(`${up.relPath}: ${e instanceof Error ? e.message : 'unknown error'}`)
       }
-    }
+    })
 
-    for (const del of plan.remoteDeletions) {
-      step++
-      onProgress?.({ direction: 'push', current: step, total, file: del.relPath })
+    await runPool(plan.remoteDeletions, SYNC_CONCURRENCY, async (del, index) => {
+      onProgress?.({
+        direction: 'push',
+        current: plan.uploads.length + index + 1,
+        total,
+        file: del.relPath
+      })
       try {
         await client.deleteFile(del.remotePath)
         deleted++
       } catch (e) {
         errors.push(`${del.relPath}: ${e instanceof Error ? e.message : 'unknown error'}`)
       }
-    }
+    })
 
     await this.rebuildStateAfterPush(client)
 
@@ -335,11 +364,9 @@ export class SyncManager {
     let transferred = 0
     let deleted = 0
     const total = plan.downloads.length + plan.localDeletions.length
-    let step = 0
 
-    for (const down of plan.downloads) {
-      step++
-      onProgress?.({ direction: 'pull', current: step, total, file: down.relPath })
+    await runPool(plan.downloads, SYNC_CONCURRENCY, async (down, index) => {
+      onProgress?.({ direction: 'pull', current: index + 1, total, file: down.relPath })
       try {
         await mkdir(dirname(down.localPath), { recursive: true })
         if (isBinaryFile(down.relPath)) {
@@ -353,18 +380,22 @@ export class SyncManager {
       } catch (e) {
         errors.push(`${down.relPath}: ${e instanceof Error ? e.message : 'unknown error'}`)
       }
-    }
+    })
 
-    for (const del of plan.localDeletions) {
-      step++
-      onProgress?.({ direction: 'pull', current: step, total, file: del.relPath })
+    await runPool(plan.localDeletions, SYNC_CONCURRENCY, async (del, index) => {
+      onProgress?.({
+        direction: 'pull',
+        current: plan.downloads.length + index + 1,
+        total,
+        file: del.relPath
+      })
       try {
         await rm(del.localPath, { force: true })
         deleted++
       } catch (e) {
         errors.push(`${del.relPath}: ${e instanceof Error ? e.message : 'unknown error'}`)
       }
-    }
+    })
 
     await this.rebuildStateAfterPull(client)
 

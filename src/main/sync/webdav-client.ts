@@ -2,6 +2,10 @@ import { createClient, type WebDAVClient } from 'webdav'
 import type { FileStat } from 'webdav'
 import { createWriteStream } from 'node:fs'
 import { Readable } from 'node:stream'
+import { runPool } from './async-pool'
+
+/** Concurrent PROPFIND listings during the recursive remote walk. */
+const WALK_CONCURRENCY = 4
 
 export interface WebDavConfig {
   url: string
@@ -248,14 +252,20 @@ export class SyncWebDavClient {
         REQUEST_TIMEOUT_MS,
         `PROPFIND ${dir}`
       )
+      const subdirs: string[] = []
       for (const entry of entries) {
         if (entry.basename === '') continue
         if (entry.type === 'directory') {
-          await this.walkRemoteDetailed(entry.filename, files)
+          subdirs.push(entry.filename)
         } else {
           files.push({ path: entry.filename, size: entry.size, lastmod: entry.lastmod })
         }
       }
+      // List subdirectories concurrently — sequential PROPFIND per directory
+      // dominated sync time on deep data layouts.
+      await runPool(subdirs, WALK_CONCURRENCY, async (sub) => {
+        await this.walkRemoteDetailed(sub, files)
+      })
     } catch {
       // Directory doesn't exist yet
     }
