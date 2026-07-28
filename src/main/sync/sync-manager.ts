@@ -11,6 +11,17 @@ export interface SyncResult {
   errors: string[]
 }
 
+export interface SyncProgress {
+  direction: 'push' | 'pull'
+  /** 1-based index of the file currently being transferred */
+  current: number
+  total: number
+  /** Path relative to the data root, suitable for display */
+  file: string
+}
+
+export type SyncProgressCallback = (progress: SyncProgress) => void
+
 /**
  * A server-supplied relative path is only safe to write under dataRoot if it
  * is non-empty, not absolute, and contains no `..` segments.
@@ -44,13 +55,15 @@ export class SyncManager {
   /**
    * Push: upload all local syncable files to the WebDAV server.
    */
-  async push(config: WebDavConfig): Promise<SyncResult> {
+  async push(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
     const client = this.createClient(config)
     const files = await collectSyncableFiles(this.dataRoot)
     const errors: string[] = []
     let count = 0
 
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      onProgress?.({ direction: 'push', current: i + 1, total: files.length, file: file.relativePath })
       const remotePath = REMOTE_PREFIX + '/' + file.relativePath
       try {
         const content = isBinaryFile(file.relativePath)
@@ -72,7 +85,7 @@ export class SyncManager {
   /**
    * Pull: download all remote files to the local dataRoot.
    */
-  async pull(config: WebDavConfig): Promise<SyncResult> {
+  async pull(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
     const client = this.createClient(config)
     const errors: string[] = []
     let count = 0
@@ -80,7 +93,8 @@ export class SyncManager {
     // List all remote files
     const remoteFiles = await client.listAllFiles(REMOTE_PREFIX)
 
-    for (const remotePath of remoteFiles) {
+    for (let i = 0; i < remoteFiles.length; i++) {
+      const remotePath = remoteFiles[i]
       // Strip the REMOTE_PREFIX to get the relative path
       const relPath = remotePath.startsWith(REMOTE_PREFIX + '/')
         ? remotePath.slice(REMOTE_PREFIX.length + 1)
@@ -93,6 +107,8 @@ export class SyncManager {
       }
 
       const localPath = join(this.dataRoot, relPath)
+
+      onProgress?.({ direction: 'pull', current: i + 1, total: remoteFiles.length, file: relPath })
 
       try {
         const content = isBinaryFile(relPath)

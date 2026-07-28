@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, rm, access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { SyncManager } from '../../../src/main/sync/sync-manager'
+import { SyncManager, type SyncProgress } from '../../../src/main/sync/sync-manager'
 import type { WebDavConfig } from '../../../src/main/sync/webdav-client'
 
 const CONFIG: WebDavConfig = { url: 'https://example.com/dav', username: 'u', password: 'p' }
@@ -170,5 +170,50 @@ describe('SyncManager — binary files (.pdf)', () => {
 
     const pulled = await readFile(join(dataRoot, relPdf))
     expect(pulled.equals(PDF_BYTES)).toBe(true)
+  })
+})
+
+describe('SyncManager — progress reporting', () => {
+  it('reports progress for each pushed file', async () => {
+    for (const name of ['a.md', 'b.md']) {
+      await writeFile(join(dataRoot, name), `# ${name}`, 'utf-8')
+    }
+    const events: SyncProgress[] = []
+    const fake = new FakeClient()
+
+    await makeManager(dataRoot, fake).push(CONFIG, (p) => events.push(p))
+
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ direction: 'push', current: 1, total: 2 })
+    expect(events[1]).toMatchObject({ direction: 'push', current: 2, total: 2 })
+    // file names are relative paths so the UI can show what is happening
+    expect(events.map((e) => e.file).sort()).toEqual(['a.md', 'b.md'])
+  })
+
+  it('reports progress for each pulled file', async () => {
+    const fake = new FakeClient()
+    fake.remoteFiles = ['/sophia/x.md', '/sophia/y.md']
+    fake.remoteContents.set('/sophia/x.md', 'x')
+    fake.remoteContents.set('/sophia/y.md', 'y')
+    const events: SyncProgress[] = []
+
+    await makeManager(dataRoot, fake).pull(CONFIG, (p) => events.push(p))
+
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ direction: 'pull', current: 1, total: 2, file: 'x.md' })
+    expect(events[1]).toMatchObject({ direction: 'pull', current: 2, total: 2, file: 'y.md' })
+  })
+
+  it('keeps reporting progress for later files when one file fails', async () => {
+    const fake = new FakeClient()
+    fake.remoteFiles = ['/sophia/missing.md', '/sophia/ok.md']
+    fake.remoteContents.set('/sophia/ok.md', 'ok')
+    const events: SyncProgress[] = []
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG, (p) => events.push(p))
+
+    expect(result.success).toBe(false)
+    expect(events).toHaveLength(2)
+    expect(events[1].current).toBe(2)
   })
 })

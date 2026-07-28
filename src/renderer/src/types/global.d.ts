@@ -197,12 +197,20 @@ declare global {
     timestamp?: string
   }
 
+  interface SyncProgress {
+    direction: 'push' | 'pull'
+    current: number
+    total: number
+    file: string
+  }
+
   interface SyncAPI {
     test: (config: SyncWebDavConfig) => Promise<{ success: boolean; message?: string }>
     push: (config: SyncWebDavConfig) => Promise<SyncResult>
     pull: (config: SyncWebDavConfig) => Promise<SyncResult>
     hasWebdavPassword: () => Promise<boolean>
     setWebdavPassword: (password: string) => Promise<void>
+    onProgress: (callback: (progress: SyncProgress) => void) => () => void
   }
 
   interface SophiaAPI {

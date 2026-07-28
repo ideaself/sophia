@@ -248,12 +248,21 @@ export interface SyncResult {
   timestamp?: string
 }
 
+export interface SyncProgress {
+  direction: 'push' | 'pull'
+  current: number
+  total: number
+  file: string
+}
+
 export interface SyncAPI {
   test: (config: SyncWebDavConfig) => Promise<{ success: boolean; message?: string }>
   push: (config: SyncWebDavConfig) => Promise<SyncResult>
   pull: (config: SyncWebDavConfig) => Promise<SyncResult>
   hasWebdavPassword: () => Promise<boolean>
   setWebdavPassword: (password: string) => Promise<void>
+  /** Subscribe to per-file sync progress. Returns an unsubscribe function. */
+  onProgress: (callback: (progress: SyncProgress) => void) => () => void
 }
 
 export interface SophiaAPI {
@@ -411,7 +420,16 @@ const sophia: SophiaAPI = {
     push: (config) => ipcRenderer.invoke('sync:push', config),
     pull: (config) => ipcRenderer.invoke('sync:pull', config),
     hasWebdavPassword: () => ipcRenderer.invoke('sync:has-webdav-password'),
-    setWebdavPassword: (password) => ipcRenderer.invoke('sync:set-webdav-password', { password })
+    setWebdavPassword: (password) => ipcRenderer.invoke('sync:set-webdav-password', { password }),
+    onProgress: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: SyncProgress) => {
+        callback(progress)
+      }
+      ipcRenderer.on('sync:progress', handler)
+      return () => {
+        ipcRenderer.removeListener('sync:progress', handler)
+      }
+    }
   }
 }
 

@@ -12,6 +12,32 @@ export interface WebDavFile {
   isDir: boolean
 }
 
+/**
+ * Rejects with a descriptive error if `promise` does not settle within `ms`.
+ * The webdav v5 client exposes no request timeout, so without this a hung
+ * connection would await forever and the UI would show "Pulling..." endlessly.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Request timed out after ${Math.round(ms / 1000)}s: ${label}`))
+    }, ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      }
+    )
+  })
+}
+
+/** Per-request timeout for sync operations (large PDFs on slow servers need headroom). */
+const REQUEST_TIMEOUT_MS = 120_000
+
 export class SyncWebDavClient {
   private client: WebDAVClient
 
@@ -27,7 +53,7 @@ export class SyncWebDavClient {
 
   async test(): Promise<{ success: boolean; message?: string }> {
     try {
-      await this.client.getDirectoryContents('/')
+      await withTimeout(this.client.getDirectoryContents('/'), REQUEST_TIMEOUT_MS, 'PROPFIND /')
       return { success: true, message: 'Connected successfully' }
     } catch (e) {
       return {
@@ -38,30 +64,40 @@ export class SyncWebDavClient {
   }
 
   async uploadFile(remotePath: string, content: string | Buffer): Promise<void> {
-    await this.client.putFileContents(remotePath, content, {
-      overwrite: true
-    })
+    await withTimeout(
+      this.client.putFileContents(remotePath, content, { overwrite: true }),
+      REQUEST_TIMEOUT_MS,
+      `PUT ${remotePath}`
+    )
   }
 
   async downloadFile(remotePath: string): Promise<string> {
-    const data = await this.client.getFileContents(remotePath, {
-      format: 'text'
-    })
+    const data = await withTimeout(
+      this.client.getFileContents(remotePath, { format: 'text' }),
+      REQUEST_TIMEOUT_MS,
+      `GET ${remotePath}`
+    )
     if (typeof data === 'string') return data
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
     return buf.toString('utf-8')
   }
 
   async downloadFileBuffer(remotePath: string): Promise<Buffer> {
-    const data = await this.client.getFileContents(remotePath, {
-      format: 'binary'
-    })
+    const data = await withTimeout(
+      this.client.getFileContents(remotePath, { format: 'binary' }),
+      REQUEST_TIMEOUT_MS,
+      `GET ${remotePath}`
+    )
     return Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
   }
 
   async listFiles(remoteDir: string): Promise<WebDavFile[]> {
     try {
-      const entries = await this.client.getDirectoryContents(remoteDir)
+      const entries = await withTimeout(
+        this.client.getDirectoryContents(remoteDir),
+        REQUEST_TIMEOUT_MS,
+        `PROPFIND ${remoteDir}`
+      )
       const results: WebDavFile[] = []
       for (const entry of entries) {
         if (entry.basename === '') continue // skip self
@@ -98,7 +134,11 @@ export class SyncWebDavClient {
 
   private async walkRemote(dir: string, files: string[]): Promise<void> {
     try {
-      const entries = await this.client.getDirectoryContents(dir)
+      const entries = await withTimeout(
+        this.client.getDirectoryContents(dir),
+        REQUEST_TIMEOUT_MS,
+        `PROPFIND ${dir}`
+      )
       for (const entry of entries) {
         if (entry.basename === '') continue
         if (entry.type === 'directory') {

@@ -43,16 +43,20 @@ export function registerSyncIpc(dataRoot: string, safeStorage: SafeStorageAdapte
     return manager.test(await resolveConfig(input))
   })
 
-  ipcMain.handle('sync:push', async (_event, input: unknown) => {
-    const result = await manager.push(await resolveConfig(input))
+  ipcMain.handle('sync:push', async (event, input: unknown) => {
+    const result = await manager.push(await resolveConfig(input), (progress) => {
+      if (!event.sender.isDestroyed()) event.sender.send('sync:progress', progress)
+    })
     if (result.success) {
       return { ...result, timestamp: new Date().toISOString() }
     }
     return result
   })
 
-  ipcMain.handle('sync:pull', async (_event, input: unknown) => {
-    const result = await manager.pull(await resolveConfig(input))
+  ipcMain.handle('sync:pull', async (event, input: unknown) => {
+    const result = await manager.pull(await resolveConfig(input), (progress) => {
+      if (!event.sender.isDestroyed()) event.sender.send('sync:progress', progress)
+    })
     if (result.success) {
       return { ...result, timestamp: new Date().toISOString() }
     }

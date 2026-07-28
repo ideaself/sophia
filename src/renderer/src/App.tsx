@@ -520,11 +520,13 @@ function WebDavSyncView(): React.ReactElement {
   const [lastPush, setLastPush] = useState(() => localStorage.getItem('webdav-last-push') || '')
   const [lastPull, setLastPull] = useState(() => localStorage.getItem('webdav-last-pull') || '')
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [progress, setProgress] = useState<SyncProgress | null>(null)
 
   useEffect(() => {
     // One-time migration: purge any plaintext password saved by older versions
     localStorage.removeItem('webdav-password')
     window.sophia.sync.hasWebdavPassword().then(setHasPassword)
+    return window.sophia.sync.onProgress(setProgress)
   }, [])
 
   const getConfig = () => ({ url: url.trim(), username: username.trim() })
@@ -557,6 +559,7 @@ function WebDavSyncView(): React.ReactElement {
     await saveToStorage()
     setPushing(true)
     setResult(null)
+    setProgress(null)
     try {
       const res = await window.sophia.sync.push(getConfig())
       if (res.success) {
@@ -572,6 +575,7 @@ function WebDavSyncView(): React.ReactElement {
       setResult({ ok: false, msg: e instanceof Error ? e.message : 'Push failed' })
     } finally {
       setPushing(false)
+      setProgress(null)
     }
   }
 
@@ -586,6 +590,7 @@ function WebDavSyncView(): React.ReactElement {
     }
     setPulling(true)
     setResult(null)
+    setProgress(null)
     try {
       const res = await window.sophia.sync.pull(getConfig())
       if (res.success) {
@@ -601,6 +606,7 @@ function WebDavSyncView(): React.ReactElement {
       setResult({ ok: false, msg: e instanceof Error ? e.message : 'Pull failed' })
     } finally {
       setPulling(false)
+      setProgress(null)
     }
   }
 
@@ -674,6 +680,20 @@ function WebDavSyncView(): React.ReactElement {
               {pulling ? 'Pulling...' : 'Pull (Download)'}
             </button>
           </div>
+
+          {(pushing || pulling) && progress && progress.total > 0 && (
+            <div className="mb-2">
+              <div className="h-1.5 w-full overflow-hidden rounded bg-bg-deep">
+                <div
+                  className="h-full bg-accent transition-all duration-200"
+                  style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-1 truncate text-xs text-text-muted">
+                {progress.current}/{progress.total} — {progress.file}
+              </p>
+            </div>
+          )}
 
           <div className="text-xs text-text-muted">
             <p>Last push: {lastPush ? new Date(lastPush).toLocaleString() : 'never'}</p>
