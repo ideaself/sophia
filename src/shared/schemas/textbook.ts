@@ -8,6 +8,7 @@ export interface Textbook {
   title: string
   format: z.infer<typeof textbookFormatSchema>
   sourceFile: string
+  originalFile: string
   content: string
   progress: { currentPage: number; totalPages: number | null }
   createdAt: string
@@ -34,6 +35,7 @@ export const TextbookSchema = z.object({
   title: z.string().min(1),
   format: textbookFormatSchema,
   sourceFile: z.string(),
+  originalFile: z.string().default(''),
   content: z.string().min(1),
   progress: progressSchema,
   createdAt: isoDatetime,

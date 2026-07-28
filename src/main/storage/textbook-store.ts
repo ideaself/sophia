@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, access, readdir, unlink } from 'node:fs/promises'
+import { mkdir, writeFile, readFile, access, readdir, unlink, copyFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Textbook } from '../../shared/schemas/textbook'
 import { TextbookSchema } from '../../shared/schemas/textbook'
@@ -7,15 +7,19 @@ import {
   textbooksDir,
   textbookDir,
   textbookPath,
-  textbookContentPath
+  textbookContentPath,
+  textbookOriginalPath
 } from './app-data'
 
 export interface CreateTextbookInput {
   worldId: WorldId
   title: string
   format: 'markdown' | 'text' | 'pdf' | 'epub'
+  /** 原始文件名（仅展示用，不再是绝对路径） */
   sourceFile?: string
   content?: string
+  /** 原件在磁盘上的来源路径；提供时 store 会复制为教材目录下的 source.pdf */
+  originalSourcePath?: string
 }
 
 let idCounter = 0
@@ -38,6 +42,7 @@ export class TextbookStore {
       title: input.title,
       format: input.format,
       sourceFile: input.sourceFile ?? '',
+      originalFile: input.originalSourcePath ? 'source.pdf' : '',
       content: input.content ?? '',
       progress: { currentPage: 0, totalPages: null },
       createdAt: now,
@@ -59,6 +64,13 @@ export class TextbookStore {
         textbookContentPath(this.dataRoot, id, input.worldId),
         input.content,
         'utf-8'
+      )
+    }
+
+    if (input.originalSourcePath) {
+      await copyFile(
+        input.originalSourcePath,
+        textbookOriginalPath(this.dataRoot, id, input.worldId)
       )
     }
 
@@ -167,6 +179,29 @@ export class TextbookStore {
     } catch {
       const tb = await this.get(textbookId, worldId)
       return tb?.content ?? ''
+    }
+  }
+
+  /**
+   * Read the stored original file (source.pdf) for a textbook.
+   * Returns null when the textbook has no original or does not exist.
+   * fileName is the display name (basename of the imported file).
+   */
+  async readOriginal(
+    textbookId: string,
+    worldId: string
+  ): Promise<{ data: Buffer; fileName: string } | null> {
+    const tb = await this.get(textbookId, worldId)
+    if (!tb || !tb.originalFile) return null
+
+    try {
+      const data = await readFile(
+        join(textbookDir(this.dataRoot, textbookId, worldId), tb.originalFile)
+      )
+      const fileName = tb.sourceFile.split(/[/\\]/).pop() || tb.originalFile
+      return { data, fileName }
+    } catch {
+      return null
     }
   }
 }

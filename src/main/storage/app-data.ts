@@ -113,6 +113,15 @@ export function textbookContentPath(
   return join(textbookDir(dataRoot, textbookId, worldId, profileId), 'source.md')
 }
 
+export function textbookOriginalPath(
+  dataRoot: string,
+  textbookId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(textbookDir(dataRoot, textbookId, worldId, profileId), 'source.pdf')
+}
+
 // --- Conversation paths ---
 
 export function conversationsDir(
