@@ -49,6 +49,7 @@ export interface TextbookDTO {
   title: string
   format: 'markdown' | 'text' | 'pdf' | 'epub'
   sourceFile: string
+  originalFile: string
   content: string
   progress: { currentPage: number; totalPages: number | null }
   createdAt: string
@@ -133,6 +134,7 @@ export interface DataAPI {
     content?: string
   }) => Promise<TextbookDTO>
   getTextbook: (textbookId: string, worldId?: string) => Promise<TextbookDTO | null>
+  readTextbookOriginal: (textbookId: string, worldId?: string) => Promise<{ data: Uint8Array; fileName: string } | null>
   listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
   updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
   updateTextbook: (textbookId: string, updates: { title?: string; content?: string }, worldId?: string) => Promise<TextbookDTO | null>
@@ -362,6 +364,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('textbook:create', input),
     getTextbook: (textbookId, worldId = 'world_default') =>
       ipcRenderer.invoke('textbook:get', { textbookId, worldId }),
+    readTextbookOriginal: (textbookId, worldId = 'world_default') =>
+      ipcRenderer.invoke('textbook:read-original', { textbookId, worldId }),
     listTextbooks: (worldId) =>
       ipcRenderer.invoke('textbook:list', { worldId }),
     updateTextbookContent: (textbookId, content, worldId = 'world_default') =>

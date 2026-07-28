@@ -51,6 +51,7 @@ declare global {
     title: string
     format: 'markdown' | 'text' | 'pdf' | 'epub'
     sourceFile: string
+    originalFile: string
     content: string
     progress: { currentPage: number; totalPages: number | null }
     createdAt: string
@@ -112,6 +113,7 @@ declare global {
       content?: string
     }) => Promise<TextbookDTO>
     getTextbook: (textbookId: string, worldId?: string) => Promise<TextbookDTO | null>
+    readTextbookOriginal: (textbookId: string, worldId?: string) => Promise<{ data: Uint8Array; fileName: string } | null>
     listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
     updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
     updateTextbook: (textbookId: string, updates: { title?: string; content?: string }, worldId?: string) => Promise<TextbookDTO | null>
