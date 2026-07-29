@@ -1,7 +1,7 @@
 # ADR-001: DeepSeek API Only
 
 ## Status
-Accepted
+Superseded by ADR-006
 
 ## Date
 2026-07-06

@@ -40,7 +40,7 @@ import {
   IpcOpenFileDialogInputSchema,
   IpcSaveFileDialogInputSchema
 } from '../../shared/schemas/ipc'
-import type { WorldId, ConversationId } from '../../shared/types/ids'
+import { ArtifactType, type WorldId, type ConversationId } from '../../shared/types/ids'
 
 /** In-app reader loads the whole file into memory — cap it. */
 const MAX_ORIGINAL_SIZE = 512 * 1024 * 1024
@@ -118,10 +118,25 @@ export function registerConversationIpc(
       if (apiKey) {
         const messages = await conversationStore.getMessages(conversationId, worldId)
         const { results, failures } = await generateArtifacts(messages, { apiKey, model, baseUrl })
+        let progressContent = ''
         for (const result of results) {
           await artifactStore.create(conversationId as ConversationId, worldId as WorldId, result.type, result.content)
           artifactCount++
+          if (result.type === ArtifactType.Progress) {
+            progressContent = result.content
+          }
         }
+
+        // Writeback: save progress artifact content to textbook progress
+        if (progressContent) {
+          const conv = await conversationStore.get(conversationId, worldId)
+          if (conv?.textbookId) {
+            await textbookStore.updateProgress(conv.textbookId, worldId, {
+              lastPosition: progressContent
+            })
+          }
+        }
+
         if (failures.length > 0) {
           console.warn(`Artifact generation failures for ${conversationId}:`, failures)
         }

@@ -1,7 +1,7 @@
 # ADR-004: Single-User Personal Tool
 
 ## Status
-Accepted
+Partially superseded by ADR-007 (WebDAV sync)
 
 ## Date
 2026-07-06

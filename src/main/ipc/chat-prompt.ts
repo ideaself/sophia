@@ -11,6 +11,8 @@ import { ConversationStore } from '../storage/conversation-store'
 import { ArtifactStore } from '../storage/artifact-store'
 import { companionDir } from '../storage/app-data'
 import type { WorldId } from '../../shared/types/ids'
+import { compressMessages, shouldCompress, splitCompressionWindow } from '../prompt/message-compressor'
+import type { ProviderStore } from '../storage/provider-store'
 
 // ---------------------------------------------------------------
 // Input validation
@@ -59,7 +61,7 @@ function validateInput(input: unknown): PromptMessagesInput {
  * 5. Call buildMessages() to assemble the full message array
  * 6. Return the messages array for streaming to DeepSeek
  */
-export function registerChatPromptIpc(dataRoot: string): void {
+export function registerChatPromptIpc(dataRoot: string, providerStore?: ProviderStore): void {
   const textbookStore = new TextbookStore(dataRoot)
   const conversationStore = new ConversationStore(dataRoot)
   const artifactStore = new ArtifactStore(dataRoot)
@@ -103,7 +105,34 @@ export function registerChatPromptIpc(dataRoot: string): void {
         content: m.content
       }))
 
-    // 6. Build messages with system prompt
+    // 6. Compress early messages if conversation is very long
+    if (shouldCompress(history) && providerStore) {
+      try {
+        const active = await providerStore.getActive()
+        if (active) {
+          const apiKey = await providerStore.readApiKey(active.id)
+          if (apiKey) {
+            const { toCompress, toKeep } = splitCompressionWindow(history)
+            const summary = await compressMessages(toCompress, {
+              apiKey,
+              baseUrl: active.baseUrl || 'https://api.deepseek.com',
+              model: active.selectedModel || 'deepseek-v4-flash'
+            })
+            if (summary) {
+              const compressionMsg: DeepSeekChatMessage = {
+                role: 'system',
+                content: `【早期对话摘要】\n${summary}\n\n以上是早期对话的摘要。当前对话从以下内容继续：`
+              }
+              history.splice(0, history.length, compressionMsg, ...toKeep)
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to compress conversation history:', err)
+      }
+    }
+
+    // 7. Build messages with system prompt
     const builtMessages = buildMessages({
       companion,
       worldContext,

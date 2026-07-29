@@ -189,6 +189,16 @@ function App(): React.ReactElement {
             角色
           </button>
 
+          <button onClick={() => { setView('flashcards'); setShowClassroomDropdown(false) }}
+            className={`rounded px-3 py-2 text-sm transition-colors ${view === 'flashcards' ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-elevated'}`}>
+            复习
+          </button>
+
+          <button onClick={() => { setView('stats'); setShowClassroomDropdown(false) }}
+            className={`rounded px-3 py-2 text-sm transition-colors ${view === 'stats' ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-elevated'}`}>
+            统计
+          </button>
+
           <button onClick={() => { setView('settings'); setShowClassroomDropdown(false) }}
             className={`rounded px-3 py-2 text-sm transition-colors ${view === 'settings' ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-elevated'}`}>
             设置
@@ -201,6 +211,8 @@ function App(): React.ReactElement {
         {view === 'companions' && <CompanionsManageView />}
         {view === 'textbooks' && <TextbooksView />}
         {view === 'history' && <HistoryView />}
+        {view === 'flashcards' && <FlashcardReviewView />}
+        {view === 'stats' && <StatsView />}
         {view === 'classroom' && (
           <div key={classroomResetKey} className="h-full">
             <ClassroomView companion={selectedCompanion} textbook={selectedTextbook} chatStream={chatStream}

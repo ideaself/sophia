@@ -170,7 +170,7 @@ if (!app.requestSingleInstanceLock()) {
     registerSyncIpc(dataRoot, safeStorage)
     registerConversationIpc(dataRoot, providerStore)
     registerCompanionIpc(dataRoot)
-    registerChatPromptIpc(dataRoot)
+    registerChatPromptIpc(dataRoot, providerStore)
 
     createWindow()
 
