@@ -109,6 +109,43 @@ export function HistoryView(): React.ReactElement {
     })
   }, [conversations])
 
+  const handleExport = async (conv: ConversationDTO) => {
+    const msgs = await window.sophia.data.listMessages(conv.id)
+    if (msgs.length === 0) return
+
+    const compName = companionMap[conv.companionId] ?? conv.companionId
+    const dateRange = msgs.length > 0
+      ? `${new Date(msgs[0].createdAt).toLocaleDateString()} — ${new Date(msgs[msgs.length - 1].createdAt).toLocaleDateString()}`
+      : ''
+    const lines: string[] = [
+      `# ${conv.title}`,
+      '',
+      `**AI 角色**: ${compName}`,
+      `**对话时间**: ${dateRange}`,
+      `**消息数**: ${msgs.length}`,
+      '',
+      '---',
+      ''
+    ]
+    for (const msg of msgs) {
+      const label = msg.role === 'user' ? '你' : msg.role === 'assistant' ? compName : '系统'
+      const time = new Date(msg.createdAt).toLocaleString()
+      lines.push(`### ${label} — ${time}`)
+      lines.push('')
+      lines.push(msg.content)
+      lines.push('')
+    }
+
+    const content = lines.join('\n')
+    const safeTitle = conv.title.replace(/[<>:"/\\|?*]/g, '_')
+    const result = await window.sophia.dialog.saveFile({
+      defaultPath: `${safeTitle}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }]
+    })
+    if (result.canceled || !result.filePath) return
+    await window.sophia.data.writeTextFile(result.filePath, content)
+  }
+
   return (
     <div className="p-8">
       <h2 className="mb-6 text-2xl font-bold">学习历史</h2>
@@ -220,6 +257,13 @@ export function HistoryView(): React.ReactElement {
                       继续上课
                     </button>
                   )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleExport(conv) }}
+                    className="text-xs text-text-muted hover:text-accent-hover"
+                    title="导出为 Markdown"
+                  >
+                    📥
+                  </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id) }}
                     className="text-xs text-text-muted hover:text-red-400"

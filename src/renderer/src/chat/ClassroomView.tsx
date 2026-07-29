@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useChatStream } from './useChatStream'
 import { ChatMessage } from './ChatMessage'
 
@@ -17,9 +17,7 @@ interface ClassroomViewProps {
   companion: Companion | null
   textbook: Textbook | null
   chatStream: ReturnType<typeof useChatStream>
-  /** When set, load this conversation's messages and resume it */
   loadConversationId?: string | null
-  /** Called after a conversation is loaded (so parent can clear the prop) */
   onConversationLoaded?: () => void
 }
 
@@ -29,150 +27,345 @@ interface DisplayMessage {
   content: string
 }
 
+interface TabState {
+  id: string
+  title: string
+  conversationId: string | null
+  messages: DisplayMessage[]
+  input: string
+  retryMessage: { input: string; convId: string } | null
+  endResult: { artifacts: number } | null
+}
+
 const WORLD_ID = 'world_default'
 
+let tabCounter = 0
+function newTabId(): string {
+  tabCounter += 1
+  return `tab_${Date.now()}_${tabCounter}`
+}
+
+function makeTab(conversationId?: string, title?: string): TabState {
+  return {
+    id: newTabId(),
+    title: title ?? '新对话',
+    conversationId: conversationId ?? null,
+    messages: [],
+    input: '',
+    retryMessage: null,
+    endResult: null
+  }
+}
+
 export function ClassroomView({ companion, textbook, chatStream, loadConversationId, onConversationLoaded }: ClassroomViewProps): React.ReactElement {
-  const [input, setInput] = useState('')
-  const [messages, setMessages] = useState<DisplayMessage[]>([])
-  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [tabs, setTabs] = useState<TabState[]>([makeTab()])
+  const [activeIdx, setActiveIdx] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleInput, setTitleInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const loadedIdRef = useRef<string | null>(null)
 
-  // Load a conversation from DB when loadConversationId changes
+  const activeTab = tabs[activeIdx] ?? tabs[0]
+
+  const updateTab = useCallback((idx: number, patch: Partial<TabState>) => {
+    setTabs((prev) => {
+      const next = [...prev]
+      if (next[idx]) next[idx] = { ...next[idx], ...patch }
+      return next
+    })
+  }, [])
+
+  const setActiveTabInput = useCallback((val: string) => {
+    updateTab(activeIdx, { input: val })
+  }, [activeIdx, updateTab])
+
+  // Load conversation from history
   useEffect(() => {
     if (!loadConversationId || loadConversationId === loadedIdRef.current) return
     loadedIdRef.current = loadConversationId
 
     let cancelled = false
-    window.sophia.data.listMessages(loadConversationId).then((msgs) => {
-      if (cancelled) return
-      const loaded: DisplayMessage[] = msgs.map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content
-      }))
-      setMessages(loaded)
-      setConversationId(loadConversationId)
-      onConversationLoaded?.()
+    window.sophia.data.getConversation(loadConversationId).then((conv) => {
+      if (cancelled || !conv) return
+      if (tabs.some((t) => t.conversationId === loadConversationId)) {
+        const existingIdx = tabs.findIndex((t) => t.conversationId === loadConversationId)
+        if (existingIdx >= 0) setActiveIdx(existingIdx)
+        onConversationLoaded?.()
+        return
+      }
+      window.sophia.data.listMessages(loadConversationId).then((msgs) => {
+        if (cancelled) return
+        const loaded: DisplayMessage[] = msgs.map((m) => ({
+          id: m.id, role: m.role, content: m.content
+        }))
+        const newTab = makeTab(loadConversationId, conv.title)
+        newTab.messages = loaded
+        setTabs((prev) => [...prev, newTab])
+        setActiveIdx(tabs.length)
+        onConversationLoaded?.()
+      })
     })
-
     return () => { cancelled = true }
-  }, [loadConversationId, onConversationLoaded])
+  }, [loadConversationId])
 
-  // Reset loadedIdRef when conversation is cleared (e.g. after endClass)
+  // Reset loadedIdRef when no tabs have a conversation
   useEffect(() => {
-    if (!conversationId) {
+    if (!tabs.some((t) => t.conversationId)) {
       loadedIdRef.current = null
     }
-  }, [conversationId])
+  }, [tabs])
 
-  // Auto-scroll to bottom
+  // Cancel stuck stream on companion change
+  const prevCompanionIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const id = companion?.id ?? null
+    if (prevCompanionIdRef.current !== null && prevCompanionIdRef.current !== id) {
+      if (chatStream.state.isStreaming) chatStream.cancel()
+    }
+    prevCompanionIdRef.current = id
+  }, [companion?.id])
+
+  // Focus input on mount/companion change
+  useEffect(() => {
+    if (companion) {
+      requestAnimationFrame(() => inputRef.current?.focus())
+    }
+  }, [companion?.id, activeIdx])
+
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, chatStream.state.assistantContent])
+  }, [activeTab.messages, chatStream.state.assistantContent])
 
-  // Last failed message for retry
-  const [retryMessage, setRetryMessage] = useState<{ input: string; convId: string } | null>(null)
+  // Tab switching - update input/messages
+  useEffect(() => {
+    setSendError(null)
+  }, [activeIdx])
 
   const handleSend = async (retryInput?: string) => {
-    const userMessage = retryInput ?? input.trim()
-    if (!userMessage || chatStream.state.isStreaming || !companion) return
+    const tab = tabs[activeIdx]
+    if (!tab) return
+    try {
+      const userMessage = retryInput ?? tab.input.trim()
+      if (!userMessage || !companion) return
 
-    setInput('')
-    setRetryMessage(null)
+      if (chatStream.state.isStreaming) {
+        await chatStream.cancel()
+      }
 
-    // Create conversation on first message
-    let convId = conversationId
-    if (!convId) {
-      const conv = await window.sophia.data.createConversation({
-        worldId: WORLD_ID,
-        companionId: companion.id,
-        textbookId: textbook?.id,
-        title: userMessage.slice(0, 50)
-      })
-      convId = conv.id
-      setConversationId(convId)
-    }
+      setSendError(null)
 
-    // Save user message
-    await window.sophia.data.sendMessage({
-      conversationId: convId,
-      content: userMessage,
-      role: 'user',
-      worldId: WORLD_ID
-    })
+      let convId = tab.conversationId
+      if (!convId) {
+        try {
+          const conv = await window.sophia.data.createConversation({
+            worldId: WORLD_ID,
+            companionId: companion.id,
+            textbookId: textbook?.id,
+            title: userMessage.slice(0, 50)
+          })
+          convId = conv.id
+          updateTab(activeIdx, { conversationId: convId, title: userMessage.slice(0, 50) })
+        } catch {
+          setSendError('创建对话失败，请重试')
+          return
+        }
+      }
 
-    const updatedMessages: DisplayMessage[] = [
-      ...messages,
-      { id: `local-${Date.now()}`, role: 'user', content: userMessage }
-    ]
-    setMessages(updatedMessages)
-
-    // Build messages with system prompt via main-process handler
-    const builtMessages = await window.sophia.chat.getPromptMessages({
-      conversationId: convId,
-      companionId: companion.id,
-      textbookId: textbook?.id ?? null,
-      userMessage,
-      worldId: WORLD_ID
-    })
-
-    // Send and wait for stream to finish
-    await chatStream.send(builtMessages)
-
-    // Wait for streamEnd promise to resolve (stream finished)
-    const endPromise = chatStream.streamEnd
-    if (endPromise) {
       try {
-        const { content } = await endPromise
-        // Persist assistant message to DB
-        if (content && convId) {
+        await window.sophia.data.sendMessage({
+          conversationId: convId,
+          content: userMessage,
+          role: 'user',
+          worldId: WORLD_ID
+        })
+      } catch {
+        try {
+          const conv = await window.sophia.data.createConversation({
+            worldId: WORLD_ID,
+            companionId: companion.id,
+            textbookId: textbook?.id,
+            title: userMessage.slice(0, 50)
+          })
+          convId = conv.id
+          updateTab(activeIdx, { conversationId: convId, title: userMessage.slice(0, 50) })
           await window.sophia.data.sendMessage({
             conversationId: convId,
-            content,
-            role: 'assistant',
+            content: userMessage,
+            role: 'user',
             worldId: WORLD_ID
           })
+        } catch {
+          setSendError('发送消息失败，对话可能已被删除')
+          return
         }
-        // Add assistant message to display state so it survives across turns
-        if (content) {
-          setMessages((prev) => [
-            ...prev,
-            { id: `assistant-${Date.now()}`, role: 'assistant', content }
-          ])
-        }
-      } catch {
-        // Stream was cancelled or errored — save retry info
-        setRetryMessage({ input: userMessage, convId: convId! })
       }
-    }
 
-    // Auto-focus input after streaming ends
-    inputRef.current?.focus()
+      const updatedMessages: DisplayMessage[] = [
+        ...tab.messages,
+        { id: `local-${Date.now()}`, role: 'user', content: userMessage }
+      ]
+      updateTab(activeIdx, { messages: updatedMessages, input: '', retryMessage: null })
+
+      let builtMessages
+      try {
+        builtMessages = await window.sophia.chat.getPromptMessages({
+          conversationId: convId,
+          companionId: companion.id,
+          textbookId: textbook?.id ?? null,
+          userMessage,
+          worldId: WORLD_ID
+        })
+      } catch {
+        setSendError('无法加载角色数据，请重新选择学习伙伴')
+        return
+      }
+
+      await chatStream.send(builtMessages)
+
+      const endPromise = chatStream.streamEnd
+      if (endPromise) {
+        try {
+          const { content } = await endPromise
+          if (content && convId) {
+            await window.sophia.data.sendMessage({
+              conversationId: convId,
+              content,
+              role: 'assistant',
+              worldId: WORLD_ID
+            })
+          }
+          if (content) {
+            setTabs((prev) => {
+              const next = [...prev]
+              const t = next[activeIdx]
+              if (t) t.messages = [...t.messages, { id: `assistant-${Date.now()}`, role: 'assistant', content }]
+              return next
+            })
+          }
+        } catch {
+          setTabs((prev) => {
+            const next = [...prev]
+            const t = next[activeIdx]
+            if (t) t.retryMessage = { input: userMessage, convId: convId! }
+            return next
+          })
+        }
+      }
+
+      inputRef.current?.focus()
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : '发送失败，请重试')
+    }
   }
 
-  // Handle end class
-  const [endResult, setEndResult] = useState<{ artifacts: number } | null>(null)
   const handleEndClass = async () => {
-    if (!conversationId) return
+    if (!activeTab.conversationId) return
     setIsLoading(true)
-    setEndResult(null)
     try {
-      const result = await window.sophia.data.endConversation(conversationId, WORLD_ID)
+      const result = await window.sophia.data.endConversation(activeTab.conversationId, WORLD_ID)
       if (result.success) {
-        setEndResult({ artifacts: result.artifacts })
-        setConversationId(null)
-        setMessages([])
+        updateTab(activeIdx, { endResult: { artifacts: result.artifacts }, conversationId: null, messages: [] })
       }
     } finally {
       setIsLoading(false)
     }
   }
 
-  // Build display messages including streaming content
-  const allMessages = [...messages]
+  const handleRename = () => {
+    if (!activeTab.conversationId) return
+    setEditingTitle(true)
+    setTitleInput(activeTab.title)
+  }
+
+  const handleSaveTitle = async () => {
+    if (!activeTab.conversationId || !titleInput.trim()) {
+      setEditingTitle(false)
+      return
+    }
+    await window.sophia.data.updateTitle(activeTab.conversationId, titleInput.trim())
+    updateTab(activeIdx, { title: titleInput.trim() })
+    setEditingTitle(false)
+  }
+
+  const handleEditMessage = async (messageId: string, content: string) => {
+    if (!activeTab.conversationId) return
+    await window.sophia.data.updateMessage(activeTab.conversationId, messageId, content)
+    setTabs((prev) => {
+      const next = [...prev]
+      const t = next[activeIdx]
+      if (t) {
+        t.messages = t.messages.map((m) => m.id === messageId ? { ...m, content } : m)
+      }
+      return next
+    })
+  }
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!activeTab.conversationId) return
+    await window.sophia.data.deleteMessage(activeTab.conversationId, messageId)
+    setTabs((prev) => {
+      const next = [...prev]
+      const t = next[activeIdx]
+      if (t) t.messages = t.messages.filter((m) => m.id !== messageId)
+      return next
+    })
+  }
+
+  const handleRegenerate = async (messageId: string) => {
+    const msgs = activeTab.messages
+    const msgIdx = msgs.findIndex((m) => m.id === messageId)
+    if (msgIdx < 0) return
+
+    // Remove this assistant message and find the last user message before it
+    const newMessages = msgs.slice(0, msgIdx)
+    setTabs((prev) => {
+      const next = [...prev]
+      const t = next[activeIdx]
+      if (t) t.messages = newMessages
+      return next
+    })
+
+    // Delete the assistant message from DB
+    if (activeTab.conversationId) {
+      await window.sophia.data.deleteMessage(activeTab.conversationId, messageId)
+    }
+
+    // Find the last user message to resend
+    const lastUserMsg = [...newMessages].reverse().find((m) => m.role === 'user')
+    if (lastUserMsg) {
+      await handleSendFromContent(lastUserMsg.content)
+    }
+  }
+
+  const handleSendFromContent = async (content: string) => {
+    setTabs((prev) => {
+      const next = [...prev]
+      if (next[activeIdx]) next[activeIdx] = { ...next[activeIdx], input: content }
+      return next
+    })
+    // Use setTimeout to let state update first
+    setTimeout(() => handleSend(content), 0)
+  }
+
+  const handleNewTab = () => {
+    setTabs((prev) => [...prev, makeTab()])
+    setActiveIdx(tabs.length)
+  }
+
+  const handleCloseTab = (idx: number) => {
+    if (tabs.length <= 1) return
+    setTabs((prev) => prev.filter((_, i) => i !== idx))
+    if (activeIdx >= idx) {
+      setActiveIdx(Math.max(0, activeIdx - 1))
+    }
+  }
+
+  // Build display messages including streaming
+  const allMessages = [...activeTab.messages]
   if (chatStream.state.isStreaming && chatStream.state.assistantContent) {
     allMessages.push({
       id: 'streaming',
@@ -194,20 +387,88 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
   return (
     <div className="flex h-full flex-col">
+      {/* Tab bar */}
+      <div className="flex items-center border-b border-surface-border bg-bg-surface px-2 pt-1">
+        <div className="flex-1 flex items-center overflow-x-auto gap-0.5">
+          {tabs.map((tab, idx) => (
+            <div
+              key={tab.id}
+              onClick={() => setActiveIdx(idx)}
+              className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-t cursor-pointer select-none whitespace-nowrap max-w-[160px] ${
+                idx === activeIdx
+                  ? 'bg-bg-deep text-text-primary border border-b-0 border-surface-border -mb-px'
+                  : 'text-text-muted hover:text-text-secondary hover:bg-bg-elevated'
+              }`}
+            >
+              <span className="truncate">{tab.title}</span>
+              {tabs.length > 1 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleCloseTab(idx) }}
+                  className="flex-shrink-0 ml-1 w-4 h-4 flex items-center justify-center rounded hover:bg-red-900/30 hover:text-red-400"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={handleNewTab}
+          className="flex-shrink-0 px-2 py-1.5 text-xs text-text-muted hover:text-text-secondary hover:bg-bg-elevated rounded"
+          title="新建对话"
+        >
+          +
+        </button>
+      </div>
+
       {/* Header */}
       <div className="border-b border-surface-border bg-bg-surface px-6 py-3">
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold">{companion.name}</h2>
-            <p className="text-xs text-text-muted">{companion.identity}</p>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="min-w-0">
+              <h2 className="font-semibold truncate">{companion.name}</h2>
+              <p className="text-xs text-text-muted truncate">{companion.identity}</p>
+            </div>
+            {activeTab.conversationId && (
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-text-muted text-xs">|</span>
+                {editingTitle ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      value={titleInput}
+                      onChange={(e) => setTitleInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveTitle()
+                        if (e.key === 'Escape') setEditingTitle(false)
+                      }}
+                      onBlur={handleSaveTitle}
+                      className="w-40 rounded border border-accent-border bg-bg-deep px-2 py-0.5 text-xs text-text-primary focus:outline-none"
+                      autoFocus
+                    />
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleRename}
+                    className="text-xs text-text-muted hover:text-text-secondary truncate max-w-[200px]"
+                    title="点击重命名"
+                  >
+                    {activeTab.title} ✏️
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-shrink-0">
             {textbook && (
               <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs">
                 📖 {textbook.title}
               </span>
             )}
-            {conversationId && (
+            {chatStream.state.isStreaming && (
+              <span className="text-xs text-amber-400 animate-pulse">正在思考...</span>
+            )}
+            {activeTab.conversationId && (
               <button
                 onClick={handleEndClass}
                 disabled={isLoading}
@@ -232,18 +493,27 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           </div>
         )}
         {allMessages.map((msg) => (
-          <ChatMessage key={msg.id} role={msg.role} content={msg.content} />
+          <ChatMessage
+            key={msg.id}
+            id={msg.id}
+            role={msg.role}
+            content={msg.content}
+            showActions={!chatStream.state.isStreaming && msg.role !== 'system'}
+            onEdit={handleEditMessage}
+            onDelete={handleDeleteMessage}
+            onRegenerate={handleRegenerate}
+          />
         ))}
-        {chatStream.state.error && (
+        {(chatStream.state.error || sendError) && (
           <div className="rounded border border-red-800 bg-red-900/30 px-4 py-3 text-sm text-red-300">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">发送失败</p>
-                <p className="mt-1 text-xs text-red-400">{chatStream.state.error.message}</p>
+                <p className="mt-1 text-xs text-red-400">{sendError ?? chatStream.state.error?.message}</p>
               </div>
-              {retryMessage && (
+              {activeTab.retryMessage && (
                 <button
-                  onClick={() => handleSend(retryMessage.input)}
+                  onClick={() => handleSend(activeTab.retryMessage!.input)}
                   className="rounded bg-red-800 px-3 py-1 text-xs text-red-200 hover:bg-red-700"
                 >
                   重试
@@ -252,11 +522,11 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             </div>
           </div>
         )}
-        {endResult && (
+        {activeTab.endResult && (
           <div className="rounded border border-green-800 bg-green-900/30 px-4 py-3 text-sm text-green-300">
             <p className="font-medium">课程已结束</p>
             <p className="mt-1 text-xs text-green-400">
-              已自动生成 {endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
+              已自动生成 {activeTab.endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
             </p>
           </div>
         )}
@@ -269,8 +539,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           <input
             ref={inputRef}
             type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            value={activeTab.input}
+            onChange={(e) => setActiveTabInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
@@ -291,7 +561,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           ) : (
             <button
               onClick={() => handleSend()}
-              disabled={!input.trim()}
+              disabled={!activeTab.input.trim()}
               className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
             >
               发送

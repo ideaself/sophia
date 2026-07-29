@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { ClassroomView } from './chat/ClassroomView'
 import { useChatStream } from './chat/useChatStream'
 import { CompanionEditModal } from './components/CompanionEditModal'
@@ -105,6 +105,11 @@ function App(): React.ReactElement {
   }
 
   const handleClassroomClick = async () => {
+    if (selectedCompanion) {
+      const fresh = await window.sophia.companions.get(selectedCompanion.id).catch(() => null)
+      if (fresh) setSelectedCompanion({ id: fresh.id, name: fresh.name, identity: fresh.identity, personalityKeywords: fresh.personalityKeywords })
+      else setSelectedCompanion(null)
+    }
     if (view === 'classroom' && selectedCompanion) {
       if (showClassroomDropdown) { setShowClassroomDropdown(false) }
       else { await fetchActiveConversations(); setShowClassroomDropdown(true) }
@@ -122,6 +127,10 @@ function App(): React.ReactElement {
   }
 
   const activeConversations = useConversationStore((s) => s.activeConversations)
+
+  const onConversationLoaded = useCallback(() => {
+    setLoadConversationId(null)
+  }, [])
 
   return (
     <div className="flex h-screen flex-col bg-bg-deep text-text-primary">
@@ -190,10 +199,12 @@ function App(): React.ReactElement {
         {view === 'companions' && <CompanionsManageView />}
         {view === 'textbooks' && <TextbooksView />}
         {view === 'history' && <HistoryView />}
-        <div key={classroomResetKey} className={view === 'classroom' ? 'h-full' : 'hidden h-full'}>
-          <ClassroomView companion={selectedCompanion} textbook={selectedTextbook} chatStream={chatStream}
-            loadConversationId={loadConversationId} onConversationLoaded={() => setLoadConversationId(null)} />
-        </div>
+        {view === 'classroom' && (
+          <div key={classroomResetKey} className="h-full">
+            <ClassroomView companion={selectedCompanion} textbook={selectedTextbook} chatStream={chatStream}
+              loadConversationId={loadConversationId} onConversationLoaded={onConversationLoaded} />
+          </div>
+        )}
       </main>
 
       {(editingCompanion || isCreatingCompanion) && (

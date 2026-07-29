@@ -180,6 +180,31 @@ export class ConversationStore {
     return conv
   }
 
+  async updateMessage(conversationId: string, worldId: string, messageId: string, content: string): Promise<Message | null> {
+    const messages = await this.getMessages(conversationId, worldId)
+    const idx = messages.findIndex((m) => m.id === messageId)
+    if (idx === -1) return null
+    messages[idx].content = content
+    await writeFile(
+      conversationMessagesPath(this.dataRoot, conversationId, worldId),
+      JSON.stringify(messages, null, 2),
+      'utf-8'
+    )
+    return messages[idx]
+  }
+
+  async deleteMessage(conversationId: string, worldId: string, messageId: string): Promise<boolean> {
+    const messages = await this.getMessages(conversationId, worldId)
+    const filtered = messages.filter((m) => m.id !== messageId)
+    if (filtered.length === messages.length) return false
+    await writeFile(
+      conversationMessagesPath(this.dataRoot, conversationId, worldId),
+      JSON.stringify(filtered, null, 2),
+      'utf-8'
+    )
+    return true
+  }
+
   async searchMessages(worldId: string, query: string): Promise<Array<{ conversationId: string; message: Message }>> {
     const conversations = await this.list(worldId)
     const results: Array<{ conversationId: string; message: Message }> = []

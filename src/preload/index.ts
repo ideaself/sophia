@@ -107,6 +107,7 @@ export interface ChatAPI {
 // ---------------------------------------------------------------
 
 export interface DataAPI {
+  writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>
   createConversation: (input: {
     worldId: string
     companionId: string
@@ -123,6 +124,8 @@ export interface DataAPI {
     role?: string
     worldId?: string
   }) => Promise<MessageDTO>
+  updateMessage: (conversationId: string, messageId: string, content: string, worldId?: string) => Promise<MessageDTO | null>
+  deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
   listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
   searchMessages: (worldId: string, query: string) => Promise<SearchResultDTO[]>
   endConversation: (conversationId: string, worldId?: string) => Promise<{ success: boolean; artifacts: number }>
@@ -193,6 +196,10 @@ export interface DialogAPI {
   openFile: (options?: {
     filters?: Array<{ name: string; extensions: string[] }>
   }) => Promise<{ canceled: boolean; filePaths: string[] }>
+  saveFile: (options?: {
+    defaultPath?: string
+    filters?: Array<{ name: string; extensions: string[] }>
+  }) => Promise<{ canceled: boolean; filePath?: string }>
 }
 
 // ---------------------------------------------------------------
@@ -276,9 +283,14 @@ export interface SyncAPI {
   onProgress: (callback: (progress: SyncProgress) => void) => () => void
 }
 
+export interface AppAPI {
+  minimizeToTray: () => Promise<void>
+}
+
 export interface SophiaAPI {
   getVersion: () => Promise<string>
   getPlatform: () => Promise<string>
+  app: AppAPI
   settings: SettingsAPI
   chat: ChatAPI
   data: DataAPI
@@ -318,6 +330,9 @@ function createEventSubscriber<P>(
 const sophia: SophiaAPI = {
   getVersion: () => ipcRenderer.invoke('app:get-version'),
   getPlatform: () => ipcRenderer.invoke('app:get-platform'),
+  app: {
+    minimizeToTray: () => ipcRenderer.invoke('app:minimize-to-tray')
+  },
   settings: {
     hasDeepSeekKey: () => ipcRenderer.invoke('settings:has-deepseek-key'),
     setDeepSeekKey: (key: string) => ipcRenderer.invoke('settings:set-deepseek-key', { key }),
@@ -362,6 +377,7 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('chat:get-prompt-messages', input)
   },
   data: {
+    writeTextFile: (filePath, content) => ipcRenderer.invoke('file:writeText', { filePath, content }),
     createConversation: (input) =>
       ipcRenderer.invoke('conversation:create', input),
     getConversation: (conversationId, worldId = 'world_default') =>
@@ -374,6 +390,10 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('conversation:update-title', { conversationId, title, worldId }),
     sendMessage: (input) =>
       ipcRenderer.invoke('message:send', input),
+    updateMessage: (conversationId, messageId, content, worldId = 'world_default') =>
+      ipcRenderer.invoke('message:update', { conversationId, messageId, content, worldId }),
+    deleteMessage: (conversationId, messageId, worldId = 'world_default') =>
+      ipcRenderer.invoke('message:delete', { conversationId, messageId, worldId }),
     listMessages: (conversationId, worldId = 'world_default') =>
       ipcRenderer.invoke('message:list', { conversationId, worldId }),
     searchMessages: (worldId, query) =>
@@ -411,7 +431,8 @@ const sophia: SophiaAPI = {
     delete: (companionId: string) => ipcRenderer.invoke('companion:delete', { companionId })
   },
   dialog: {
-    openFile: (options) => ipcRenderer.invoke('dialog:openFile', options)
+    openFile: (options) => ipcRenderer.invoke('dialog:openFile', options),
+    saveFile: (options) => ipcRenderer.invoke('dialog:saveFile', options)
   },
   providers: {
     list: () => ipcRenderer.invoke('providers:list'),

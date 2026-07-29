@@ -7,7 +7,7 @@
  * factory for backward compatibility.
  */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   createChatStreamController,
   type ChatMessage,
@@ -48,7 +48,7 @@ export function useChatStream(): CreateChatStreamControllerResult {
 
   const cancel = useCallback(() => controllerRef.current!.cancel(), [])
 
-  return {
+  return useMemo(() => ({
     get state() {
       return controllerRef.current!.state
     },
@@ -57,5 +57,5 @@ export function useChatStream(): CreateChatStreamControllerResult {
     get streamEnd() {
       return controllerRef.current!.streamEnd
     }
-  }
+  }), [send, cancel])
 }

@@ -86,6 +86,7 @@ declare global {
   }
 
   interface DataAPI {
+    writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>
     createConversation: (input: {
       worldId: string
       companionId: string
@@ -102,6 +103,8 @@ declare global {
       role?: string
       worldId?: string
     }) => Promise<MessageDTO>
+    updateMessage: (conversationId: string, messageId: string, content: string, worldId?: string) => Promise<MessageDTO | null>
+    deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
     listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
     searchMessages: (worldId: string, query: string) => Promise<SearchResultDTO[]>
     endConversation: (conversationId: string, worldId?: string) => Promise<{ success: boolean; artifacts: number }>
@@ -150,6 +153,10 @@ declare global {
     openFile: (options?: {
       filters?: Array<{ name: string; extensions: string[] }>
     }) => Promise<{ canceled: boolean; filePaths: string[] }>
+    saveFile: (options?: {
+      defaultPath?: string
+      filters?: Array<{ name: string; extensions: string[] }>
+    }) => Promise<{ canceled: boolean; filePath?: string }>
   }
 
   interface ProviderDTO {
@@ -224,9 +231,14 @@ declare global {
     onProgress: (callback: (progress: SyncProgress) => void) => () => void
   }
 
+  interface AppAPI {
+    minimizeToTray: () => Promise<void>
+  }
+
   interface SophiaAPI {
     getVersion: () => Promise<string>
     getPlatform: () => Promise<string>
+    app: AppAPI
     settings: SettingsAPI
     chat: ChatAPI
     data: DataAPI

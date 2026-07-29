@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, safeStorage } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, nativeImage } from 'electron'
 import { join } from 'path'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerChatStreamIpc } from './ipc/chat-stream'
@@ -10,6 +10,22 @@ import { registerSyncIpc } from './ipc/sync'
 import { initDataDir } from './storage/initialize'
 import { resolveReferencePaths } from './storage/resolve-paths'
 import { createDeepSeekStreamAdapter } from './llm/deepseek-stream-adapter'
+
+function makeIcon(size: number): Electron.NativeImage {
+  const buf = Buffer.alloc(size * size * 4)
+  const m = Math.max(1, Math.floor(size * 0.2))
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4
+      if (x >= m && x < size - m && y >= m && y < size - m) {
+        buf[i] = 0x63; buf[i + 1] = 0x6b; buf[i + 2] = 0xf1; buf[i + 3] = 0xff
+      } else {
+        buf[i + 3] = 0
+      }
+    }
+  }
+  return nativeImage.createFromBuffer(buf, { width: size, height: size })
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -46,7 +62,51 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  // System tray
+  let tray: Tray | null = null
+  try {
+    tray = new Tray(makeIcon(32))
+    tray.setToolTip('SophiaLocal')
+
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: '显示窗口',
+        click: () => {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+      },
+      { type: 'separator' },
+      {
+        label: '退出',
+        click: () => {
+          tray?.destroy()
+          tray = null
+          app.quit()
+        }
+      }
+    ])
+    tray.setContextMenu(contextMenu)
+
+    tray.on('double-click', () => {
+      mainWindow.show()
+      mainWindow.focus()
+    })
+
+    // Hide to tray instead of closing
+    mainWindow.on('close', (event) => {
+      if (!isQuitting) {
+        event.preventDefault()
+        mainWindow.hide()
+      }
+    })
+  } catch {
+    // Tray not available (e.g. headless/CI)
+  }
 }
+
+let isQuitting = false
 
 // Single-instance lock: a second launch focuses the existing window instead
 // of spawning a competing process over the same data directory.
@@ -81,6 +141,10 @@ if (!app.requestSingleInstanceLock()) {
     // Register IPC handlers that don't need the window
     ipcMain.handle('app:get-version', () => app.getVersion())
     ipcMain.handle('app:get-platform', () => process.platform)
+    ipcMain.handle('app:minimize-to-tray', () => {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win) win.hide()
+    })
     const keyStore = registerSettingsIpc(dataRoot, safeStorage)
     const providerStore = registerProviderIpc(dataRoot, safeStorage)
     registerSyncIpc(dataRoot, safeStorage)
@@ -122,6 +186,10 @@ if (!app.requestSingleInstanceLock()) {
         createWindow()
       }
     })
+  })
+
+  app.on('before-quit', () => {
+    isQuitting = true
   })
 
   app.on('window-all-closed', () => {

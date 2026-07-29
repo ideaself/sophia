@@ -166,6 +166,27 @@ export function registerConversationIpc(
     return conversationStore.searchMessages(parsed.worldId, parsed.query)
   })
 
+  ipcMain.handle('message:update', async (_event, input: unknown) => {
+    const { conversationId, messageId, content, worldId } = input as {
+      conversationId: string
+      messageId: string
+      content: string
+      worldId?: string
+    }
+    const wId = worldId ?? 'world_default'
+    return conversationStore.updateMessage(conversationId, wId, messageId, content)
+  })
+
+  ipcMain.handle('message:delete', async (_event, input: unknown) => {
+    const { conversationId, messageId, worldId } = input as {
+      conversationId: string
+      messageId: string
+      worldId?: string
+    }
+    const wId = worldId ?? 'world_default'
+    return conversationStore.deleteMessage(conversationId, wId, messageId)
+  })
+
   // --- File Dialog ---
 
   ipcMain.handle('dialog:openFile', async (_event, input?: unknown) => {
@@ -182,9 +203,23 @@ export function registerConversationIpc(
         { name: '文本', extensions: ['md', 'txt'] }
       ]
     })
-    for (const filePath of result.filePaths) {
-      pickedFiles.add(filePath)
+
+    return result
+  })
+
+  ipcMain.handle('dialog:saveFile', async (_event, input?: unknown) => {
+    const options = (input ?? {}) as {
+      defaultPath?: string
+      filters?: Array<{ name: string; extensions: string[] }>
     }
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const result = await dialog.showSaveDialog(win!, {
+      defaultPath: options.defaultPath,
+      filters: options.filters ?? [
+        { name: 'Markdown', extensions: ['md'] },
+        { name: '文本', extensions: ['txt'] }
+      ]
+    })
     return result
   })
 
@@ -298,6 +333,15 @@ export function registerConversationIpc(
     const parsed = input as { conversationId: string; worldId?: string }
     const worldId = parsed.worldId ?? 'world_default'
     return artifactStore.list(parsed.conversationId, worldId)
+  })
+
+  // --- File I/O ---
+
+  ipcMain.handle('file:writeText', async (_event, input: unknown) => {
+    const { filePath, content } = input as { filePath: string; content: string }
+    const { writeFile } = await import('node:fs/promises')
+    await writeFile(filePath, content, 'utf-8')
+    return { success: true }
   })
 
   return { conversationStore, textbookStore, artifactStore }
