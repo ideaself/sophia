@@ -11,14 +11,17 @@ interface EpubChapterData {
 // CSP, we still sanitize before injection to defend against DOM-clobbering,
 // data-exfil via CSS, iframe/form injection, and future CSP relaxations.
 //
-// The URI regexp additionally allows `data:image/*` so that images we inline
-// as base64 in the main process (see epub-parser.inlineImages) survive the
-// sanitizer. Non-image data: URIs are still refused.
+// DOMPurify 3.x already allows `data:` URIs on img/audio/video/source by
+// default, so images we inline as base64 in the main process (see
+// epub-parser.inlineImages) survive sanitization without a custom
+// ALLOWED_URI_REGEXP — which, if set, would replace the default logic and
+// accidentally block `data:image/png;base64,...` on <img src>. Everything
+// else that could smuggle a URL (iframe/form/object/embed) is already
+// forbidden via FORBID_TAGS below.
 const SANITIZE_CONFIG = {
   FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'meta', 'link', 'base', 'style'],
   FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick', 'onmouseover', 'srcset', 'action', 'formaction'],
-  ALLOW_DATA_ATTR: false,
-  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|data:image\/(?:png|jpe?g|gif|webp|svg\+xml|bmp|x-icon);base64,|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i
+  ALLOW_DATA_ATTR: false
 }
 
 interface EpubReaderViewProps {
@@ -58,13 +61,17 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
     () => (current ? DOMPurify.sanitize(current.html, SANITIZE_CONFIG) : ''),
     [current]
   )
-  // Diagnostic: how many <img> tags the sanitizer actually left in the DOM
-  // for the current chapter. If this is 0 while the EPUB obviously has
-  // pictures, the sanitizer or main-process inliner is at fault.
-  const chapterImgCount = useMemo(() => {
-    if (!safeHtml) return 0
-    return (safeHtml.match(/<img\b/gi) ?? []).length
-  }, [safeHtml])
+  // Diagnostic: how many <img> tags are in the raw chapter HTML from the
+  // main process vs how many survive DOMPurify. If these differ, the
+  // sanitizer is stripping the inlined data URIs. If they match but images
+  // still don't render, the problem is CSP or the data URI itself.
+  const imgCounts = useMemo(() => {
+    if (!current) return { raw: 0, safe: 0, withData: 0 }
+    const raw = (current.html.match(/<img\b/gi) ?? []).length
+    const safe = (safeHtml.match(/<img\b/gi) ?? []).length
+    const withData = (safeHtml.match(/<img\b[^>]*src\s*=\s*["']data:/gi) ?? []).length
+    return { raw, safe, withData }
+  }, [current, safeHtml])
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-bg-deep">
@@ -74,7 +81,7 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
           {chapters.length > 0 && (
             <span className="text-xs text-text-muted">
               {current?.title || `第 ${chapterIndex + 1} 章`} — {chapterIndex + 1}/{chapters.length}
-              {chapterImgCount > 0 && ` · ${chapterImgCount} 图`}
+              {imgCounts.raw > 0 && ` · 图 ${imgCounts.withData}/${imgCounts.safe}/${imgCounts.raw}`}
             </span>
           )}
         </div>
