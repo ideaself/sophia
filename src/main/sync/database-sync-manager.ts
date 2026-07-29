@@ -32,10 +32,35 @@ export enum DatabaseSyncFailureType {
 export class DatabaseSyncManager {
   private readonly cacheDir: string
   private readonly localDbPath: string
+  // Cached probe: null = not yet checked, true = installed, false = not installed.
+  // Avoids repeated ENOENT execFile spam on machines without the CLI (typical
+  // on Windows). The result never changes within a process lifetime.
+  private sqliteCliAvailable: boolean | null = null
 
   constructor(dataRoot: string) {
     this.cacheDir = join(dataRoot, '.sync-cache')
     this.localDbPath = join(dataRoot, 'app.db')
+  }
+
+  /** One-shot detection of the system sqlite3 CLI; result is cached. */
+  private async detectSqliteCli(): Promise<boolean> {
+    if (this.sqliteCliAvailable !== null) return this.sqliteCliAvailable
+    this.sqliteCliAvailable = await new Promise<boolean>((resolve) => {
+      execFile('sqlite3', ['-version'], { timeout: 5000 }, (err) => {
+        if (err) {
+          const code = (err as NodeJS.ErrnoException).code
+          if (code === 'ENOENT') {
+            console.warn('DatabaseSync: system `sqlite3` CLI not installed — deep integrity checks and VACUUM INTO will be skipped; header validation + file copy fallback will be used instead')
+          } else {
+            console.warn('DatabaseSync: `sqlite3 -version` failed:', err.message)
+          }
+          resolve(false)
+        } else {
+          resolve(true)
+        }
+      })
+    })
+    return this.sqliteCliAvailable
   }
 
   /**
@@ -128,20 +153,26 @@ export class DatabaseSyncManager {
    * Run PRAGMA integrity_check on a SQLite database using the system sqlite3 CLI.
    * This mirrors anxreader's approach of running integrity checks before accepting
    * a downloaded database.
+   *
+   * Return semantics:
+   *   { ok: true,  available: true  } — CLI ran and the database is intact
+   *   { ok: false, available: true  } — CLI ran and the database is CORRUPT (reject!)
+   *   { ok: true,  available: false } — CLI unavailable; header validation is our only defense
    */
-  private async runIntegrityCheck(dbPath: string): Promise<{ ok: boolean; error?: string }> {
+  private async runIntegrityCheck(dbPath: string): Promise<{ ok: boolean; available: boolean; error?: string }> {
+    if (!(await this.detectSqliteCli())) {
+      return { ok: true, available: false }
+    }
     try {
-      const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      const result = await new Promise<{ stdout: string; stderr: string; failed?: 'runtime' }>((resolve) => {
         execFile('sqlite3', [dbPath, 'PRAGMA integrity_check;'], {
           timeout: 30000,
           maxBuffer: 1024 * 1024
         }, (err, stdout, stderr) => {
           if (err) {
-            if (err.code === 'ENOENT') {
-              reject(new Error('sqlite3 CLI not found'))
-            } else {
-              resolve({ stdout, stderr })
-            }
+            // We already know the CLI exists; any failure here is a runtime
+            // problem (bad DB, timeout, permission, ...).
+            resolve({ stdout, stderr, failed: 'runtime' })
           } else {
             resolve({ stdout, stderr })
           }
@@ -150,14 +181,16 @@ export class DatabaseSyncManager {
 
       const output = result.stdout.trim()
       if (output === 'ok') {
-        return { ok: true }
+        return { ok: true, available: true }
       }
-      return { ok: false, error: output || result.stderr || 'Unknown integrity error' }
+      return {
+        ok: false,
+        available: true,
+        error: output || result.stderr.trim() || 'sqlite3 integrity_check failed'
+      }
     } catch (e) {
-      // If sqlite3 CLI is unavailable or the database can't be opened,
-      // skip integrity check — header validation is sufficient.
-      console.warn('DatabaseSync: Integrity check skipped (non-fatal):', e instanceof Error ? e.message : String(e))
-      return { ok: true }
+      console.warn('DatabaseSync: Integrity check unexpectedly threw:', e instanceof Error ? e.message : String(e))
+      return { ok: true, available: false }
     }
   }
 
@@ -167,26 +200,30 @@ export class DatabaseSyncManager {
    * This mirrors anxreader's approach of using VACUUM INTO for snapshot uploads.
    */
   private async createConsistentSnapshot(targetPath: string): Promise<boolean> {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        execFile('sqlite3', [this.localDbPath, `VACUUM INTO '${targetPath.replace(/'/g, "''")}';`], {
-          timeout: 60000
-        }, (err) => {
-          if (err) reject(err)
-          else resolve()
-        })
-      })
-      return true
-    } catch (e) {
-      console.warn('DatabaseSync: VACUUM INTO failed, falling back to file copy:', e)
+    // If the CLI isn't installed, don't even try — go straight to the file
+    // copy fallback. This avoids a noisy ENOENT on every sync.
+    if (await this.detectSqliteCli()) {
       try {
-        await copyFile(this.localDbPath, targetPath)
-        await this.fixDatabaseHeader(targetPath)
+        await new Promise<void>((resolve, reject) => {
+          execFile('sqlite3', [this.localDbPath, `VACUUM INTO '${targetPath.replace(/'/g, "''")}';`], {
+            timeout: 60000
+          }, (err) => {
+            if (err) reject(err)
+            else resolve()
+          })
+        })
         return true
-      } catch (copyErr) {
-        console.error('DatabaseSync: Copy fallback also failed:', copyErr)
-        return false
+      } catch (e) {
+        console.warn('DatabaseSync: VACUUM INTO failed, falling back to file copy:', e)
       }
+    }
+    try {
+      await copyFile(this.localDbPath, targetPath)
+      await this.fixDatabaseHeader(targetPath)
+      return true
+    } catch (copyErr) {
+      console.error('DatabaseSync: Copy fallback also failed:', copyErr)
+      return false
     }
   }
 
@@ -242,12 +279,20 @@ export class DatabaseSyncManager {
         return { isValid: false, error: `Unsupported file format version: write=${writeVersion}, read=${readVersion}` }
       }
 
-      // Best-effort PRAGMA integrity_check via system sqlite3 CLI (like anxreader).
-      // If sqlite3 CLI is unavailable or the database can't be opened, header
-      // validation is still sufficient — the PRAGMA is an extra safety layer.
+      // Layered integrity check via system sqlite3 CLI (like anxreader). If
+      // the CLI is unavailable, header validation is our only defense — sync
+      // still proceeds. But if the CLI ran and reported CORRUPTION, we must
+      // reject: a corrupt DB that passes the header check will silently
+      // clobber the local database on atomicReplaceDatabase().
       const integrity = await this.runIntegrityCheck(dbPath)
-      if (!integrity.ok) {
-        console.warn(`DatabaseSync: Integrity check warning for ${dbPath}: ${integrity.error}`)
+      if (integrity.available && !integrity.ok) {
+        return {
+          isValid: false,
+          error: `PRAGMA integrity_check failed: ${integrity.error ?? 'unknown'}`
+        }
+      }
+      if (!integrity.available) {
+        console.warn(`DatabaseSync: sqlite3 CLI unavailable — skipped deep integrity check for ${dbPath}`)
       }
 
       console.log('DatabaseSync: Validation passed for', dbPath)

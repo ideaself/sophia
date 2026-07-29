@@ -50,6 +50,17 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
 /** Per-request timeout for sync operations (large PDFs on slow servers need headroom). */
 const REQUEST_TIMEOUT_MS = 120_000
 
+/**
+ * True when a webdav client error means "collection/resource does not exist"
+ * (HTTP 404). Anything else — network failures, auth, 5xx — must propagate:
+ * treating a failed listing as "empty" would hand sync a PARTIAL remote
+ * listing, and mirror-delete would then remove everything the failed
+ * PROPFIND never returned.
+ */
+export function isRemoteNotFoundError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { status?: unknown }).status === 404
+}
+
 /** Idle limit for streaming downloads: fails only when NO bytes arrive for this long. */
 const STREAM_IDLE_TIMEOUT_MS = 60_000
 
@@ -182,8 +193,9 @@ export class SyncWebDavClient {
         })
       }
       return results
-    } catch {
-      return []
+    } catch (err) {
+      if (isRemoteNotFoundError(err)) return []
+      throw err
     }
   }
 
@@ -240,7 +252,8 @@ export class SyncWebDavClient {
           files.push(entry.filename)
         }
       }
-    } catch {
+    } catch (err) {
+      if (!isRemoteNotFoundError(err)) throw err
       // Directory doesn't exist yet
     }
   }
@@ -266,7 +279,8 @@ export class SyncWebDavClient {
       await runPool(subdirs, WALK_CONCURRENCY, async (sub) => {
         await this.walkRemoteDetailed(sub, files)
       })
-    } catch {
+    } catch (err) {
+      if (!isRemoteNotFoundError(err)) throw err
       // Directory doesn't exist yet
     }
   }

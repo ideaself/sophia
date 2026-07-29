@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { isNotFoundError, warnReadFailure } from '../storage/fs-errors'
 
 /**
  * Per-device record of what was synced and when. This is what lets mirror
@@ -32,10 +33,12 @@ export async function loadSyncState(dataRoot: string): Promise<SyncState | null>
     const raw = await readFile(join(dataRoot, SYNC_STATE_FILE), 'utf-8')
     const parsed = JSON.parse(raw) as SyncState
     if (parsed.version !== 1 || typeof parsed.files !== 'object' || parsed.files === null) {
+      warnReadFailure('sync-state.json (unrecognized shape)', new Error('version/files mismatch'))
       return null
     }
     return parsed
-  } catch {
+  } catch (err) {
+    if (!isNotFoundError(err)) warnReadFailure('sync-state.json', err)
     return null
   }
 }

@@ -44,7 +44,7 @@ export function HistoryView(): React.ReactElement {
   }
 
   const handleDeleteConversation = async (convId: string) => {
-    if (!confirm('确定删除这个课程记录？')) return
+    if (!await window.sophia.dialog.confirm({ message: '确定删除这个课程记录？', confirmLabel: '删除' })) return
     await window.sophia.data.deleteConversation(convId)
     setConversations((prev) => prev.filter((c) => c.id !== convId))
     if (expandedId === convId) {

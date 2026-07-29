@@ -5,6 +5,7 @@ import { ArtifactSchema } from '../../shared/schemas/artifact'
 import type { ArtifactId, ConversationId, WorldId } from '../../shared/types/ids'
 import { ArtifactType } from '../../shared/types/ids'
 import { artifactsDir, artifactPath } from './app-data'
+import { isNotFoundError, warnReadFailure } from './fs-errors'
 
 type ArtifactTypeValue = 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail'
 
@@ -54,7 +55,8 @@ export class ArtifactStore {
       )
       const parsed = ArtifactSchema.parse(JSON.parse(content))
       return parsed as unknown as Artifact
-    } catch {
+    } catch (err) {
+      if (!isNotFoundError(err)) warnReadFailure(`artifact ${artifactId}`, err)
       return null
     }
   }

@@ -11,6 +11,7 @@ import {
   textbookContentPath,
   textbookOriginalPath
 } from './app-data'
+import { isNotFoundError, warnReadFailure } from './fs-errors'
 
 export interface CreateTextbookInput {
   worldId: WorldId
@@ -122,10 +123,12 @@ export class TextbookStore {
       )
       const result = TextbookSchema.safeParse(JSON.parse(content))
       if (!result.success) {
+        warnReadFailure(`textbook ${textbookId} (schema mismatch)`, result.error)
         return null
       }
       return result.data as unknown as Textbook
-    } catch {
+    } catch (err) {
+      if (!isNotFoundError(err)) warnReadFailure(`textbook ${textbookId}`, err)
       return null
     }
   }

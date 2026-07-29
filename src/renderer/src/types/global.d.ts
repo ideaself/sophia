@@ -85,16 +85,16 @@ declare global {
     createdAt: string
   }
 
-interface SearchResultDTO {
-  conversationId: string
-  message: MessageDTO
-}
+  interface SearchResultDTO {
+    conversationId: string
+    message: MessageDTO
+  }
 
-interface EpubChaptersResult {
-  chapters: Array<{ id: string; title: string; html: string }>
-  title: string
-  author: string
-}
+  interface EpubChaptersResult {
+    chapters: Array<{ id: string; title: string; html: string }>
+    title: string
+    author: string
+  }
 
   interface CompanionDTO {
     id: string
@@ -197,6 +197,11 @@ interface EpubChaptersResult {
       defaultPath?: string
       filters?: Array<{ name: string; extensions: string[] }>
     }) => Promise<{ canceled: boolean; filePath?: string }>
+    confirm: (options: {
+      message: string
+      confirmLabel?: string
+      cancelLabel?: string
+    }) => Promise<boolean>
   }
 
   interface ProviderDTO {

@@ -238,6 +238,11 @@ export interface DialogAPI {
     defaultPath?: string
     filters?: Array<{ name: string; extensions: string[] }>
   }) => Promise<{ canceled: boolean; filePath?: string }>
+  confirm: (options: {
+    message: string
+    confirmLabel?: string
+    cancelLabel?: string
+  }) => Promise<boolean>
 }
 
 // ---------------------------------------------------------------
@@ -482,7 +487,8 @@ const sophia: SophiaAPI = {
   },
   dialog: {
     openFile: (options) => ipcRenderer.invoke('dialog:openFile', options),
-    saveFile: (options) => ipcRenderer.invoke('dialog:saveFile', options)
+    saveFile: (options) => ipcRenderer.invoke('dialog:saveFile', options),
+    confirm: (options) => ipcRenderer.invoke('dialog:confirm', options)
   },
   providers: {
     list: () => ipcRenderer.invoke('providers:list'),

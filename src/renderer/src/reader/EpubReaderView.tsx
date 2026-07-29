@@ -1,9 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import DOMPurify from 'dompurify'
 
 interface EpubChapterData {
   id: string
   title: string
   html: string
+}
+
+// EPUB chapter HTML comes from arbitrary third-party files; even with a strict
+// CSP, we still sanitize before injection to defend against DOM-clobbering,
+// data-exfil via CSS, iframe/form injection, and future CSP relaxations.
+const SANITIZE_CONFIG = {
+  FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'meta', 'link', 'base', 'style'],
+  FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick', 'onmouseover', 'srcset', 'action', 'formaction'],
+  ALLOW_DATA_ATTR: false,
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i
 }
 
 interface EpubReaderViewProps {
@@ -40,6 +51,10 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
   }, [textbookId])
 
   const current = chapters[chapterIndex]
+  const safeHtml = useMemo(
+    () => (current ? DOMPurify.sanitize(current.html, SANITIZE_CONFIG) : ''),
+    [current]
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-bg-deep">
@@ -96,7 +111,7 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
           <div
             className="epub-content mx-auto max-w-4xl leading-relaxed text-text-secondary"
             style={{ fontSize: `${fontSize}px` }}
-            dangerouslySetInnerHTML={{ __html: current.html }}
+            dangerouslySetInnerHTML={{ __html: safeHtml }}
           />
         )}
       </div>

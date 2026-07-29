@@ -89,8 +89,11 @@ export async function getEpubChapters(filePath: string): Promise<EpubChaptersRes
         title: typeof chapter.title === 'string' && chapter.title ? chapter.title : `Chapter ${chapter.index}`,
         html
       })
-    } catch {
-      // skip chapters that fail to load
+    } catch (err) {
+      // A failing chapter is not fatal — the rest of the book is still
+      // readable — but the user should at least see it in the logs so a
+      // reproducibly-empty book doesn't look like a bug in the reader.
+      console.warn(`[epub-parser] Failed to load chapter ${chapter.id} (${chapter.title ?? '?'}):`, err instanceof Error ? err.message : String(err))
     }
   }
 

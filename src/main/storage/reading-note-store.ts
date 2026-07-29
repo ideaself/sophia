@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { ReadingNoteId } from '../../shared/types/ids'
 import { textbookNotesDir } from './app-data'
+import { isNotFoundError, warnReadFailure } from './fs-errors'
 
 export const ReadingNoteSchema = z.object({
   id: z.string().min(1),
@@ -79,8 +80,8 @@ export class ReadingNoteStore {
           const content = await readFile(join(dir, file), 'utf-8')
           const parsed = ReadingNoteSchema.parse(JSON.parse(content))
           notes.push(parsed)
-        } catch {
-          // skip invalid
+        } catch (err) {
+          warnReadFailure(`reading note ${file}`, err)
         }
       }
       return notes.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -102,7 +103,8 @@ export class ReadingNoteStore {
       note.updatedAt = new Date().toISOString()
       await writeFile(this.notePath(textbookId, noteId, worldId), JSON.stringify(note, null, 2), 'utf-8')
       return note
-    } catch {
+    } catch (err) {
+      if (!isNotFoundError(err)) warnReadFailure(`reading note ${noteId}`, err)
       return null
     }
   }

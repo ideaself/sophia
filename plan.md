@@ -173,11 +173,12 @@ P3	ADR 文档更新	文档
 [✓] P1: Change message storage from JSON array to JSONL append
 [✓] P1: Save partial content on stream interruption
 [✓] P1: Report artifact generation failures to user
-[•] P2: Add flashcard review UI
-[ ] P2: Conversation summary compression instead of pure windowing
-[ ] P2: Writeback textbook progress from lesson artifacts
+[✓] P2: Add flashcard review UI
+[✓] P2: Conversation summary compression instead of pure windowing
+[✓] P2: Writeback textbook progress from lesson artifacts
 [✓] P2: Add Content Security Policy to Electron window
 [✓] P2: Add automatic retry for transient LLM errors (429/500/503)
-[ ] P3: Learning statistics dashboard
-[ ] P3: Update ADR documents to reflect multi-provider and WebDAV sync decisions
-[ ] Final: Run typecheck + tests + security verification
+[✓] P3: Learning statistics dashboard
+[✓] P3: Update ADR documents to reflect multi-provider and WebDAV sync decisions
+[✓] Final: Run typecheck + tests + security verification
+[✓] Fix: replace renderer window.confirm() with native dialog (input focus loss after sync)

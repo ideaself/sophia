@@ -1,6 +1,7 @@
 import { readFile, writeFile, unlink, access, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { configDir } from '../storage/app-data'
+import { isNotFoundError, warnReadFailure } from '../storage/fs-errors'
 
 /**
  * Dependency-injected abstraction over platform-specific encryption.
@@ -79,7 +80,9 @@ export class SecureKeyStore {
     try {
       const encrypted = await readFile(this.keyFilePath)
       return this.safeStorage.decryptString(encrypted)
-    } catch {
+    } catch (err) {
+      // A corrupt or undecryptable key file presents as "no key" — log it.
+      if (!isNotFoundError(err)) warnReadFailure(`key file ${this.fileName}`, err)
       return null
     }
   }

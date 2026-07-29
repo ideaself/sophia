@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useChatStream } from './useChatStream'
 import { ChatMessage } from './ChatMessage'
+import { loadTabs, saveTabs, serializeTabs } from '../../../shared/tab-persistence'
 
 interface Companion {
   id: string
@@ -58,8 +59,16 @@ function makeTab(conversationId?: string, title?: string): TabState {
 }
 
 export function ClassroomView({ companion, textbook, chatStream, loadConversationId, onConversationLoaded }: ClassroomViewProps): React.ReactElement {
-  const [tabs, setTabs] = useState<TabState[]>([makeTab()])
-  const [activeIdx, setActiveIdx] = useState(0)
+  const [initialTabs] = useState(() => loadTabs(localStorage))
+  const [tabs, setTabs] = useState<TabState[]>(() =>
+    initialTabs
+      ? initialTabs.tabs.map((t) => ({
+          ...makeTab(t.conversationId ?? undefined, t.title),
+          input: t.input
+        }))
+      : [makeTab()]
+  )
+  const [activeIdx, setActiveIdx] = useState(() => initialTabs?.activeIdx ?? 0)
   const [isLoading, setIsLoading] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
@@ -67,6 +76,57 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const loadedIdRef = useRef<string | null>(null)
+  // Mirror of `tabs` for async callbacks — the render-closure `tabs` goes
+  // stale inside .then() chains that run after later re-renders.
+  const tabsRef = useRef(tabs)
+  useEffect(() => { tabsRef.current = tabs }, [tabs])
+
+  // Persist the tab strip (title / conversationId / draft) across restarts
+  useEffect(() => {
+    saveTabs(localStorage, serializeTabs(tabs, activeIdx))
+  }, [tabs, activeIdx])
+
+  // Keep activeIdx in range when tabs are removed
+  useEffect(() => {
+    if (activeIdx >= tabs.length) setActiveIdx(Math.max(0, tabs.length - 1))
+  }, [tabs, activeIdx])
+
+  // Hydrate restored tabs once: reload messages from the store and drop
+  // tabs whose conversation no longer exists (e.g. deleted meanwhile).
+  const hydratedRef = useRef(false)
+  useEffect(() => {
+    if (hydratedRef.current) return
+    hydratedRef.current = true
+    const toHydrate = tabsRef.current.filter((t) => t.conversationId && t.messages.length === 0)
+    for (const tab of toHydrate) {
+      const conversationId = tab.conversationId!
+      void (async () => {
+        try {
+          const conv = await window.sophia.data.getConversation(conversationId)
+          if (!conv) {
+            setTabs((prev) => {
+              const next = prev.filter((x) => x.id !== tab.id)
+              return next.length > 0 ? next : [makeTab()]
+            })
+            return
+          }
+          const msgs = await window.sophia.data.listMessages(conversationId)
+          setTabs((prev) => {
+            const i = prev.findIndex((x) => x.id === tab.id)
+            if (i < 0) return prev
+            const next = [...prev]
+            next[i] = {
+              ...next[i],
+              messages: msgs.map((m) => ({ id: m.id, role: m.role, content: m.content }))
+            }
+            return next
+          })
+        } catch {
+          // Hydration is best-effort; the tab stays usable with empty messages
+        }
+      })()
+    }
+  }, [])
 
   const activeTab = tabs[activeIdx] ?? tabs[0]
 
@@ -90,8 +150,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     let cancelled = false
     window.sophia.data.getConversation(loadConversationId).then((conv) => {
       if (cancelled || !conv) return
-      if (tabs.some((t) => t.conversationId === loadConversationId)) {
-        const existingIdx = tabs.findIndex((t) => t.conversationId === loadConversationId)
+      if (tabsRef.current.some((t) => t.conversationId === loadConversationId)) {
+        const existingIdx = tabsRef.current.findIndex((t) => t.conversationId === loadConversationId)
         if (existingIdx >= 0) setActiveIdx(existingIdx)
         onConversationLoaded?.()
         return
@@ -104,7 +164,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         const newTab = makeTab(loadConversationId, conv.title)
         newTab.messages = loaded
         setTabs((prev) => [...prev, newTab])
-        setActiveIdx(tabs.length)
+        setActiveIdx(tabsRef.current.length)
         onConversationLoaded?.()
       })
     })
@@ -352,13 +412,9 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   }
 
   const handleSendFromContent = async (content: string) => {
-    setTabs((prev) => {
-      const next = [...prev]
-      if (next[activeIdx]) next[activeIdx] = { ...next[activeIdx], input: content }
-      return next
-    })
-    // Use setTimeout to let state update first
-    setTimeout(() => handleSend(content), 0)
+    // handleSend takes the content directly (retryInput), so there's no
+    // need to round-trip it through tab input state or defer with setTimeout.
+    await handleSend(content)
   }
 
   const handleNewTab = () => {

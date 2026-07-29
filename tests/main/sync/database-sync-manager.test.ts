@@ -1,11 +1,29 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, beforeAll } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, rm, access, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import { DatabaseSyncManager, DatabaseSyncFailureType } from '../../../src/main/sync/database-sync-manager'
 import type { WebDavConfig } from '../../../src/main/sync/webdav-client'
 
 const CONFIG: WebDavConfig = { url: 'https://example.com/dav', username: 'u', password: 'p' }
+
+/**
+ * Probe once whether the system `sqlite3` CLI is installed. The production
+ * code uses it for deep integrity checks and VACUUM INTO snapshots. When the
+ * CLI is present, `validateDatabase` runs a real PRAGMA integrity_check, so
+ * tests that need to "pass validation" must feed it a *real* SQLite database
+ * — a hand-crafted 100-byte header is no longer enough.
+ */
+let hasSqliteCli = false
+beforeAll(() => {
+  try {
+    execFileSync('sqlite3', ['-version'], { stdio: 'ignore', timeout: 5000 })
+    hasSqliteCli = true
+  } catch {
+    hasSqliteCli = false
+  }
+})
 
 /** In-memory stand-in for SyncWebDavClient — records calls, serves canned data. */
 class FakeClient {
@@ -87,6 +105,18 @@ function createSQLiteHeader(): Buffer {
   return header
 }
 
+/**
+ * Build a REAL SQLite database file on disk using the system CLI. Some
+ * validation tests need a file that survives PRAGMA integrity_check —
+ * a hand-forged header buffer no longer does.
+ */
+function createRealSqliteDb(path: string): void {
+  execFileSync('sqlite3', [path, 'CREATE TABLE t(x INTEGER); INSERT INTO t VALUES (1);'], {
+    stdio: 'ignore',
+    timeout: 10000
+  })
+}
+
 describe('DatabaseSyncManager — validation', () => {
   it('rejects non-existent file', async () => {
     const manager = makeManager(dataRoot)
@@ -121,12 +151,19 @@ describe('DatabaseSyncManager — validation', () => {
   it('accepts valid SQLite header', async () => {
     const manager = makeManager(dataRoot)
     const validDb = join(dataRoot, 'valid.db')
-    const header = createSQLiteHeader()
-    const content = Buffer.concat([header, Buffer.alloc(2048)]) // Pad to >1KB
-    await writeFile(validDb, content)
-    
+
+    if (hasSqliteCli) {
+      // With the CLI installed, header-only fakes are rejected by PRAGMA
+      // integrity_check (as they should be). Use a real database.
+      createRealSqliteDb(validDb)
+    } else {
+      const header = createSQLiteHeader()
+      const content = Buffer.concat([header, Buffer.alloc(2048)]) // Pad to >1KB
+      await writeFile(validDb, content)
+    }
+
     const result = await manager.validateDatabase(validDb)
-    
+
     expect(result.isValid).toBe(true)
   })
 })
@@ -245,21 +282,30 @@ describe('DatabaseSyncManager — safe download', () => {
   it('downloads and validates database', async () => {
     const manager = makeManager(dataRoot)
     const fake = new FakeClient()
-    
-    // Create valid SQLite database on remote
-    const header = createSQLiteHeader()
-    const content = Buffer.concat([header, Buffer.alloc(2048)])
+
+    let content: Buffer
+    if (hasSqliteCli) {
+      // Need a real DB body — PRAGMA integrity_check runs on the downloaded
+      // temp file, and a header-only fake would be rejected.
+      const seed = join(dataRoot, 'seed.db')
+      createRealSqliteDb(seed)
+      content = await readFile(seed)
+      await rm(seed, { force: true })
+    } else {
+      const header = createSQLiteHeader()
+      content = Buffer.concat([header, Buffer.alloc(2048)])
+    }
     fake.setRemote('/sophia/app.db', content)
-    
+
     const result = await manager.safeDownloadDatabase(
       fake as unknown as any,
       '/sophia/app.db'
     )
-    
+
     expect(result.success).toBe(true)
     expect(result.message).toContain('successfully')
     expect(fake.downloads).toHaveLength(1)
-    
+
     // Verify local database exists and is valid
     const localDb = join(dataRoot, 'app.db')
     await expect(access(localDb)).resolves.toBeUndefined()
@@ -284,20 +330,27 @@ describe('DatabaseSyncManager — safe download', () => {
   it('creates backup before replacement', async () => {
     const manager = makeManager(dataRoot)
     const fake = new FakeClient()
-    
+
     // Create existing local database
     await writeFile(join(dataRoot, 'app.db'), 'old database')
-    
-    // Create valid SQLite database on remote
-    const header = createSQLiteHeader()
-    const content = Buffer.concat([header, Buffer.alloc(2048)])
+
+    let content: Buffer
+    if (hasSqliteCli) {
+      const seed = join(dataRoot, 'seed.db')
+      createRealSqliteDb(seed)
+      content = await readFile(seed)
+      await rm(seed, { force: true })
+    } else {
+      const header = createSQLiteHeader()
+      content = Buffer.concat([header, Buffer.alloc(2048)])
+    }
     fake.setRemote('/sophia/app.db', content)
-    
+
     await manager.safeDownloadDatabase(
       fake as unknown as any,
       '/sophia/app.db'
     )
-    
+
     // Should have created a backup
     const backups = await manager.getAvailableBackups()
     expect(backups.length).toBe(1)

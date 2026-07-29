@@ -43,6 +43,7 @@
     "test": "npm run typecheck && npm run test:unit && npm run test:security"
   },
   "dependencies": {
+    "dompurify": "^3.4.12",
     "epub": "^2.1.1",
     "katex": "^0.18.1",
     "mermaid": "^11.16.0",

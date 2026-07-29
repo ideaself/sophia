@@ -12,6 +12,7 @@ import {
   conversationPath,
   conversationMessagesPath
 } from './app-data'
+import { isNotFoundError, warnReadFailure } from './fs-errors'
 
 const MessageRoleSchema = z.enum(['user', 'assistant', 'system'])
 
@@ -62,7 +63,8 @@ export class ConversationStore {
       )
       const parsed = ConversationSchema.parse(JSON.parse(content))
       return parsed as unknown as Conversation
-    } catch {
+    } catch (err) {
+      if (!isNotFoundError(err)) warnReadFailure(`conversation ${conversationId}`, err)
       return null
     }
   }
@@ -148,17 +150,23 @@ export class ConversationStore {
       // JSONL: one JSON object per line
       const lines = trimmed.split('\n')
       const messages: Message[] = []
+      let skipped = 0
       for (const line of lines) {
         if (!line.trim()) continue
         try {
           const parsed = MessageSchema.parse(JSON.parse(line))
           messages.push(parsed as unknown as Message)
         } catch {
-          // Skip malformed lines
+          skipped++
         }
       }
+      if (skipped > 0) {
+        console.warn(`[storage] Skipped ${skipped} malformed message line(s) in conversation ${conversationId}`)
+      }
       return messages
-    } catch {
+    } catch (err) {
+      // Without this, a corrupt messages file looks exactly like "no messages".
+      if (!isNotFoundError(err)) warnReadFailure(`messages of conversation ${conversationId}`, err)
       return []
     }
   }

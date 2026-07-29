@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { configDir } from './app-data'
+import { isNotFoundError, warnReadFailure } from './fs-errors'
 import type { SafeStorageAdapter } from '../security/secure-key-store'
 
 const PROVIDERS_FILE = 'providers.json'
@@ -38,7 +39,10 @@ export class ProviderStore {
     try {
       const content = await readFile(this.providersPath, 'utf-8')
       return JSON.parse(content) as ApiProvider[]
-    } catch {
+    } catch (err) {
+      // Must log: list() returning [] on corruption also feeds create(),
+      // which would then overwrite the file and lose every provider.
+      if (!isNotFoundError(err)) warnReadFailure('providers.json', err)
       return []
     }
   }
@@ -139,7 +143,8 @@ export class ProviderStore {
     try {
       const encrypted = await readFile(join(configDir(this.dataRoot), `${providerId}.key.enc`))
       return this.safeStorage.decryptString(encrypted)
-    } catch {
+    } catch (err) {
+      if (!isNotFoundError(err)) warnReadFailure(`API key for provider ${providerId}`, err)
       return null
     }
   }

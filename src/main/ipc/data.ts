@@ -39,7 +39,8 @@ import {
   IpcDeleteReadingNoteInputSchema,
   IpcWriteTextFileInputSchema,
   IpcOpenFileDialogInputSchema,
-  IpcSaveFileDialogInputSchema
+  IpcSaveFileDialogInputSchema,
+  IpcConfirmDialogInputSchema
 } from '../../shared/schemas/ipc'
 import { ArtifactType, type WorldId, type ConversationId } from '../../shared/types/ids'
 
@@ -249,6 +250,28 @@ export function registerConversationIpc(
       ]
     })
     return result
+  })
+
+  // Renderer-side window.confirm() leaves the BrowserWindow unfocused in
+  // Electron (inputs stay unclickable until the app loses/regains OS focus).
+  // Route confirmations through a properly parented native message box instead.
+  ipcMain.handle('dialog:confirm', async (_event, input: unknown) => {
+    const parsed = IpcConfirmDialogInputSchema.parse(input)
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const confirmLabel = parsed.confirmLabel ?? '继续'
+    const cancelLabel = parsed.cancelLabel ?? '取消'
+    const options: Electron.MessageBoxOptions = {
+      type: 'warning',
+      message: parsed.message,
+      buttons: [confirmLabel, cancelLabel],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true
+    }
+    const result = win
+      ? await dialog.showMessageBox(win, options)
+      : await dialog.showMessageBox(options)
+    return result.response === 0
   })
 
   // --- Textbook CRUD ---

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { ClassroomView } from './chat/ClassroomView'
 import { useChatStream } from './chat/useChatStream'
+import { useOnlineStatus } from './hooks/useOnlineStatus'
 import { CompanionEditModal } from './components/CompanionEditModal'
 import { SettingsView } from './components/SettingsView'
 import { CompanionsManageView } from './components/CompanionsManageView'
@@ -42,6 +43,7 @@ function App(): React.ReactElement {
   const fetchActiveConversations = useConversationStore((s) => s.fetchActive)
 
   const chatStream = useChatStream()
+  const isOnline = useOnlineStatus()
   const classroomDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -205,6 +207,12 @@ function App(): React.ReactElement {
           </button>
         </nav>
       </header>
+
+      {!isOnline && (
+        <div className="border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-1.5 text-center text-xs text-yellow-400">
+          网络连接已断开——发送消息、生成 artifacts、WebDAV 同步暂不可用，恢复联网后自动继续
+        </div>
+      )}
 
       <main className="flex-1 overflow-auto">
         {view === 'settings' && <SettingsView />}

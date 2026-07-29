@@ -58,7 +58,7 @@ export function WebDavSyncView(): React.ReactElement {
       if (plan.deleteCount > 0) {
         const sample = plan.deleteSample.slice(0, 10).join('\n')
         const more = plan.deleteCount > 10 ? `\n... and ${plan.deleteCount - 10} more` : ''
-        if (!confirm(`Push will DELETE ${plan.deleteCount} remote file(s) that no longer exist locally:\n${sample}${more}\n\nContinue?`)) {
+        if (!await window.sophia.dialog.confirm({ message: `Push will DELETE ${plan.deleteCount} remote file(s) that no longer exist locally:\n${sample}${more}\n\nContinue?`, confirmLabel: 'Push' })) {
           return
         }
       }
@@ -93,7 +93,7 @@ export function WebDavSyncView(): React.ReactElement {
     if (lastPush) {
       const ago = Date.now() - new Date(lastPush).getTime()
       const hours = Math.floor(ago / 3600000)
-      if (!confirm(`Local data may have been modified since last push (${hours > 0 ? hours + 'h' : '<1h'} ago). Pull will overwrite local data. Continue?`)) {
+      if (!await window.sophia.dialog.confirm({ message: `Local data may have been modified since last push (${hours > 0 ? hours + 'h' : '<1h'} ago). Pull will overwrite local data. Continue?`, confirmLabel: 'Pull' })) {
         return
       }
     }
@@ -102,7 +102,7 @@ export function WebDavSyncView(): React.ReactElement {
       if (plan.deleteCount > 0) {
         const sample = plan.deleteSample.slice(0, 10).join('\n')
         const more = plan.deleteCount > 10 ? `\n... and ${plan.deleteCount - 10} more` : ''
-        if (!confirm(`Pull will DELETE ${plan.deleteCount} local file(s) that no longer exist on the server:\n${sample}${more}\n\nContinue?`)) {
+        if (!await window.sophia.dialog.confirm({ message: `Pull will DELETE ${plan.deleteCount} local file(s) that no longer exist on the server:\n${sample}${more}\n\nContinue?`, confirmLabel: 'Pull' })) {
           return
         }
       }

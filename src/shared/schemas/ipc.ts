@@ -263,6 +263,12 @@ export const IpcSaveFileDialogInputSchema = z.object({
   filters: IpcDialogFileFiltersSchema.optional()
 }).optional()
 
+export const IpcConfirmDialogInputSchema = z.object({
+  message: z.string().min(1),
+  confirmLabel: z.string().min(1).optional(),
+  cancelLabel: z.string().min(1).optional()
+})
+
 // --- IPC: Settings / API Key ---
 
 export const IpcSetDeepSeekKeyInputSchema = z.object({

@@ -9,6 +9,7 @@ import {
   DEFAULT_WORLD_ID,
   DEFAULT_PROFILE_ID
 } from './app-data'
+import { isNotFoundError, warnReadFailure } from './fs-errors'
 
 export interface WorldData {
   world: World
@@ -44,7 +45,8 @@ export async function readWorldData(
     }
 
     return { world, story, learnerProfile }
-  } catch {
+  } catch (err) {
+    if (!isNotFoundError(err)) warnReadFailure(`world ${worldId}`, err)
     return null
   }
 }
