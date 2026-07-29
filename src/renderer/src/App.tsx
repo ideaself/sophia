@@ -102,6 +102,11 @@ function App(): React.ReactElement {
     setActiveConversations(enriched)
   }, [])
 
+  const handlePullComplete = useCallback(() => {
+    window.sophia.data.listTextbooks(WORLD_ID).then(setTextbooks)
+    fetchActiveConversations()
+  }, [fetchActiveConversations])
+
   useEffect(() => {
     if (!showClassroomDropdown) return
     const handler = (e: MouseEvent) => {
@@ -248,7 +253,7 @@ function App(): React.ReactElement {
 
       {/* Main content */}
       <main className="flex-1 overflow-auto">
-        {view === 'settings' && <SettingsView />}
+        {view === 'settings' && <SettingsView onPullComplete={handlePullComplete} />}
         {view === 'companions' && (
           <CompanionsManageView
             companions={companions}
@@ -507,7 +512,7 @@ function ThemeSwitcher(): React.ReactElement {
 
 
 
-function WebDavSyncView(): React.ReactElement {
+function WebDavSyncView({ onPullComplete }: { onPullComplete?: () => void }): React.ReactElement {
   const [url, setUrl] = useState(() => localStorage.getItem('webdav-url') || '')
   const [username, setUsername] = useState(() => localStorage.getItem('webdav-username') || '')
   // Password is never persisted in the renderer; it lives encrypted in the main process.
@@ -621,13 +626,14 @@ function WebDavSyncView(): React.ReactElement {
       const res = await window.sophia.sync.pull(getConfig())
       if (res.success) {
         setResult({ ok: true, msg: `Pulled ${res.transferred}, skipped ${res.skipped}, deleted ${res.deleted}` })
-        if (res.timestamp) {
-          setLastPull(res.timestamp)
-          localStorage.setItem('webdav-last-pull', res.timestamp)
-        }
       } else {
         setResult({ ok: false, msg: `Pulled ${res.transferred}, skipped ${res.skipped}, deleted ${res.deleted}, ${res.errors.length} errors: ${res.errors[0]}` })
       }
+      if (res.timestamp) {
+        setLastPull(res.timestamp)
+        localStorage.setItem('webdav-last-pull', res.timestamp)
+      }
+      onPullComplete?.()
     } catch (e) {
       setResult({ ok: false, msg: e instanceof Error ? e.message : 'Pull failed' })
     } finally {
@@ -742,7 +748,7 @@ function WebDavSyncView(): React.ReactElement {
 }
 
 
-function SettingsView(): React.ReactElement {
+function SettingsView({ onPullComplete }: { onPullComplete?: () => void }): React.ReactElement {
   const [providers, setProviders] = useState<ProviderDTO[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -893,7 +899,7 @@ function SettingsView(): React.ReactElement {
 
       <ThemeSwitcher />
 
-      <WebDavSyncView />
+      <WebDavSyncView onPullComplete={onPullComplete} />
 
       <div className="mb-8" />
 

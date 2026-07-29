@@ -10,6 +10,7 @@ import {
   emptySyncState,
   type SyncState
 } from './sync-state'
+import { DatabaseSyncManager, type DatabaseSyncResult } from './database-sync-manager'
 
 const REMOTE_PREFIX = '/sophia'
 
@@ -98,7 +99,11 @@ interface LocalFileStat {
 }
 
 export class SyncManager {
-  constructor(private readonly dataRoot: string) {}
+  private readonly databaseSyncManager: DatabaseSyncManager
+
+  constructor(private readonly dataRoot: string) {
+    this.databaseSyncManager = new DatabaseSyncManager(dataRoot)
+  }
 
   private createClient(config: WebDavConfig): SyncWebDavClient {
     return new SyncWebDavClient(config)
@@ -107,6 +112,68 @@ export class SyncManager {
   async test(config: WebDavConfig): Promise<{ success: boolean; message?: string }> {
     const client = this.createClient(config)
     return client.test()
+  }
+
+  /**
+   * Sync database file with safe download, validation, and recovery
+   */
+  async syncDatabase(
+    config: WebDavConfig,
+    direction: 'push' | 'pull',
+    onProgress?: (received: number, total: number) => void
+  ): Promise<DatabaseSyncResult> {
+    const client = this.createClient(config)
+    const remoteDbPath = `${REMOTE_PREFIX}/app.db`
+
+    if (direction === 'pull') {
+      return this.databaseSyncManager.safeDownloadDatabase(client, remoteDbPath, onProgress)
+    } else {
+      // Push: create snapshot and upload
+      try {
+        const snapshotPath = await this.databaseSyncManager.prepareUploadSnapshot()
+        await client.uploadFile(remoteDbPath, createReadStream(snapshotPath))
+        await this.databaseSyncManager.cleanupTempFile(snapshotPath)
+        return { success: true, message: 'Database uploaded successfully' }
+      } catch (e) {
+        return {
+          success: false,
+          message: `Database upload failed: ${e instanceof Error ? e.message : 'Unknown error'}`,
+          failureType: undefined,
+        }
+      }
+    }
+  }
+
+  /**
+   * Get available database backups
+   */
+  async getDatabaseBackups(): Promise<string[]> {
+    return this.databaseSyncManager.getAvailableBackups()
+  }
+
+  /**
+   * Restore database from backup
+   */
+  async restoreDatabaseFromBackup(backupPath: string): Promise<DatabaseSyncResult> {
+    try {
+      await this.databaseSyncManager.recoverFromBackup(backupPath)
+      return { success: true, message: 'Database restored successfully' }
+    } catch (e) {
+      return {
+        success: false,
+        message: `Database restore failed: ${e instanceof Error ? e.message : 'Unknown error'}`,
+        failureType: undefined,
+      }
+    }
+  }
+
+  /**
+   * Validate local database integrity
+   */
+  async validateLocalDatabase(): Promise<{ isValid: boolean; error?: string }> {
+    return this.databaseSyncManager.validateDatabase(
+      join(this.dataRoot, 'app.db')
+    )
   }
 
   private async statLocal(relPath: string): Promise<LocalFileStat | null> {
