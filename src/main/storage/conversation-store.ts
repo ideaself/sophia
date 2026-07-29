@@ -1,5 +1,6 @@
-import { mkdir, writeFile, readFile, access, readdir, unlink } from 'node:fs/promises'
+import { mkdir, writeFile, readFile, access, readdir, rm, appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { z } from 'zod'
 import type { Conversation } from '../../shared/schemas/conversation'
 import { ConversationSchema } from '../../shared/schemas/conversation'
 import type { Message } from '../../shared/schemas/message'
@@ -11,6 +12,8 @@ import {
   conversationPath,
   conversationMessagesPath
 } from './app-data'
+
+const MessageRoleSchema = z.enum(['user', 'assistant', 'system'])
 
 export interface CreateConversationInput {
   worldId: WorldId
@@ -44,7 +47,7 @@ export class ConversationStore {
     )
     await writeFile(
       conversationMessagesPath(this.dataRoot, id, input.worldId),
-      JSON.stringify([], null, 2),
+      '',
       'utf-8'
     )
 
@@ -87,13 +90,7 @@ export class ConversationStore {
   async delete(conversationId: string, worldId: string): Promise<boolean> {
     try {
       const dir = conversationDir(this.dataRoot, conversationId, worldId)
-      await access(dir)
-      // Remove conversation.json, messages.json, and artifacts/
-      const files = await readdir(dir)
-      for (const file of files) {
-        await unlink(join(dir, file))
-      }
-      await unlink(dir)
+      await rm(dir, { recursive: true, force: true })
       return true
     } catch {
       return false
@@ -113,12 +110,9 @@ export class ConversationStore {
     }
     const message = rawMsg as unknown as Message
 
-    const messages = await this.getMessages(conversationId, worldId)
-    messages.push(message)
-
-    await writeFile(
+    await appendFile(
       conversationMessagesPath(this.dataRoot, conversationId, worldId),
-      JSON.stringify(messages, null, 2),
+      JSON.stringify(message) + '\n',
       'utf-8'
     )
 
@@ -142,8 +136,28 @@ export class ConversationStore {
         conversationMessagesPath(this.dataRoot, conversationId, worldId),
         'utf-8'
       )
-      const parsed = JSON.parse(content)
-      return MessageSchema.array().parse(parsed) as unknown as Message[]
+      const trimmed = content.trim()
+      if (!trimmed) return []
+
+      // Backward compatibility: old files stored a JSON array
+      if (trimmed.startsWith('[')) {
+        const parsed = JSON.parse(trimmed)
+        return MessageSchema.array().parse(parsed) as unknown as Message[]
+      }
+
+      // JSONL: one JSON object per line
+      const lines = trimmed.split('\n')
+      const messages: Message[] = []
+      for (const line of lines) {
+        if (!line.trim()) continue
+        try {
+          const parsed = MessageSchema.parse(JSON.parse(line))
+          messages.push(parsed as unknown as Message)
+        } catch {
+          // Skip malformed lines
+        }
+      }
+      return messages
     } catch {
       return []
     }
@@ -185,11 +199,7 @@ export class ConversationStore {
     const idx = messages.findIndex((m) => m.id === messageId)
     if (idx === -1) return null
     messages[idx].content = content
-    await writeFile(
-      conversationMessagesPath(this.dataRoot, conversationId, worldId),
-      JSON.stringify(messages, null, 2),
-      'utf-8'
-    )
+    await this.writeMessages(conversationId, worldId, messages)
     return messages[idx]
   }
 
@@ -197,11 +207,7 @@ export class ConversationStore {
     const messages = await this.getMessages(conversationId, worldId)
     const filtered = messages.filter((m) => m.id !== messageId)
     if (filtered.length === messages.length) return false
-    await writeFile(
-      conversationMessagesPath(this.dataRoot, conversationId, worldId),
-      JSON.stringify(filtered, null, 2),
-      'utf-8'
-    )
+    await this.writeMessages(conversationId, worldId, filtered)
     return true
   }
 
@@ -221,10 +227,16 @@ export class ConversationStore {
 
     return results
   }
-}
 
-import { z } from 'zod'
-const MessageRoleSchema = z.enum(['user', 'assistant', 'system'])
+  private async writeMessages(conversationId: string, worldId: string, messages: Message[]): Promise<void> {
+    const jsonl = messages.map((m) => JSON.stringify(m)).join('\n') + (messages.length > 0 ? '\n' : '')
+    await writeFile(
+      conversationMessagesPath(this.dataRoot, conversationId, worldId),
+      jsonl,
+      'utf-8'
+    )
+  }
+}
 
 function buildConversation(
   id: ConversationId,

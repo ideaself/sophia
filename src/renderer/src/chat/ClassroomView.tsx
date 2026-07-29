@@ -229,7 +229,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       const endPromise = chatStream.streamEnd
       if (endPromise) {
         try {
-          const { content } = await endPromise
+          const { content, finishReason } = await endPromise
+          const isPartial = finishReason.startsWith('error:')
           if (content && convId) {
             await window.sophia.data.sendMessage({
               conversationId: convId,
@@ -245,6 +246,15 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
               if (t) t.messages = [...t.messages, { id: `assistant-${Date.now()}`, role: 'assistant', content }]
               return next
             })
+          }
+          if (isPartial) {
+            setTabs((prev) => {
+              const next = [...prev]
+              const t = next[activeIdx]
+              if (t) t.retryMessage = { input: userMessage, convId: convId! }
+              return next
+            })
+            setSendError('回复被中断，已保存部分内容。可重试获取完整回复。')
           }
         } catch {
           setTabs((prev) => {

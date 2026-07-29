@@ -73,19 +73,190 @@ export const IpcSearchMessagesInputSchema = z.object({
   query: z.string().min(2)
 })
 
-// --- IPC: Artifact ---
+// --- IPC: Conversation (additional) ---
+
+export const IpcUpdateTitleInputSchema = z.object({
+  conversationId: z.string().min(1),
+  title: z.string().min(1),
+  worldId: z.string().optional()
+})
 
 export const IpcEndClassInputSchema = z.object({
-  conversationId: z.string().min(1)
+  conversationId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+export const IpcGetConversationWithWorldInputSchema = z.object({
+  conversationId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+export const IpcDeleteConversationWithWorldInputSchema = z.object({
+  conversationId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+// --- IPC: Message (additional) ---
+
+export const IpcSendMessageWithWorldInputSchema = z.object({
+  conversationId: z.string().min(1),
+  content: z.string().min(1),
+  role: z.enum(['user', 'assistant', 'system']).optional(),
+  worldId: z.string().optional()
+})
+
+export const IpcGetMessagesWithWorldInputSchema = z.object({
+  conversationId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+export const IpcUpdateMessageInputSchema = z.object({
+  conversationId: z.string().min(1),
+  messageId: z.string().min(1),
+  content: z.string(),
+  worldId: z.string().optional()
+})
+
+export const IpcDeleteMessageInputSchema = z.object({
+  conversationId: z.string().min(1),
+  messageId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+// --- IPC: Artifact (additional) ---
+
+export const IpcArtifactTypeSchema = z.enum([
+  'lesson_summary', 'flashcards', 'diary', 'progress', 'handoff_tail'
+])
+
+export const IpcGenerateArtifactInputSchema = z.object({
+  conversationId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+export const IpcCreateArtifactInputSchema = z.object({
+  conversationId: z.string().min(1),
+  worldId: z.string().optional(),
+  type: IpcArtifactTypeSchema,
+  content: z.string()
 })
 
 export const IpcGetArtifactInputSchema = z.object({
-  artifactId: z.string().min(1)
+  artifactId: z.string().min(1),
+  conversationId: z.string().min(1),
+  worldId: z.string().optional()
 })
 
 export const IpcListArtifactsInputSchema = z.object({
-  conversationId: z.string().min(1)
+  conversationId: z.string().min(1),
+  worldId: z.string().optional()
 })
+
+// --- IPC: Textbook (additional) ---
+
+export const IpcCreateTextbookFullInputSchema = z.object({
+  worldId: z.string().min(1),
+  title: z.string().min(1),
+  author: z.string().optional(),
+  description: z.string().optional(),
+  format: z.enum([
+    TextbookFormat.Markdown,
+    TextbookFormat.Text,
+    TextbookFormat.Pdf,
+    TextbookFormat.Epub
+  ]),
+  sourceFile: z.string().optional(),
+  content: z.string().optional()
+})
+
+export const IpcGetTextbookInputSchema = z.object({
+  textbookId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+export const IpcListTextbooksInputSchema = z.object({
+  worldId: z.string().min(1)
+})
+
+export const IpcUpdateTextbookInputSchema = z.object({
+  textbookId: z.string().min(1),
+  worldId: z.string().optional(),
+  title: z.string().optional(),
+  author: z.string().optional(),
+  description: z.string().optional(),
+  content: z.string().optional(),
+  rating: z.number().min(0).max(5).optional()
+})
+
+export const IpcUpdateTextbookProgressInputSchema = z.object({
+  textbookId: z.string().min(1),
+  worldId: z.string().optional(),
+  currentPage: z.number().int().min(0).optional(),
+  totalPages: z.number().int().min(0).nullable().optional(),
+  readingPercentage: z.number().min(0).max(1).optional(),
+  lastPosition: z.string().optional()
+})
+
+export const IpcDeleteTextbookInputSchema = z.object({
+  textbookId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+export const IpcReadOriginalInputSchema = z.object({
+  textbookId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+// --- IPC: Reading Note ---
+
+export const IpcCreateReadingNoteInputSchema = z.object({
+  textbookId: z.string().min(1),
+  worldId: z.string().optional(),
+  content: z.string(),
+  position: z.string(),
+  chapter: z.string().optional(),
+  type: z.enum(['highlight', 'underline', 'note', 'bookmark']).optional(),
+  color: z.string().optional(),
+  readerNote: z.string().optional()
+})
+
+export const IpcListReadingNotesInputSchema = z.object({
+  textbookId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+export const IpcUpdateReadingNoteInputSchema = z.object({
+  noteId: z.string().min(1),
+  textbookId: z.string().min(1),
+  worldId: z.string().optional()
+}).catchall(z.unknown())
+
+export const IpcDeleteReadingNoteInputSchema = z.object({
+  noteId: z.string().min(1),
+  textbookId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+// --- IPC: File I/O ---
+
+export const IpcWriteTextFileInputSchema = z.object({
+  filePath: z.string().min(1),
+  content: z.string()
+})
+
+export const IpcDialogFileFiltersSchema = z.array(z.object({
+  name: z.string(),
+  extensions: z.array(z.string())
+}))
+
+export const IpcOpenFileDialogInputSchema = z.object({
+  filters: IpcDialogFileFiltersSchema.optional()
+}).optional()
+
+export const IpcSaveFileDialogInputSchema = z.object({
+  defaultPath: z.string().optional(),
+  filters: IpcDialogFileFiltersSchema.optional()
+}).optional()
 
 // --- IPC: Settings / API Key ---
 

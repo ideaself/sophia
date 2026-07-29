@@ -52,6 +52,9 @@ export class DeepSeekClient {
    * Send a non-streaming chat request to DeepSeek and return the
    * first assistant choice as a typed response.
    *
+   * Retries up to 2 times on transient errors (429, 500, 503) with
+   * exponential backoff (1s, 2s).
+   *
    * @param messages  Ordered conversation messages (system/user/assistant).
    * @param options   Optional overrides (currently: model).
    */
@@ -60,18 +63,34 @@ export class DeepSeekClient {
     options?: { model?: DeepSeekModel }
   ): Promise<DeepSeekChatResponse> {
     const model = options?.model ?? this.defaultModel
+    const maxRetries = 2
 
-    const result = await this.adapter.chatCompletion({
-      model,
-      messages,
-      apiKey: this.apiKey
-    })
+    let lastError: unknown
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await this.adapter.chatCompletion({
+          model,
+          messages,
+          apiKey: this.apiKey
+        })
 
-    if (!result.ok) {
-      throw mapDeepSeekError(result.status, result.body)
+        if (!result.ok) {
+          throw mapDeepSeekError(result.status, result.body)
+        }
+
+        return extractChatResponse(result.data)
+      } catch (err) {
+        lastError = err
+        if (err instanceof AppError && err.retryable && attempt < maxRetries) {
+          const delayMs = 1000 * Math.pow(2, attempt)
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
+          continue
+        }
+        throw err
+      }
     }
 
-    return extractChatResponse(result.data)
+    throw lastError
   }
 }
 

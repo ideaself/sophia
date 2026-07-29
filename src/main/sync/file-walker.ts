@@ -7,7 +7,9 @@ const EXCLUDE_PATTERNS = [
   // string start; and not all secret files end in ".key.enc".
   /(^|[/\\])config[/\\][^/\\]+\.enc$/,
   // Local sync bookkeeping is per-device and must not sync.
-  /(^|[/\\])sync-state\.json$/
+  /(^|[/\\])sync-state\.json$/,
+  // Local sync cache (pre-sync backups, etc.) is per-device.
+  /(^|[/\\])\.sync-cache[/\\]/
 ]
 
 export interface SyncableFile {

@@ -39,14 +39,14 @@ async function createPdfTextbook(store: TextbookStore, withOriginal: boolean) {
 }
 
 describe('TextbookStore — original file', () => {
-  it('create with originalSourcePath copies the file into the textbook dir as source.pdf', async () => {
+  it('create with originalSourcePath copies the file into the textbook dir with original filename', async () => {
     const store = new TextbookStore(dataRoot)
     const tb = await createPdfTextbook(store, true)
 
-    expect(tb.originalFile).toBe('source.pdf')
+    expect(tb.originalFile).toBe('高等数学.pdf')
 
     const stored = await readFile(
-      join(dataRoot, 'profiles', 'prof_default', 'worlds', WORLD_ID, 'textbooks', tb.id, 'source.pdf')
+      join(dataRoot, 'profiles', 'prof_default', 'worlds', WORLD_ID, 'textbooks', tb.id, '高等数学.pdf')
     )
     expect(stored.equals(PDF_BYTES)).toBe(true)
   })
@@ -82,6 +82,6 @@ describe('TextbookStore — original file', () => {
     const store = new TextbookStore(dataRoot)
     const tb = await createPdfTextbook(store, true)
     const loaded = await store.get(tb.id, WORLD_ID)
-    expect(loaded?.originalFile).toBe('source.pdf')
+    expect(loaded?.originalFile).toBe('高等数学.pdf')
   })
 })

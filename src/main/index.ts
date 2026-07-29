@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, nativeImage, session } from 'electron'
 import { join } from 'path'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerChatStreamIpc } from './ipc/chat-stream'
@@ -122,6 +122,26 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(async () => {
+    // Content Security Policy: restrict resource loading to local origin
+    // and data: URIs (needed for KaTeX fonts, inline styles, etc.)
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self'; " +
+            "script-src 'self'; " +
+            "style-src 'self' 'unsafe-inline'; " +
+            "img-src 'self' data: blob:; " +
+            "font-src 'self' data:; " +
+            "connect-src 'self' https: http://localhost:* http://127.0.0.1:*; " +
+            "object-src 'none'; " +
+            "base-uri 'self'"
+          ]
+        }
+      })
+    })
+
     const dataRoot = join(app.getPath('userData'), 'SophiaLocal')
     const { candidatesDir, worldPresetPath } = resolveReferencePaths(app.getAppPath())
 

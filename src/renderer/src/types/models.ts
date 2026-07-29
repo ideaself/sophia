@@ -1,4 +1,4 @@
-export type AppView = 'settings' | 'companions' | 'textbooks' | 'classroom' | 'history'
+export type AppView = 'settings' | 'companions' | 'textbooks' | 'classroom' | 'history' | 'flashcards' | 'stats'
 
 export interface Companion {
   id: string

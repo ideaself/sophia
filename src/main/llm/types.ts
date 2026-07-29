@@ -18,7 +18,7 @@ export const DEEPSEEK_V4_PRO = 'deepseek-v4-pro' as const
 /** Fast / economical: summaries, flashcards, lightweight tasks */
 export const DEEPSEEK_V4_FLASH = 'deepseek-v4-flash' as const
 
-export type DeepSeekModel = typeof DEEPSEEK_V4_PRO | typeof DEEPSEEK_V4_FLASH
+export type DeepSeekModel = string
 
 // ---------------------------------------------------------------
 // Chat message types

@@ -8,6 +8,7 @@ import { buildMessages } from '../prompt/prompt-builder'
 import { readWorldData } from '../storage/world-store'
 import { TextbookStore } from '../storage/textbook-store'
 import { ConversationStore } from '../storage/conversation-store'
+import { ArtifactStore } from '../storage/artifact-store'
 import { companionDir } from '../storage/app-data'
 import type { WorldId } from '../../shared/types/ids'
 
@@ -61,6 +62,7 @@ function validateInput(input: unknown): PromptMessagesInput {
 export function registerChatPromptIpc(dataRoot: string): void {
   const textbookStore = new TextbookStore(dataRoot)
   const conversationStore = new ConversationStore(dataRoot)
+  const artifactStore = new ArtifactStore(dataRoot)
 
   ipcMain.handle('chat:get-prompt-messages', async (_event, input: unknown) => {
     const params = validateInput(input)
@@ -83,7 +85,16 @@ export function registerChatPromptIpc(dataRoot: string): void {
       textbookContent = textbookContent || undefined
     }
 
-    // 4. Load conversation history
+    // 4. Load handoff tail from the most recent ended conversation with the same companion
+    const handoffTail = await loadHandoffTail(
+      conversationStore,
+      artifactStore,
+      params.companionId,
+      params.worldId,
+      params.conversationId
+    )
+
+    // 5. Load conversation history
     const messages = await conversationStore.getMessages(params.conversationId, params.worldId)
     const history: DeepSeekChatMessage[] = messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -92,12 +103,13 @@ export function registerChatPromptIpc(dataRoot: string): void {
         content: m.content
       }))
 
-    // 5. Build messages with system prompt
+    // 6. Build messages with system prompt
     const builtMessages = buildMessages({
       companion,
       worldContext,
       learnerInfo,
       textbookContent,
+      handoffTail,
       history,
       userMessage: params.userMessage,
       maxHistoryTokens: 3000
@@ -120,4 +132,30 @@ async function loadCompanion(dataRoot: string, companionId: string): Promise<Com
   } catch {
     return null
   }
+}
+
+async function loadHandoffTail(
+  conversationStore: ConversationStore,
+  artifactStore: ArtifactStore,
+  companionId: string,
+  worldId: string,
+  excludeConversationId: string
+): Promise<string | undefined> {
+  try {
+    const conversations = await conversationStore.list(worldId)
+    const ended = conversations
+      .filter((c) => c.endedAt && c.companionId === companionId && c.id !== excludeConversationId)
+      .sort((a, b) => (b.endedAt ?? '').localeCompare(a.endedAt ?? ''))
+
+    for (const conv of ended) {
+      const artifacts = await artifactStore.list(conv.id, worldId)
+      const handoff = artifacts.find((a) => a.type === 'handoff_tail')
+      if (handoff?.content) {
+        return handoff.content
+      }
+    }
+  } catch {
+    // Best-effort
+  }
+  return undefined
 }

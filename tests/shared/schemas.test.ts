@@ -90,11 +90,16 @@ function validTextbook(): Textbook {
     id: 'tb_001' as TextbookId,
     worldId: 'world_test001' as WorldId,
     title: 'Introduction to Chemistry',
+    author: '',
+    description: '',
     format: 'markdown',
     sourceFile: '/path/to/chem.md',
     originalFile: '',
     content: '# Chemistry\n\nAtoms and molecules...',
-    progress: { currentPage: 1, totalPages: null },
+    fileHash: '',
+    progress: { currentPage: 1, totalPages: null, readingPercentage: 0, lastPosition: '' },
+    rating: 0,
+    isDeleted: false,
     createdAt: '2026-07-06T12:00:00.000Z',
     updatedAt: '2026-07-06T12:00:00.000Z'
   }
@@ -275,9 +280,10 @@ describe('TextbookSchema', () => {
     expect(result.success).toBe(true)
   })
 
-  it('rejects a textbook with empty content', () => {
+  it('accepts a textbook with empty content (defaults to "")', () => {
     const result = TextbookSchema.safeParse({ ...validTextbook(), content: '' })
-    expect(result.success).toBe(false)
+    expect(result.success).toBe(true)
+    expect(result.data?.content).toBe('')
   })
 })
 
@@ -590,7 +596,7 @@ describe('IPC input schemas', () => {
 
   describe('IpcGetArtifactInputSchema', () => {
     it('accepts valid input', () => {
-      const result = IpcGetArtifactInputSchema.safeParse({ artifactId: 'art_001' })
+      const result = IpcGetArtifactInputSchema.safeParse({ artifactId: 'art_001', conversationId: 'conv_001' })
       expect(result.success).toBe(true)
     })
   })

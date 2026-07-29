@@ -116,10 +116,26 @@ export function textbookContentPath(
 export function textbookOriginalPath(
   dataRoot: string,
   textbookId: string,
+  formatOrFileName: string,
   worldId: string = DEFAULT_WORLD_ID,
   profileId: string = DEFAULT_PROFILE_ID
 ): string {
-  return join(textbookDir(dataRoot, textbookId, worldId, profileId), 'source.pdf')
+  // If the caller passes a full filename (e.g. "my-book.pdf"), use it directly.
+  // Otherwise treat it as a format and derive the extension.
+  const hasExt = /\.[a-z0-9]+$/i.test(formatOrFileName)
+  const fileName = hasExt
+    ? formatOrFileName
+    : `source.${formatOrFileName === 'epub' ? 'epub' : 'pdf'}`
+  return join(textbookDir(dataRoot, textbookId, worldId, profileId), fileName)
+}
+
+export function textbookNotesDir(
+  dataRoot: string,
+  textbookId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(textbookDir(dataRoot, textbookId, worldId, profileId), 'notes')
 }
 
 // --- Conversation paths ---

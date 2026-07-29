@@ -22,6 +22,9 @@ export type MessageId = string & { readonly [MessageIdBrand]: 'MessageId' }
 declare const ArtifactIdBrand: unique symbol
 export type ArtifactId = string & { readonly [ArtifactIdBrand]: 'ArtifactId' }
 
+declare const ReadingNoteIdBrand: unique symbol
+export type ReadingNoteId = string & { readonly [ReadingNoteIdBrand]: 'ReadingNoteId' }
+
 // --- Enums ---
 
 /** Which NPC slot in the world a companion occupies */

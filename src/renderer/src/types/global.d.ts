@@ -49,11 +49,30 @@ declare global {
     id: string
     worldId: string
     title: string
+    author: string
+    description: string
     format: 'markdown' | 'text' | 'pdf' | 'epub'
     sourceFile: string
     originalFile: string
     content: string
-    progress: { currentPage: number; totalPages: number | null }
+    fileHash: string
+    progress: { currentPage: number; totalPages: number | null; readingPercentage: number; lastPosition: string }
+    rating: number
+    isDeleted: boolean
+    createdAt: string
+    updatedAt: string
+  }
+
+  interface ReadingNoteDTO {
+    id: string
+    textbookId: string
+    worldId: string
+    content: string
+    position: string
+    chapter: string
+    type: 'highlight' | 'underline' | 'note' | 'bookmark'
+    color: string
+    readerNote: string
     createdAt: string
     updatedAt: string
   }
@@ -130,6 +149,20 @@ declare global {
     getArtifact: (artifactId: string, conversationId: string, worldId?: string) => Promise<ArtifactDTO | null>
     listArtifacts: (conversationId: string, worldId?: string) => Promise<ArtifactDTO[]>
     generateArtifacts: (conversationId: string, apiKey: string, worldId?: string) => Promise<{ count: number; types: string[] }>
+    updateTextbookProgress: (textbookId: string, progress: { currentPage?: number; totalPages?: number | null; readingPercentage?: number; lastPosition?: string }, worldId?: string) => Promise<TextbookDTO | null>
+    createReadingNote: (input: {
+      textbookId: string
+      worldId?: string
+      content: string
+      position: string
+      chapter?: string
+      type?: 'highlight' | 'underline' | 'note' | 'bookmark'
+      color?: string
+      readerNote?: string
+    }) => Promise<ReadingNoteDTO>
+    listReadingNotes: (textbookId: string, worldId?: string) => Promise<ReadingNoteDTO[]>
+    updateReadingNote: (noteId: string, textbookId: string, updates: Record<string, unknown>, worldId?: string) => Promise<ReadingNoteDTO | null>
+    deleteReadingNote: (noteId: string, textbookId: string, worldId?: string) => Promise<boolean>
   }
 
   interface CompanionAPI {

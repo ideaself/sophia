@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rm, stat, readdir, rmdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, rm, stat, readdir, rmdir, rename, copyFile } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import { dirname, join, extname, resolve, sep } from 'node:path'
 import { SyncWebDavClient, type WebDavConfig, type WebDavRemoteFile } from './webdav-client'
@@ -56,7 +56,7 @@ function isSafeRelativePath(relPath: string): boolean {
 }
 
 /** Extensions synced as raw bytes instead of utf-8 text. */
-const BINARY_EXTENSIONS = new Set(['.pdf'])
+const BINARY_EXTENSIONS = new Set(['.pdf', '.epub', '.mobi'])
 
 /**
  * Concurrent transfers / listings during one sync run. Kept low: common
@@ -412,11 +412,45 @@ export class SyncManager {
   }
 
   /**
+   * Create a timestamped backup of the data root before syncing,
+   * rotating old backups (keep max 3). This mirrors anx-reader's
+   * database-before-sync backup approach at the whole-data level.
+   */
+  private async backupBeforeSync(): Promise<void> {
+    const cacheDir = join(this.dataRoot, '.sync-cache')
+    await mkdir(cacheDir, { recursive: true })
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const backupDir = join(cacheDir, `backup_${timestamp}`)
+    await mkdir(backupDir, { recursive: true })
+
+    // Copy all syncable files into the backup
+    const files = await collectSyncableFiles(this.dataRoot)
+    for (const file of files) {
+      const destDir = dirname(join(backupDir, file.relativePath))
+      await mkdir(destDir, { recursive: true })
+      await copyFile(file.localPath, join(backupDir, file.relativePath))
+    }
+
+    // Rotate: keep only the 3 most recent backups
+    const backups: Array<{ name: string; time: Date }> = []
+    for (const entry of await readdir(cacheDir)) {
+      if (!entry.startsWith('backup_')) continue
+      const statResult = await stat(join(cacheDir, entry))
+      backups.push({ name: entry, time: statResult.mtime })
+    }
+    backups.sort((a, b) => b.time.getTime() - a.time.getTime())
+    for (let i = 3; i < backups.length; i++) {
+      await rm(join(cacheDir, backups[i].name), { recursive: true, force: true })
+    }
+  }
+
+  /**
    * Push: upload changed local files, delete previously-synced remote files
    * that no longer exist locally (plus non-syncable junk left by old
    * versions). Unchanged files are skipped.
    */
   async push(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
+    await this.backupBeforeSync()
     const client = this.createClient(config)
     const plan = await this.buildPushPlan(client)
     const errors: string[] = []
@@ -474,6 +508,7 @@ export class SyncManager {
    * files that no longer exist remotely. Unchanged files are skipped.
    */
   async pull(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
+    await this.backupBeforeSync()
     const client = this.createClient(config)
     const plan = await this.buildPullPlan(client)
     const errors: string[] = plan.unsafePaths.map((p) => `${p}: unsafe remote path, skipped`)

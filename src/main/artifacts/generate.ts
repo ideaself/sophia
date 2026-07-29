@@ -20,6 +20,11 @@ export interface ArtifactProviderConfig {
   baseUrl: string
 }
 
+export interface ArtifactGenerationResult {
+  results: ArtifactResult[]
+  failures: Array<{ type: ArtifactType; error: string }>
+}
+
 /**
  * Generate all lesson artifacts for a completed conversation.
  *
@@ -30,11 +35,12 @@ export interface ArtifactProviderConfig {
 export async function generateArtifacts(
   messages: Message[],
   config: ArtifactProviderConfig
-): Promise<ArtifactResult[]> {
+): Promise<ArtifactGenerationResult> {
   const endpoint = config.baseUrl.replace(/\/$/, '') + '/chat/completions'
   const adapter = createDeepSeekHttpAdapter({ endpoint })
-  const client = new DeepSeekClient(config.apiKey, adapter, config.model as any)
+  const client = new DeepSeekClient(config.apiKey, adapter, config.model)
   const results: ArtifactResult[] = []
+  const failures: Array<{ type: ArtifactType; error: string }> = []
 
   // Build conversation transcript for context
   const transcript = messages
@@ -42,23 +48,33 @@ export async function generateArtifacts(
     .join('\n\n')
 
   // Generate each artifact type in parallel
-  const generators = [
-    generateArtifact(client, ArtifactType.LessonSummary, transcript),
-    generateArtifact(client, ArtifactType.Flashcards, transcript),
-    generateArtifact(client, ArtifactType.Diary, transcript),
-    generateArtifact(client, ArtifactType.Progress, transcript),
-    generateArtifact(client, ArtifactType.HandoffTail, transcript)
+  const artifactTypes = [
+    ArtifactType.LessonSummary,
+    ArtifactType.Flashcards,
+    ArtifactType.Diary,
+    ArtifactType.Progress,
+    ArtifactType.HandoffTail
   ]
+
+  const generators = artifactTypes.map((type) =>
+    generateArtifact(client, type, transcript)
+  )
 
   const settled = await Promise.allSettled(generators)
 
-  for (const result of settled) {
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i]
     if (result.status === 'fulfilled' && result.value) {
       results.push(result.value)
+    } else if (result.status === 'rejected') {
+      failures.push({
+        type: artifactTypes[i],
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason)
+      })
     }
   }
 
-  return results
+  return { results, failures }
 }
 
 async function generateArtifact(
@@ -68,19 +84,14 @@ async function generateArtifact(
 ): Promise<ArtifactResult | null> {
   const prompt = buildArtifactPrompt(type)
 
-  try {
-    const response = await client.chat([
-      { role: 'system', content: prompt },
-      { role: 'user', content: transcript }
-    ])
+  const response = await client.chat([
+    { role: 'system', content: prompt },
+    { role: 'user', content: transcript }
+  ])
 
-    if (!response.content) return null
+  if (!response.content) return null
 
-    return { type, content: response.content.trim() }
-  } catch {
-    // Best-effort: return null on failure
-    return null
-  }
+  return { type, content: response.content.trim() }
 }
 
 function buildArtifactPrompt(type: ArtifactType): string {

@@ -40,6 +40,8 @@ export interface BuildSystemPromptParams {
   learnerInfo?: string
   /** Optional current textbook/page content to teach from */
   textbookContent?: string
+  /** Optional handoff tail from the previous session with this companion */
+  handoffTail?: string
   /** Token budget for textbook content (default: 2000) */
   maxTextbookTokens?: number
   /** Teaching language code (default: 'zh') */
@@ -127,6 +129,16 @@ function buildTextbookSegment(content: string): string {
   ].join('\n')
 }
 
+function buildHandoffSegment(tail: string): string {
+  return [
+    '## 上次课堂接力',
+    '',
+    '以下是上次课堂结束时记录的上下文摘要，帮助你延续之前的教学：',
+    '',
+    wrapUserContent(tail.trim())
+  ].join('\n')
+}
+
 function buildFormatRulesSegment(language: string): string {
   return [
     getNarrationRules(),
@@ -163,6 +175,7 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
     worldContext,
     learnerInfo,
     textbookContent,
+    handoffTail,
     maxTextbookTokens = 2000,
     language = 'zh'
   } = params
@@ -182,6 +195,11 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   if (textbookContent) {
     const truncated = truncateToBudget(textbookContent, maxTextbookTokens)
     segments.push(buildTextbookSegment(truncated))
+  }
+
+  // Optional handoff tail from previous session
+  if (handoffTail) {
+    segments.push(buildHandoffSegment(handoffTail))
   }
 
   // Format and end-class rules (always last)
