@@ -1,0 +1,324 @@
+import { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { PdfReaderView } from '../reader/PdfReaderView'
+import { useTextbookStore } from '../stores/useTextbookStore'
+import { WORLD_ID, type Textbook } from '../types/models'
+
+export function TextbooksView(): React.ReactElement {
+  const textbooks = useTextbookStore((s) => s.textbooks)
+  const fetchTextbooks = useTextbookStore((s) => s.fetch)
+  const selectTextbook = useTextbookStore((s) => s.select)
+
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [error, setError] = useState('')
+  const [readingTextbook, setReadingTextbook] = useState<Textbook | null>(null)
+  const [viewingTextbook, setViewingTextbook] = useState<Textbook | null>(null)
+  const [viewingContent, setViewingContent] = useState('')
+  const [loadingContent, setLoadingContent] = useState(false)
+  const [editingTextbook, setEditingTextbook] = useState<Textbook | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editContent, setEditContent] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+
+  const handleTextImport = async () => {
+    if (!title.trim()) return
+    setImporting(true)
+    setError('')
+    try {
+      await window.sophia.data.createTextbook({
+        worldId: WORLD_ID,
+        title: title.trim(),
+        format: 'markdown',
+        content
+      })
+      setTitle('')
+      setContent('')
+      fetchTextbooks()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '导入失败')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleFileImport = async () => {
+    setImporting(true)
+    setError('')
+    try {
+      const result = await window.sophia.dialog.openFile()
+      if (result.canceled || !result.filePaths[0]) {
+        setImporting(false)
+        return
+      }
+
+      const filePath = result.filePaths[0]
+      const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+      const fileName = filePath.split(/[/\\]/).pop() ?? filePath
+      const autoTitle = fileName.replace(/\.[^.]+$/, '')
+
+      let format: 'pdf' | 'epub' | 'markdown' | 'text' = 'markdown'
+      if (ext === 'pdf') format = 'pdf'
+      else if (ext === 'epub') format = 'epub'
+      else if (ext === 'txt') format = 'text'
+
+      await window.sophia.data.createTextbook({
+        worldId: WORLD_ID,
+        title: title.trim() || autoTitle,
+        format,
+        sourceFile: filePath
+      })
+      setTitle('')
+      fetchTextbooks()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '导入失败')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleViewContent = async (t: Textbook) => {
+    setViewingTextbook(t)
+    setLoadingContent(true)
+    try {
+      const full = await window.sophia.data.getTextbook(t.id)
+      setViewingContent(full?.content ?? '')
+    } catch {
+      setViewingContent('加载失败')
+    } finally {
+      setLoadingContent(false)
+    }
+  }
+
+  const handleEdit = async (t: Textbook) => {
+    setEditingTextbook(t)
+    setEditTitle(t.title)
+    try {
+      const full = await window.sophia.data.getTextbook(t.id)
+      setEditContent(full?.content ?? "")
+    } catch {
+      setEditContent("")
+    }
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingTextbook || !editTitle.trim()) return
+    setSaving(true)
+    try {
+      await window.sophia.data.updateTextbook(editingTextbook.id, { title: editTitle.trim(), content: editContent })
+      setEditingTextbook(null)
+      fetchTextbooks()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存失败")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const confirmDelete = async (t: Textbook) => {
+    await window.sophia.data.deleteTextbook(t.id)
+    setDeleteConfirmId(null)
+    fetchTextbooks()
+  }
+
+  return (
+    <div className="p-8">
+      <h2 className="mb-6 text-2xl font-bold">教材</h2>
+
+      <div className="mb-8 rounded-lg border border-surface-border bg-bg-surface p-6">
+        <h3 className="mb-4 text-lg font-semibold">导入教材</h3>
+        <div className="space-y-3">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="教材标题（从文件导入时可留空）"
+            className="w-full rounded border border-surface-border-strong bg-bg-deep px-4 py-2 text-sm text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
+          />
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="粘贴 Markdown 或文本内容..."
+            rows={6}
+            className="w-full rounded border border-surface-border-strong bg-bg-deep px-4 py-2 text-sm text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
+          />
+          <div className="flex gap-3">
+            <button
+              onClick={handleTextImport}
+              disabled={importing || !title.trim() || !content.trim()}
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {importing ? '导入中...' : '粘贴导入'}
+            </button>
+            <button
+              onClick={handleFileImport}
+              disabled={importing}
+              className="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
+            >
+              {importing ? '解析中...' : '从文件导入 (PDF/EPUB)'}
+            </button>
+          </div>
+          {error && (
+            <p className="text-sm text-red-400">{error}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {textbooks.map((t) => (
+          <div
+            key={t.id}
+            className="flex items-center justify-between rounded-lg border border-surface-border bg-bg-surface p-4"
+          >
+            <div>
+              <h4 className="font-medium">{t.title}</h4>
+              <p className="text-xs text-text-muted">{t.format}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {t.originalFile && (
+                <button
+                  onClick={() => setReadingTextbook(t)}
+                  className="rounded border border-surface-border-strong px-3 py-1 text-sm hover:bg-bg-elevated"
+                >
+                  阅读原件
+                </button>
+              )}
+              <button
+                onClick={() => handleViewContent(t)}
+                className="rounded border border-surface-border-strong px-3 py-1 text-sm hover:bg-bg-elevated"
+              >
+                查看
+              </button>
+              <button
+                onClick={() => handleEdit(t)}
+                className="rounded border border-surface-border-strong px-3 py-1 text-sm hover:bg-bg-elevated"
+              >
+                编辑
+              </button>
+              {deleteConfirmId === t.id ? (
+                <>
+                  <button
+                    onClick={() => confirmDelete(t)}
+                    className="rounded bg-red-600 px-3 py-1 text-sm text-white hover:bg-red-500"
+                  >
+                    确认删除
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirmId(null)}
+                    className="rounded border border-surface-border-strong px-3 py-1 text-sm hover:bg-bg-elevated"
+                  >
+                    取消
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setDeleteConfirmId(t.id)}
+                  className="rounded border border-surface-border-strong px-3 py-1 text-sm text-red-400 hover:bg-red-900/30"
+                >
+                  删除
+                </button>
+              )}
+              <button
+                onClick={() => selectTextbook(t)}
+                className="rounded bg-accent px-3 py-1 text-sm text-white hover:bg-accent-hover"
+              >
+                选择
+              </button>
+            </div>
+          </div>
+        ))}
+        {textbooks.length === 0 && (
+          <p className="text-text-muted">暂无教材。请在上方导入。</p>
+        )}
+      </div>
+
+      {editingTextbook && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="flex h-[80vh] w-[80vw] flex-col rounded-lg border border-surface-border-strong bg-bg-deep shadow-xl">
+            <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
+              <h3 className="text-lg font-semibold">编辑教材</h3>
+              <button
+                onClick={() => setEditingTextbook(null)}
+                className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="教材标题"
+                className="w-full rounded border border-surface-border-strong bg-bg-surface px-4 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
+              />
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                placeholder="教材内容 (Markdown)..."
+                className="h-full w-full rounded border border-surface-border-strong bg-bg-surface px-4 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
+                style={{ minHeight: '50vh' }}
+              />
+            </div>
+            <div className="flex justify-end gap-3 border-t border-surface-border px-6 py-4">
+              <button
+                onClick={() => setEditingTextbook(null)}
+                className="rounded border border-surface-border-strong px-4 py-2 text-sm hover:bg-bg-elevated"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={saving || !editTitle.trim()}
+                className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {saving ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewingTextbook && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="flex h-[80vh] w-[80vw] flex-col rounded-lg border border-surface-border-strong bg-bg-deep shadow-xl">
+            <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
+              <div>
+                <h3 className="text-lg font-semibold">{viewingTextbook.title}</h3>
+                <p className="text-xs text-text-muted">{viewingTextbook.format}</p>
+              </div>
+              <button
+                onClick={() => setViewingTextbook(null)}
+                className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto px-6 py-4">
+              {loadingContent ? (
+                <p className="text-sm text-text-muted">加载中...</p>
+              ) : (
+                <div className="markdown-body text-sm leading-relaxed text-text-secondary">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {viewingContent}
+                  </ReactMarkdown>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {readingTextbook && (
+        <PdfReaderView
+          textbookId={readingTextbook.id}
+          title={readingTextbook.title}
+          onClose={() => setReadingTextbook(null)}
+        />
+      )}
+    </div>
+  )
+}
