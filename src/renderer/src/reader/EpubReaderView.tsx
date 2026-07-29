@@ -10,11 +10,15 @@ interface EpubChapterData {
 // EPUB chapter HTML comes from arbitrary third-party files; even with a strict
 // CSP, we still sanitize before injection to defend against DOM-clobbering,
 // data-exfil via CSS, iframe/form injection, and future CSP relaxations.
+//
+// The URI regexp additionally allows `data:image/*` so that images we inline
+// as base64 in the main process (see epub-parser.inlineImages) survive the
+// sanitizer. Non-image data: URIs are still refused.
 const SANITIZE_CONFIG = {
   FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'meta', 'link', 'base', 'style'],
   FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick', 'onmouseover', 'srcset', 'action', 'formaction'],
   ALLOW_DATA_ATTR: false,
-  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|data:image\/(?:png|jpe?g|gif|webp|svg\+xml|bmp|x-icon);base64,|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i
 }
 
 interface EpubReaderViewProps {
@@ -109,7 +113,7 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
           <p className="mt-8 text-sm text-text-muted">加载中...</p>
         ) : (
           <div
-            className="epub-content mx-auto max-w-4xl leading-relaxed text-text-secondary"
+            className="epub-content mx-auto max-w-4xl leading-relaxed text-text-secondary [&_img]:my-4 [&_img]:mx-auto [&_img]:max-w-full [&_img]:h-auto [&_svg]:my-4 [&_svg]:mx-auto [&_svg]:max-w-full [&_svg]:h-auto [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:mt-6 [&_h1]:mb-3 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h3]:text-lg [&_h3]:font-medium [&_h3]:mt-4 [&_h3]:mb-2 [&_p]:my-3 [&_a]:text-blue-400 [&_a]:underline"
             style={{ fontSize: `${fontSize}px` }}
             dangerouslySetInnerHTML={{ __html: safeHtml }}
           />

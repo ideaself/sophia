@@ -89,6 +89,7 @@ export async function getEpubChapters(filePath: string): Promise<EpubChaptersRes
   const seenHrefs = new Set<string>()
   for (const chapter of epub.flow) {
     let html: string | null = null
+    const chapterHref = (chapter as { href?: string }).href
     try {
       html = await epub.getChapter(chapter.id)
     } catch (err) {
@@ -96,9 +97,8 @@ export async function getEpubChapters(filePath: string): Promise<EpubChaptersRes
       // Re-read the raw file — bypasses the mime-type gate but keeps working
       // for any well-formed XHTML/HTML the spine actually points at.
       try {
-        const href = (chapter as { href?: string }).href
-        if (href) {
-          const raw = await epub.readFile(href, 'utf-8')
+        if (chapterHref) {
+          const raw = await epub.readFile(chapterHref, 'utf-8')
           html = typeof raw === 'string' ? raw : (raw as Buffer).toString('utf-8')
         } else {
           console.warn(`[epub-parser] Chapter ${chapter.id} has no href to fall back to (${msg})`)
@@ -108,12 +108,13 @@ export async function getEpubChapters(filePath: string): Promise<EpubChaptersRes
       }
     }
     if (html) {
-      const href = (chapter as { href?: string }).href
-      if (href) seenHrefs.add(href)
+      if (chapterHref) seenHrefs.add(chapterHref)
+      const bodyHtml = extractBodyHtml(html)
+      const withImages = await inlineImages(bodyHtml, chapterHref, epub)
       chapters.push({
         id: chapter.id,
         title: typeof chapter.title === 'string' && chapter.title ? chapter.title : `Chapter ${chapter.index}`,
-        html: extractBodyHtml(html)
+        html: withImages
       })
     }
   }
@@ -140,10 +141,12 @@ export async function getEpubChapters(filePath: string): Promise<EpubChaptersRes
       try {
         const raw = await epub.readFile(item.href, 'utf-8')
         const html = typeof raw === 'string' ? raw : (raw as Buffer).toString('utf-8')
+        const bodyHtml = extractBodyHtml(html)
+        const withImages = await inlineImages(bodyHtml, item.href, epub)
         chapters.push({
           id: item.id,
           title: `第 ${++idx} 节`,
-          html: extractBodyHtml(html)
+          html: withImages
         })
       } catch (err) {
         console.warn(`[epub-parser] Manifest scan: failed to read ${item.href}:`, err instanceof Error ? err.message : String(err))
@@ -174,4 +177,156 @@ function extractBodyHtml(html: string): string {
   // No body tag — assume the file is already a fragment (or something weird
   // enough that we should show it anyway rather than nothing).
   return html.trim()
+}
+
+/**
+ * Inline every `<img src=...>` and SVG `<image href=...>` as a base64 data
+ * URI. Two src shapes need to be resolved:
+ *
+ *   1. The upstream `epub` package's getChapter() rewrites images to
+ *      `${imageroot}${manifestId}/${originalZipPath}` — default imageroot is
+ *      `/images/`. We detect that prefix and look up the manifest by id.
+ *   2. Our own raw-file fallback preserves the original relative src (e.g.
+ *      `../Images/cover.jpg`). Those are resolved against the chapter's
+ *      directory inside the ZIP.
+ *
+ * Any image we can't resolve is left with its original src, which will render
+ * as a broken image — the reader still shows all the text around it.
+ */
+async function inlineImages(
+  html: string,
+  chapterHref: string | undefined,
+  epub: unknown
+): Promise<string> {
+  const anyEpub = epub as {
+    imageroot: string
+    manifest: Record<string, { id: string; href?: string; 'media-type'?: string }>
+    readFile: (name: string, encoding?: string) => Promise<Buffer | string>
+  }
+  const imageroot = anyEpub.imageroot // e.g. "/images/"
+  const manifest = anyEpub.manifest ?? {}
+  const chapterDir = chapterHref ? posixDirname(chapterHref) : ''
+
+  // Cache: same image reused across a chapter (very common for icons) should
+  // only be read + base64'd once.
+  const cache = new Map<string, string | null>()
+
+  async function toDataUri(zipPath: string, hintedMime?: string): Promise<string | null> {
+    if (cache.has(zipPath)) return cache.get(zipPath)!
+    try {
+      const buf = await anyEpub.readFile(zipPath) as Buffer
+      const mime = hintedMime || mimeFromExt(zipPath) || 'application/octet-stream'
+      const uri = `data:${mime};base64,${buf.toString('base64')}`
+      cache.set(zipPath, uri)
+      return uri
+    } catch (err) {
+      console.warn(`[epub-parser] Failed to inline image ${zipPath}:`, err instanceof Error ? err.message : String(err))
+      cache.set(zipPath, null)
+      return null
+    }
+  }
+
+  async function resolveSrc(src: string): Promise<string | null> {
+    if (!src) return null
+    // Already a data URI or absolute URL — leave alone.
+    if (/^(data:|https?:|blob:)/i.test(src)) return null
+
+    // Strip fragment
+    const clean = src.split('#')[0]
+    if (!clean) return null
+
+    // Shape 1: getChapter()-rewritten path like `/images/{id}/{origPath}`
+    if (imageroot && clean.startsWith(imageroot)) {
+      const rest = clean.slice(imageroot.length) // "{id}/{origPath}"
+      const slash = rest.indexOf('/')
+      if (slash > 0) {
+        const id = rest.slice(0, slash)
+        const item = manifest[id]
+        if (item?.href) {
+          return toDataUri(item.href, item['media-type'])
+        }
+      }
+    }
+
+    // Shape 2: relative path from raw HTML. Resolve against chapter dir.
+    const resolved = posixResolve(chapterDir, clean)
+    // Try direct hit first.
+    let uri = await toDataUri(resolved)
+    if (uri) return uri
+    // Manifests sometimes list images with a slightly different path
+    // (e.g. URL-encoded characters). Match by basename as a last resort.
+    const base = resolved.split('/').pop() || ''
+    for (const item of Object.values(manifest)) {
+      const mime = (item['media-type'] ?? '').toLowerCase()
+      if (!mime.startsWith('image/') && !item.href?.match(/\.(png|jpe?g|gif|webp|svg|bmp)$/i)) continue
+      if (item.href && item.href.split('/').pop() === base) {
+        uri = await toDataUri(item.href, item['media-type'])
+        if (uri) return uri
+      }
+    }
+    return null
+  }
+
+  // Collect all replacements up-front so we can await them in parallel, then
+  // splice back into the string in one pass.
+  interface Replacement { start: number; end: number; text: string }
+  const tasks: Promise<Replacement | null>[] = []
+
+  const attrRe = /(<(?:img|image)\b[^>]*?\s(?:src|href|xlink:href)\s*=\s*)(["'])([^"']+)\2/gi
+  let m: RegExpExecArray | null
+  while ((m = attrRe.exec(html)) !== null) {
+    const full = m[0]
+    const prefix = m[1]
+    const quote = m[2]
+    const src = m[3]
+    const start = m.index
+    const end = start + full.length
+    tasks.push(
+      resolveSrc(src).then((uri) => (uri ? { start, end, text: `${prefix}${quote}${uri}${quote}` } : null))
+    )
+  }
+
+  const results = (await Promise.all(tasks)).filter((r): r is Replacement => r !== null)
+  if (results.length === 0) return html
+
+  // Splice from the tail so earlier offsets stay valid.
+  results.sort((a, b) => b.start - a.start)
+  let out = html
+  for (const r of results) {
+    out = out.slice(0, r.start) + r.text + out.slice(r.end)
+  }
+  return out
+}
+
+function posixDirname(p: string): string {
+  const i = p.lastIndexOf('/')
+  return i < 0 ? '' : p.slice(0, i)
+}
+
+function posixResolve(dir: string, rel: string): string {
+  // Absolute path inside the ZIP — leading slash is treated as ZIP root.
+  if (rel.startsWith('/')) rel = rel.slice(1)
+  const parts = (dir ? dir.split('/') : []).concat(rel.split('/'))
+  const out: string[] = []
+  for (const part of parts) {
+    if (!part || part === '.') continue
+    if (part === '..') { out.pop(); continue }
+    out.push(part)
+  }
+  return out.join('/')
+}
+
+function mimeFromExt(path: string): string | null {
+  const ext = path.toLowerCase().split('.').pop() ?? ''
+  switch (ext) {
+    case 'png': return 'image/png'
+    case 'jpg':
+    case 'jpeg': return 'image/jpeg'
+    case 'gif': return 'image/gif'
+    case 'webp': return 'image/webp'
+    case 'svg': return 'image/svg+xml'
+    case 'bmp': return 'image/bmp'
+    case 'ico': return 'image/x-icon'
+    default: return null
+  }
 }
