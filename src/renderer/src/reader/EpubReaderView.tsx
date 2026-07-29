@@ -37,7 +37,7 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
         const result = await window.sophia.data.readEpubChapters(textbookId)
         if (cancelled) return
         if (!result || result.chapters.length === 0) {
-          setError('该教材没有可读的章节')
+          setError('该教材没有可读的章节（EPUB 的 spine 与 manifest 均未提供可读 HTML/XHTML；查看主进程日志以定位具体原因）')
           return
         }
         setChapters(result.chapters)
