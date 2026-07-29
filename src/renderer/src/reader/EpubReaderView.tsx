@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import DOMPurify from 'dompurify'
 
 interface EpubChapterData {
@@ -28,7 +28,6 @@ interface EpubReaderViewProps {
 }
 
 export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewProps): React.ReactElement {
-  const contentRef = useRef<HTMLDivElement>(null)
   const [chapters, setChapters] = useState<EpubChapterData[]>([])
   const [chapterIndex, setChapterIndex] = useState(0)
   const [error, setError] = useState('')
@@ -59,6 +58,13 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
     () => (current ? DOMPurify.sanitize(current.html, SANITIZE_CONFIG) : ''),
     [current]
   )
+  // Diagnostic: how many <img> tags the sanitizer actually left in the DOM
+  // for the current chapter. If this is 0 while the EPUB obviously has
+  // pictures, the sanitizer or main-process inliner is at fault.
+  const chapterImgCount = useMemo(() => {
+    if (!safeHtml) return 0
+    return (safeHtml.match(/<img\b/gi) ?? []).length
+  }, [safeHtml])
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-bg-deep">
@@ -68,6 +74,7 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
           {chapters.length > 0 && (
             <span className="text-xs text-text-muted">
               {current?.title || `第 ${chapterIndex + 1} 章`} — {chapterIndex + 1}/{chapters.length}
+              {chapterImgCount > 0 && ` · ${chapterImgCount} 图`}
             </span>
           )}
         </div>
@@ -106,7 +113,7 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
           </button>
         </div>
       </div>
-      <div ref={contentRef} className="flex-1 overflow-auto px-8 py-6">
+      <div className="flex-1 overflow-auto px-8 py-6">
         {error ? (
           <p className="mt-8 text-sm text-red-400">{error}</p>
         ) : chapters.length === 0 ? (
