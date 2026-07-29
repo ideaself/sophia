@@ -10,3 +10,10 @@ release/
 .env.local
 .DS_Store
 Thumbs.db
+
+# Diagnostic scratch — sample textbook files that occasionally land at the
+# repo root while iterating on the parser but should never be committed.
+/*.epub
+/*.pdf
+/diag-*.mjs
+/diag-*.js
