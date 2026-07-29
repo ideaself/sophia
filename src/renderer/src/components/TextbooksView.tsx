@@ -2,6 +2,7 @@ import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { PdfReaderView } from '../reader/PdfReaderView'
+import { EpubReaderView } from '../reader/EpubReaderView'
 import { useTextbookStore } from '../stores/useTextbookStore'
 import { WORLD_ID, type Textbook } from '../types/models'
 
@@ -312,7 +313,14 @@ export function TextbooksView(): React.ReactElement {
         </div>
       )}
 
-      {readingTextbook && (
+      {readingTextbook && readingTextbook.format === 'epub' && (
+        <EpubReaderView
+          textbookId={readingTextbook.id}
+          title={readingTextbook.title}
+          onClose={() => setReadingTextbook(null)}
+        />
+      )}
+      {readingTextbook && readingTextbook.format !== 'epub' && (
         <PdfReaderView
           textbookId={readingTextbook.id}
           title={readingTextbook.title}

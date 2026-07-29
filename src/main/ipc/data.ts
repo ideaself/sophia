@@ -5,7 +5,7 @@ import { ArtifactStore } from '../storage/artifact-store'
 import { ReadingNoteStore } from '../storage/reading-note-store'
 import type { ProviderStore } from '../storage/provider-store'
 import { generateArtifacts } from '../artifacts/generate'
-import { extractText } from '../parsers'
+import { extractText, getEpubChapters } from '../parsers'
 import { PickedFileRegistry } from './picked-files'
 import {
   IpcCreateConversationInputSchema,
@@ -32,6 +32,7 @@ import {
   IpcUpdateTextbookProgressInputSchema,
   IpcDeleteTextbookInputSchema,
   IpcReadOriginalInputSchema,
+  IpcReadEpubChaptersInputSchema,
   IpcCreateReadingNoteInputSchema,
   IpcListReadingNotesInputSchema,
   IpcUpdateReadingNoteInputSchema,
@@ -300,6 +301,19 @@ export function registerConversationIpc(
       throw new Error('原件超过 512MB，无法在应用内打开')
     }
     return { data: result.data, fileName: result.fileName }
+  })
+
+  ipcMain.handle('epub:read-chapters', async (_event, input: unknown) => {
+    const { join } = await import('node:path')
+    const { textbookDir } = await import('../storage/app-data')
+    const parsed = IpcReadEpubChaptersInputSchema.parse(input)
+    const worldId = parsed.worldId ?? 'world_default'
+    const textbook = await textbookStore.get(parsed.textbookId, worldId)
+    if (!textbook || !textbook.originalFile) {
+      throw new Error('Textbook not found or has no original file')
+    }
+    const fullPath = join(textbookDir(dataRoot, parsed.textbookId, worldId), textbook.originalFile)
+    return getEpubChapters(fullPath)
   })
 
   ipcMain.handle('textbook:list', async (_event, input: unknown) => {

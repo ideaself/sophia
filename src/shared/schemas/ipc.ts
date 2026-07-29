@@ -207,6 +207,11 @@ export const IpcReadOriginalInputSchema = z.object({
   worldId: z.string().optional()
 })
 
+export const IpcReadEpubChaptersInputSchema = z.object({
+  textbookId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
 // --- IPC: Reading Note ---
 
 export const IpcCreateReadingNoteInputSchema = z.object({

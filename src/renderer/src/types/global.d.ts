@@ -85,10 +85,16 @@ declare global {
     createdAt: string
   }
 
-  interface SearchResultDTO {
-    conversationId: string
-    message: MessageDTO
-  }
+interface SearchResultDTO {
+  conversationId: string
+  message: MessageDTO
+}
+
+interface EpubChaptersResult {
+  chapters: Array<{ id: string; title: string; html: string }>
+  title: string
+  author: string
+}
 
   interface CompanionDTO {
     id: string
@@ -136,6 +142,7 @@ declare global {
     }) => Promise<TextbookDTO>
     getTextbook: (textbookId: string, worldId?: string) => Promise<TextbookDTO | null>
     readTextbookOriginal: (textbookId: string, worldId?: string) => Promise<{ data: Uint8Array; fileName: string } | null>
+    readEpubChapters: (textbookId: string, worldId?: string) => Promise<EpubChaptersResult>
     listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
     updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
     updateTextbook: (textbookId: string, updates: { title?: string; content?: string }, worldId?: string) => Promise<TextbookDTO | null>

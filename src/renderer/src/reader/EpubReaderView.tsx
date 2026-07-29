@@ -1,0 +1,105 @@
+import { useEffect, useRef, useState } from 'react'
+
+interface EpubChapterData {
+  id: string
+  title: string
+  html: string
+}
+
+interface EpubReaderViewProps {
+  textbookId: string
+  title: string
+  onClose: () => void
+}
+
+export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewProps): React.ReactElement {
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [chapters, setChapters] = useState<EpubChapterData[]>([])
+  const [chapterIndex, setChapterIndex] = useState(0)
+  const [error, setError] = useState('')
+  const [fontSize, setFontSize] = useState(16)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const result = await window.sophia.data.readEpubChapters(textbookId)
+        if (cancelled) return
+        if (!result || result.chapters.length === 0) {
+          setError('该教材没有可读的章节')
+          return
+        }
+        setChapters(result.chapters)
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : '加载失败')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [textbookId])
+
+  const current = chapters[chapterIndex]
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-bg-deep">
+      <div className="flex items-center justify-between border-b border-surface-border px-4 py-2">
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-medium text-text-primary">{title}</h3>
+          {chapters.length > 0 && (
+            <span className="text-xs text-text-muted">
+              {current?.title || `第 ${chapterIndex + 1} 章`} — {chapterIndex + 1}/{chapters.length}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setFontSize((s) => Math.max(10, s - 2))}
+            className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
+          >
+            A−
+          </button>
+          <button
+            onClick={() => setFontSize((s) => Math.min(36, s + 2))}
+            className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
+          >
+            A+
+          </button>
+          <button
+            onClick={() => setChapterIndex((i) => Math.max(0, i - 1))}
+            disabled={chapterIndex <= 0}
+            className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated disabled:opacity-50"
+          >
+            上一章
+          </button>
+          <button
+            onClick={() => setChapterIndex((i) => Math.min(chapters.length - 1, i + 1))}
+            disabled={chapterIndex >= chapters.length - 1}
+            className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated disabled:opacity-50"
+          >
+            下一章
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded border border-surface-border-strong px-3 py-1 text-xs text-red-400 hover:bg-red-900/30"
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+      <div ref={contentRef} className="flex-1 overflow-auto px-8 py-6">
+        {error ? (
+          <p className="mt-8 text-sm text-red-400">{error}</p>
+        ) : chapters.length === 0 ? (
+          <p className="mt-8 text-sm text-text-muted">加载中...</p>
+        ) : (
+          <div
+            className="epub-content mx-auto max-w-4xl leading-relaxed text-text-secondary"
+            style={{ fontSize: `${fontSize}px` }}
+            dangerouslySetInnerHTML={{ __html: current.html }}
+          />
+        )}
+      </div>
+    </div>
+  )
+}

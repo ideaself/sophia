@@ -3,6 +3,18 @@ export interface ParseResult {
   totalPages: number
 }
 
+export interface EpubChapter {
+  id: string
+  title: string
+  html: string
+}
+
+export interface EpubChaptersResult {
+  chapters: EpubChapter[]
+  title: string
+  author: string
+}
+
 function htmlToText(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n')
@@ -59,4 +71,32 @@ export async function extractEpubText(filePath: string): Promise<ParseResult> {
 
   const content = lines.join('\n')
   return { content, totalPages: epub.flow.length }
+}
+
+export async function getEpubChapters(filePath: string): Promise<EpubChaptersResult> {
+  const { EPub } = await import('epub')
+
+  const epub = new EPub(filePath)
+  await epub.parse()
+
+  const chapters: EpubChapter[] = []
+
+  for (const chapter of epub.flow) {
+    try {
+      const html = await epub.getChapter(chapter.id)
+      chapters.push({
+        id: chapter.id,
+        title: typeof chapter.title === 'string' && chapter.title ? chapter.title : `Chapter ${chapter.index}`,
+        html
+      })
+    } catch {
+      // skip chapters that fail to load
+    }
+  }
+
+  return {
+    chapters,
+    title: epub.metadata?.title ?? '',
+    author: epub.metadata?.creator ?? ''
+  }
 }
