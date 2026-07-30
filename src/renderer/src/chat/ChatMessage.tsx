@@ -69,6 +69,62 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+function SpeakButton({ text }: { text: string }) {
+  const [speaking, setSpeaking] = useState(false)
+
+  useEffect(() => {
+    return () => {
+      if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel()
+    }
+  }, [])
+
+  const handleClick = useCallback(() => {
+    if (typeof speechSynthesis === 'undefined') return
+    if (speaking) {
+      speechSynthesis.cancel()
+      setSpeaking(false)
+      return
+    }
+    const plain = text
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/`{1,3}(.+?)`{1,3}/g, '$1')
+      .replace(/\[(.+?)\]\(.+?\)/g, '$1')
+      .replace(/^\s*[-*+]\s+/gm, '')
+      .replace(/^\s*\d+\.\s+/gm, '')
+      .replace(/^\s*>\s+/gm, '')
+      .replace(/\|/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+    if (!plain) return
+    const utter = new SpeechSynthesisUtterance(plain)
+    utter.lang = 'zh-CN'
+    utter.rate = 1.0
+    utter.onend = () => setSpeaking(false)
+    utter.onerror = () => setSpeaking(false)
+    speechSynthesis.cancel()
+    speechSynthesis.speak(utter)
+    setSpeaking(true)
+  }, [text, speaking])
+
+  if (typeof speechSynthesis === 'undefined') return null
+
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); handleClick() }}
+      className={`text-xs px-1 transition-colors ${
+        speaking
+          ? 'text-accent'
+          : 'text-text-muted hover:text-text-secondary'
+      }`}
+      title={speaking ? '停止朗读' : '朗读'}
+    >
+      {speaking ? '⏹️' : '🔊'}
+    </button>
+  )
+}
+
 export function ChatMessage({ id, role, content, showActions, onEdit, onDelete, onRegenerate }: ChatMessageProps): React.ReactElement {
   const isUser = role === 'user'
   const [editing, setEditing] = useState(false)
@@ -178,6 +234,7 @@ export function ChatMessage({ id, role, content, showActions, onEdit, onDelete, 
           {showActions && !editing && (
             <div className="flex-shrink-0 flex items-start gap-1 opacity-0 group-hover:opacity-100 transition-opacity pt-0.5">
               <CopyButton text={content} />
+              {role === 'assistant' && <SpeakButton text={content} />}
               {onEdit && (
                 <button
                   onClick={() => { setEditText(content); setEditing(true) }}
