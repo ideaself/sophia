@@ -12,6 +12,7 @@ import { ArtifactStore } from '../storage/artifact-store'
 import { companionDir } from '../storage/app-data'
 import type { WorldId } from '../../shared/types/ids'
 import { compressMessages, shouldCompress, splitCompressionWindow } from '../prompt/message-compressor'
+import { analyzeTeaching, shouldAnalyze, formatAssessment, type TeachingCoachAssessment } from '../prompt/teaching-coach'
 import type { ProviderStore } from '../storage/provider-store'
 
 // ---------------------------------------------------------------
@@ -65,6 +66,11 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
   const textbookStore = new TextbookStore(dataRoot)
   const conversationStore = new ConversationStore(dataRoot)
   const artifactStore = new ArtifactStore(dataRoot)
+
+  // Cache the latest teaching-coach assessment per conversation so it
+  // persists between turns until the next analysis interval triggers.
+  // { formatted segment string, round number }
+  const coachCache = new Map<string, { segment: string; round: number }>()
 
   ipcMain.handle('chat:get-prompt-messages', async (_event, input: unknown) => {
     const params = validateInput(input)
@@ -132,13 +138,48 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
       }
     }
 
-    // 7. Build messages with system prompt
+    // 7. Teaching-coach analysis (every ANALYSIS_INTERVAL user messages)
+    const userMsgCount = history.filter((m) => m.role === 'user').length + 1 // +1 for the current message
+    if (shouldAnalyze(userMsgCount) && providerStore) {
+      try {
+        const active = await providerStore.getActive()
+        if (active) {
+          const apiKey = await providerStore.readApiKey(active.id)
+          if (apiKey) {
+            let textbookTitle: string | undefined
+            if (params.textbookId) {
+              const tb = await textbookStore.get(params.textbookId, params.worldId)
+              textbookTitle = tb?.title
+            }
+            const assessment = await analyzeTeaching(history, companion, textbookTitle, {
+              apiKey,
+              baseUrl: active.baseUrl || 'https://api.deepseek.com',
+              model: active.selectedModel || 'deepseek-v4-flash'
+            })
+            if (assessment) {
+              const round = userMsgCount / 4 // 4 = ANALYSIS_INTERVAL
+              const segment = formatAssessment(assessment, round)
+              coachCache.set(params.conversationId, { segment, round })
+              console.log(`[teaching-coach] Analysis injected for ${params.conversationId} (round ${round})`)
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[teaching-coach] Analysis failed (non-fatal):', err instanceof Error ? err.message : String(err))
+      }
+    }
+
+    // Retrieve cached assessment (from this turn or a previous one)
+    const coachSegment = coachCache.get(params.conversationId)?.segment
+
+    // 8. Build messages with system prompt
     const builtMessages = buildMessages({
       companion,
       worldContext,
       learnerInfo,
       textbookContent,
       handoffTail,
+      teachingCoachAssessment: coachSegment,
       history,
       userMessage: params.userMessage,
       maxHistoryTokens: 3000

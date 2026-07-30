@@ -42,6 +42,8 @@ export interface BuildSystemPromptParams {
   textbookContent?: string
   /** Optional handoff tail from the previous session with this companion */
   handoffTail?: string
+  /** Optional teaching-coach assessment segment (pre-formatted string) */
+  teachingCoachAssessment?: string
   /** Token budget for textbook content (default: 2000) */
   maxTextbookTokens?: number
   /** Teaching language code (default: 'zh') */
@@ -200,6 +202,11 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   // Optional handoff tail from previous session
   if (handoffTail) {
     segments.push(buildHandoffSegment(handoffTail))
+  }
+
+  // Optional teaching-coach assessment (pre-formatted by teaching-coach.ts)
+  if (params.teachingCoachAssessment) {
+    segments.push(params.teachingCoachAssessment)
   }
 
   // Format and end-class rules (always last)
