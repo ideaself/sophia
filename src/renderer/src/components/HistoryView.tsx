@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useAppStore } from '../stores/useAppStore'
@@ -9,7 +9,8 @@ import { WORLD_ID } from '../types/models'
 export function HistoryView(): React.ReactElement {
   const [conversations, setConversations] = useState<ConversationDTO[]>([])
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<SearchResultDTO[] | null>(null)
+  const [searchResults, setSearchResults] = useState<{ results: SearchResultDTO[]; total: number } | null>(null)
+  const [searching, setSearching] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [expandedMessages, setExpandedMessages] = useState<MessageDTO[]>([])
   const [expandedArtifacts, setExpandedArtifacts] = useState<ArtifactDTO[]>([])
@@ -54,10 +55,44 @@ export function HistoryView(): React.ReactElement {
     }
   }
 
-  const handleSearch = async () => {
-    if (searchQuery.trim().length < 2) return
-    const results = await window.sophia.data.searchMessages(WORLD_ID, searchQuery.trim())
-    setSearchResults(results)
+  const doSearch = useCallback(async (query: string, offset: number) => {
+    setSearching(true)
+    try {
+      const result = await window.sophia.data.searchMessages(WORLD_ID, query, 50, offset)
+      if (offset === 0) {
+        setSearchResults(result)
+      } else {
+        setSearchResults((prev) =>
+          prev ? { results: [...prev.results, ...result.results], total: result.total } : result
+        )
+      }
+    } catch {
+      if (offset === 0) setSearchResults({ results: [], total: 0 })
+    } finally {
+      setSearching(false)
+    }
+  }, [])
+
+  // Debounced auto-search: 300ms after the user stops typing
+  useEffect(() => {
+    const q = searchQuery.trim()
+    if (q.length < 2) {
+      setSearchResults(null)
+      return
+    }
+    const timer = setTimeout(() => doSearch(q, 0), 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery, doSearch])
+
+  const handleSearch = () => {
+    const q = searchQuery.trim()
+    if (q.length < 2) return
+    doSearch(q, 0)
+  }
+
+  const handleLoadMore = () => {
+    if (!searchResults) return
+    doSearch(searchQuery.trim(), searchResults.results.length)
   }
 
   const handleToggleMessages = async (convId: string) => {
@@ -156,15 +191,15 @@ export function HistoryView(): React.ReactElement {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          placeholder="搜索对话内容..."
+          placeholder="搜索对话内容... (输入至少 2 个字)"
           className="flex-1 rounded border border-surface-border-strong bg-bg-surface px-4 py-2 text-sm text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
         />
         <button
           onClick={handleSearch}
-          disabled={searchQuery.trim().length < 2}
+          disabled={searchQuery.trim().length < 2 || searching}
           className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
         >
-          搜索
+          {searching ? '搜索中...' : '搜索'}
         </button>
       </div>
 
@@ -172,28 +207,39 @@ export function HistoryView(): React.ReactElement {
         <div className="mb-8">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-lg font-semibold">
-              搜索结果 ({searchResults.length})
+              搜索结果 ({searchResults.results.length}/{searchResults.total})
             </h3>
             <button
-              onClick={() => setSearchResults(null)}
+              onClick={() => { setSearchResults(null); setSearchQuery('') }}
               className="text-sm text-text-muted hover:text-text-secondary"
             >
               清除
             </button>
           </div>
-          {searchResults.length === 0 ? (
+          {searchResults.results.length === 0 ? (
             <p className="text-text-muted">无匹配结果</p>
           ) : (
-            <div className="space-y-2">
-              {searchResults.map((r, i) => (
-                <div key={i} className="rounded-lg border border-surface-border bg-bg-surface p-3">
-                  <p className="text-sm text-text-secondary">{r.message.content}</p>
-                  <p className="mt-1 text-xs text-text-muted">
-                    {new Date(r.message.createdAt).toLocaleString()}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="space-y-2">
+                {searchResults.results.map((r, i) => (
+                  <div key={i} className="rounded-lg border border-surface-border bg-bg-surface p-3">
+                    <p className="text-sm text-text-secondary">{r.message.content}</p>
+                    <p className="mt-1 text-xs text-text-muted">
+                      {new Date(r.message.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              {searchResults.results.length < searchResults.total && (
+                <button
+                  onClick={handleLoadMore}
+                  disabled={searching}
+                  className="mt-3 w-full rounded border border-surface-border-strong py-2 text-sm text-text-muted hover:bg-bg-elevated disabled:opacity-50"
+                >
+                  {searching ? '加载中...' : `加载更多 (还剩 ${searchResults.total - searchResults.results.length} 条)`}
+                </button>
+              )}
+            </>
           )}
         </div>
       )}

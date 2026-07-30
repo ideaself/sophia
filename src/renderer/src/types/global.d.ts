@@ -131,7 +131,7 @@ declare global {
     updateMessage: (conversationId: string, messageId: string, content: string, worldId?: string) => Promise<MessageDTO | null>
     deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
     listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
-    searchMessages: (worldId: string, query: string) => Promise<SearchResultDTO[]>
+    searchMessages: (worldId: string, query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
     endConversation: (conversationId: string, worldId?: string) => Promise<{ success: boolean; artifacts: number }>
     createTextbook: (input: {
       worldId: string

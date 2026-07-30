@@ -200,7 +200,12 @@ export function registerConversationIpc(
 
   ipcMain.handle('message:search', async (_event, input: unknown) => {
     const parsed = IpcSearchMessagesInputSchema.parse(input)
-    return conversationStore.searchMessages(parsed.worldId, parsed.query)
+    return conversationStore.searchMessages(
+      parsed.worldId,
+      parsed.query,
+      parsed.limit,
+      parsed.offset
+    )
   })
 
   ipcMain.handle('message:update', async (_event, input: unknown) => {

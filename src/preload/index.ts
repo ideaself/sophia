@@ -146,7 +146,7 @@ export interface DataAPI {
   updateMessage: (conversationId: string, messageId: string, content: string, worldId?: string) => Promise<MessageDTO | null>
   deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
   listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
-  searchMessages: (worldId: string, query: string) => Promise<SearchResultDTO[]>
+  searchMessages: (worldId: string, query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
   endConversation: (conversationId: string, worldId?: string) => Promise<{ success: boolean; artifacts: number }>
   createTextbook: (input: {
     worldId: string
@@ -439,8 +439,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('message:delete', { conversationId, messageId, worldId }),
     listMessages: (conversationId, worldId = 'world_default') =>
       ipcRenderer.invoke('message:list', { conversationId, worldId }),
-    searchMessages: (worldId, query) =>
-      ipcRenderer.invoke('message:search', { worldId, query }),
+    searchMessages: (worldId, query, limit, offset) =>
+      ipcRenderer.invoke('message:search', { worldId, query, limit, offset }),
     endConversation: (conversationId, worldId = 'world_default') =>
       ipcRenderer.invoke('conversation:end', { conversationId, worldId }),
     createTextbook: (input) =>

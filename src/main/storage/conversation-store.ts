@@ -31,8 +31,40 @@ function generateId(): ConversationId {
   return `conv_${Date.now()}_${idCounter}` as ConversationId
 }
 
+export interface SearchResult {
+  results: Array<{ conversationId: string; message: Message }>
+  total: number
+}
+
 export class ConversationStore {
   constructor(private readonly dataRoot: string) {}
+
+  // ---- In-memory search index ----
+  // Caches the lowercased text of every message per worldId so repeated
+  // searches don't re-read all JSONL files from disk.  Invalidated on any
+  // write (addMessage / updateMessage / deleteMessage / delete).
+  private indexCache: Map<string, Array<{ conversationId: string; messageId: string; text: string }>> = new Map()
+  private indexDirty: Set<string> = new Set()
+
+  /** Mark a worldId's index as stale so it is rebuilt on the next search. */
+  private invalidateIndex(worldId: string): void {
+    this.indexCache.delete(worldId)
+    this.indexDirty.add(worldId)
+  }
+
+  /** Build (or rebuild) the in-memory index for a worldId. */
+  private async buildIndex(worldId: string): Promise<void> {
+    const conversations = await this.list(worldId)
+    const entries: Array<{ conversationId: string; messageId: string; text: string }> = []
+    for (const conv of conversations) {
+      const messages = await this.getMessages(conv.id, worldId)
+      for (const msg of messages) {
+        entries.push({ conversationId: conv.id, messageId: msg.id, text: msg.content.toLowerCase() })
+      }
+    }
+    this.indexCache.set(worldId, entries)
+    this.indexDirty.delete(worldId)
+  }
 
   async create(input: CreateConversationInput): Promise<Conversation> {
     const now = new Date().toISOString()
@@ -93,6 +125,7 @@ export class ConversationStore {
     try {
       const dir = conversationDir(this.dataRoot, conversationId, worldId)
       await rm(dir, { recursive: true, force: true })
+      this.invalidateIndex(worldId)
       return true
     } catch {
       return false
@@ -127,6 +160,12 @@ export class ConversationStore {
         JSON.stringify(conv, null, 2),
         'utf-8'
       )
+    }
+
+    // Incremental index update (avoid full rebuild)
+    const idx = this.indexCache.get(worldId)
+    if (idx) {
+      idx.push({ conversationId, messageId: id, text: content.toLowerCase() })
     }
 
     return message
@@ -208,6 +247,7 @@ export class ConversationStore {
     if (idx === -1) return null
     messages[idx].content = content
     await this.writeMessages(conversationId, worldId, messages)
+    this.invalidateIndex(worldId)
     return messages[idx]
   }
 
@@ -216,24 +256,58 @@ export class ConversationStore {
     const filtered = messages.filter((m) => m.id !== messageId)
     if (filtered.length === messages.length) return false
     await this.writeMessages(conversationId, worldId, filtered)
+    this.invalidateIndex(worldId)
     return true
   }
 
-  async searchMessages(worldId: string, query: string): Promise<Array<{ conversationId: string; message: Message }>> {
-    const conversations = await this.list(worldId)
-    const results: Array<{ conversationId: string; message: Message }> = []
-    const lowerQuery = query.toLowerCase()
+  async searchMessages(
+    worldId: string,
+    query: string,
+    limit = 50,
+    offset = 0
+  ): Promise<SearchResult> {
+    // Build / refresh index if needed
+    if (!this.indexCache.has(worldId) || this.indexDirty.has(worldId)) {
+      await this.buildIndex(worldId)
+    }
 
-    for (const conv of conversations) {
-      const messages = await this.getMessages(conv.id, worldId)
-      for (const msg of messages) {
-        if (msg.content.toLowerCase().includes(lowerQuery)) {
-          results.push({ conversationId: conv.id, message: msg })
-        }
+    const index = this.indexCache.get(worldId) ?? []
+    const lowerQuery = query.toLowerCase()
+    const matched: Array<{ conversationId: string; message: Message }> = []
+
+    // We need the full Message objects for results, but we only want to
+    // load messages for conversations that actually have matches.  So
+    // first scan the index to find which conversations hit, then batch-
+    // load only those.
+    const hitsByConv = new Map<string, Set<string>>()
+    for (const entry of index) {
+      if (entry.text.includes(lowerQuery)) {
+        let set = hitsByConv.get(entry.conversationId)
+        if (!set) { set = new Set(); hitsByConv.set(entry.conversationId, set) }
+        set.add(entry.messageId)
       }
     }
 
-    return results
+    // Load messages for hit conversations in order, applying offset/limit
+    let skipped = 0
+    let taken = 0
+    for (const [convId, msgIds] of hitsByConv) {
+      if (taken >= limit) break
+      const messages = await this.getMessages(convId, worldId)
+      for (const msg of messages) {
+        if (!msgIds.has(msg.id)) continue
+        if (!msg.content.toLowerCase().includes(lowerQuery)) continue
+        if (skipped < offset) { skipped++; continue }
+        matched.push({ conversationId: convId, message: msg })
+        taken++
+        if (taken >= limit) break
+      }
+    }
+
+    // Total count (for pagination UI) - cheap because we already scanned
+    const total = Array.from(hitsByConv.values()).reduce((sum, ids) => sum + ids.size, 0)
+
+    return { results: matched, total }
   }
 
   private async writeMessages(conversationId: string, worldId: string, messages: Message[]): Promise<void> {

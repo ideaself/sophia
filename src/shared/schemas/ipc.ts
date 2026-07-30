@@ -70,7 +70,9 @@ export const IpcGetMessagesInputSchema = z.object({
 
 export const IpcSearchMessagesInputSchema = z.object({
   worldId: z.string().min(1),
-  query: z.string().min(2)
+  query: z.string().min(2),
+  limit: z.number().int().min(1).max(500).optional(),
+  offset: z.number().int().min(0).optional()
 })
 
 // --- IPC: Conversation (additional) ---
