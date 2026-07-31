@@ -3,6 +3,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { ClassroomView } from './chat/ClassroomView'
 import { useChatStream } from './chat/useChatStream'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
+import { useDueFlashcardCount } from './hooks/useFlashcards'
 import { CompanionEditModal } from './components/CompanionEditModal'
 import { SettingsView } from './components/SettingsView'
 import { CompanionsManageView } from './components/CompanionsManageView'
@@ -45,6 +46,7 @@ function App(): React.ReactElement {
 
   const chatStream = useChatStream()
   const isOnline = useOnlineStatus()
+  const dueFlashcardCount = useDueFlashcardCount()
   const classroomDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -202,6 +204,14 @@ function App(): React.ReactElement {
           <button onClick={() => { setView('flashcards'); setShowClassroomDropdown(false) }}
             className={`rounded px-3 py-2 text-sm transition-colors ${view === 'flashcards' ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-elevated'}`}>
             复习
+            {dueFlashcardCount > 0 && (
+              <span
+                className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white"
+                title={`今天有 ${dueFlashcardCount} 张卡片待复习`}
+              >
+                {dueFlashcardCount > 99 ? '99+' : dueFlashcardCount}
+              </span>
+            )}
           </button>
 
           <button onClick={() => { setView('stats'); setShowClassroomDropdown(false) }}

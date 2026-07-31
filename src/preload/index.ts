@@ -2,7 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import {
   CHAT_STREAM_START,
   CHAT_STREAM_CANCEL,
-  CHAT_STREAM_EVENT
+  CHAT_STREAM_EVENT,
+  ARTIFACTS_GENERATED
 } from '../shared/channel-names'
 
 // ---------------------------------------------------------------
@@ -18,6 +19,14 @@ export interface StreamUsageData {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+}
+
+export interface ArtifactsGeneratedPayload {
+  conversationId: string
+  artifacts: number
+  farewell: string
+  failures: string[]
+  error?: string
 }
 
 // ---------------------------------------------------------------
@@ -153,8 +162,9 @@ export interface DataAPI {
   deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
   listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
   searchMessages: (worldId: string, query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
-    endConversation: (conversationId: string, worldId?: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[] }>
+    endConversation: (conversationId: string, worldId?: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
     redoArtifacts: (conversationId: string, types: string[], worldId?: string) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
+    onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void
   createTextbook: (input: {
     worldId: string
     title: string
@@ -381,6 +391,19 @@ function createEventSubscriber<P>(
   }
 }
 
+function createSimpleSubscriber<P>(
+  channel: string,
+  callback: (payload: P) => void
+): () => void {
+  const handler = (_event: Electron.IpcRendererEvent, payload: P) => {
+    callback(payload)
+  }
+  ipcRenderer.on(channel, handler)
+  return () => {
+    ipcRenderer.removeListener(channel, handler)
+  }
+}
+
 // ---------------------------------------------------------------
 // Build and expose the bridge
 // ---------------------------------------------------------------
@@ -469,6 +492,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('conversation:end', { conversationId, worldId, classMode }),
     redoArtifacts: (conversationId, types, worldId = 'world_default') =>
       ipcRenderer.invoke('conversation:redo-artifacts', { conversationId, types, worldId }),
+    onArtifactsGenerated: (callback) =>
+      createSimpleSubscriber<ArtifactsGeneratedPayload>(ARTIFACTS_GENERATED, callback),
     createTextbook: (input) =>
       ipcRenderer.invoke('textbook:create', input),
     getTextbook: (textbookId, worldId = 'world_default') =>

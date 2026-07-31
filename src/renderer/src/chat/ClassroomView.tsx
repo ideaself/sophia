@@ -39,7 +39,14 @@ interface TabState {
   messages: DisplayMessage[]
   input: string
   retryMessage: { input: string; convId: string } | null
-  endResult: { artifacts: number; farewell?: string; failures?: string[]; conversationId?: string } | null
+  endResult: {
+    artifacts: number
+    farewell?: string
+    failures?: string[]
+    conversationId?: string
+    pending?: boolean
+    generationError?: string
+  } | null
 }
 
 type MessageRow =
@@ -521,7 +528,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             artifacts: result.artifacts,
             farewell: result.farewell,
             failures: result.failures?.length ? result.failures : undefined,
-            conversationId: activeTab.conversationId ?? undefined
+            conversationId: activeTab.conversationId ?? undefined,
+            pending: result.pending
           },
           conversationId: null,
           messages: []
@@ -773,6 +781,29 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     }
     prevStreamingRef.current = chatStream.state.isStreaming
   }, [chatStream.state.isStreaming])
+
+  // Background artifact generation results — update the matching end card
+  // when the main process finishes generating (end of class no longer blocks).
+  useEffect(() => {
+    return window.sophia.data.onArtifactsGenerated((payload) => {
+      setTabs((prev) =>
+        prev.map((tab) => {
+          if (tab.endResult?.conversationId !== payload.conversationId) return tab
+          return {
+            ...tab,
+            endResult: {
+              ...tab.endResult,
+              pending: false,
+              generationError: payload.error,
+              artifacts: payload.artifacts,
+              farewell: payload.farewell,
+              failures: payload.failures.length > 0 ? payload.failures : undefined
+            }
+          }
+        })
+      )
+    })
+  }, [])
 
   if (!companion) {
     return (
@@ -1045,12 +1076,24 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                   {row.kind === 'end' && activeTab.endResult && (
                     <div className="rounded border border-green-800 bg-green-900/30 px-4 py-3 text-sm text-green-300">
                       <p className="font-medium">课程已结束</p>
+                      {activeTab.endResult.pending && (
+                        <p className="mt-2 text-xs text-amber-300 animate-pulse">
+                          学习摘要后台生成中，完成后自动显示…
+                        </p>
+                      )}
+                      {activeTab.endResult.generationError && (
+                        <p className="mt-2 text-xs text-red-400">
+                          后台生成失败：{activeTab.endResult.generationError}
+                        </p>
+                      )}
                       {activeTab.endResult.farewell && (
                         <p className="mt-2 text-sm text-green-200 italic">{activeTab.endResult.farewell}</p>
                       )}
-            <p className="mt-1 text-xs text-green-400">
-              已自动生成 {activeTab.endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
-            </p>
+                      {!activeTab.endResult.pending && (
+                        <p className="mt-1 text-xs text-green-400">
+                          已自动生成 {activeTab.endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
+                        </p>
+                      )}
             {activeTab.endResult.failures && activeTab.endResult.failures.length > 0 && (
               <div className="mt-3 flex items-center justify-between gap-3 rounded border border-amber-800 bg-amber-900/20 px-3 py-2">
                 <p className="text-xs text-amber-300">

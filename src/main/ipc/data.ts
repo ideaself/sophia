@@ -70,6 +70,7 @@ import {
   type WorldId,
   type ConversationId
 } from '../../shared/types/ids'
+import { ARTIFACTS_GENERATED } from '../../shared/channel-names'
 
 /** In-app reader loads the whole file into memory — cap it. */
 const MAX_ORIGINAL_SIZE = 512 * 1024 * 1024
@@ -93,6 +94,50 @@ export function registerConversationIpc(
   const readingNoteStore = new ReadingNoteStore(dataRoot)
   const diaryStore = new DiaryStore(dataRoot)
   const pickedFiles = new PickedFileRegistry()
+
+  // Sequential background queue for end-of-class artifact generation, so
+  // ending a class never blocks the UI on a dozen LLM calls.
+  let artifactQueue: Promise<void> = Promise.resolve()
+
+  function notifyArtifactsReady(
+    conversationId: string,
+    extra: { artifacts: number; farewell: string; failures: string[]; error?: string }
+  ): void {
+    const payload = { conversationId, ...extra }
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send(ARTIFACTS_GENERATED, payload)
+    }
+  }
+
+  function queueArtifactGeneration(
+    conversationId: string,
+    worldId: string,
+    classMode?: ClassMode
+  ): void {
+    artifactQueue = artifactQueue.then(async () => {
+      try {
+        const pipeline = await runArtifactPipeline(
+          { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, diaryStore },
+          conversationId,
+          worldId,
+          { classMode }
+        )
+        notifyArtifactsReady(conversationId, {
+          artifacts: pipeline.artifactCount,
+          farewell: pipeline.farewell,
+          failures: pipeline.failures
+        })
+      } catch (err) {
+        console.error(`Background artifact generation error for ${conversationId}:`, err)
+        notifyArtifactsReady(conversationId, {
+          artifacts: 0,
+          farewell: '',
+          failures: [],
+          error: err instanceof Error ? err.message : String(err)
+        })
+      }
+    })
+  }
 
   // --- Conversation CRUD ---
 
@@ -146,25 +191,10 @@ export function registerConversationIpc(
     const { conversationId, worldId = 'world_default', classMode } = parsed
     const success = await conversationStore.endConversation(conversationId, worldId)
     if (!success) return { success: false, artifacts: 0 }
-
-    try {
-      const pipeline = await runArtifactPipeline(
-        { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, diaryStore },
-        conversationId,
-        worldId,
-        { classMode }
-      )
-      return {
-        success: true,
-        artifacts: pipeline.artifactCount,
-        farewell: pipeline.farewell,
-        failures: pipeline.failures
-      }
-    } catch (err) {
-      console.error(`Artifact generation error for ${conversationId}:`, err)
-    }
-
-    return { success: true, artifacts: 0, failures: [] }
+    // Generate artifacts in the background; the renderer is notified via
+    // ARTIFACTS_GENERATED when the results are ready.
+    queueArtifactGeneration(conversationId, worldId, classMode)
+    return { success: true, artifacts: 0, farewell: '', failures: [], pending: true }
   })
 
   // Re-run only the artifact types that failed or went missing earlier

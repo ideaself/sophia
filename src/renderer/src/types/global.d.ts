@@ -90,6 +90,14 @@ declare global {
     createdAt: string
   }
 
+  interface ArtifactsGeneratedPayload {
+    conversationId: string
+    artifacts: number
+    farewell: string
+    failures: string[]
+    error?: string
+  }
+
   interface SearchResultDTO {
     conversationId: string
     message: MessageDTO
@@ -138,8 +146,9 @@ declare global {
     deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
     listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
     searchMessages: (worldId: string, query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
-    endConversation: (conversationId: string, worldId?: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[] }>
+    endConversation: (conversationId: string, worldId?: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
     redoArtifacts: (conversationId: string, types: string[], worldId?: string) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
+    onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void
     createTextbook: (input: {
       worldId: string
       title: string

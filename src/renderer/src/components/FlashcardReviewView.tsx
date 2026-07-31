@@ -1,148 +1,22 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { WORLD_ID } from '../types/models'
 import {
   parseFlashcards,
   rebuildArtifactContent,
   buildAnkiImport
 } from '../../../shared/flashcard-utils'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface Flashcard {
-  id: string
-  artifactId: string
-  cardIndex: number
-  conversationId: string
-  conversationTitle: string
-  createdAt: string
-  question: string
-  answer: string
-}
-
-interface RawArtifact {
-  id: string
-  conversationId: string
-  type: string
-  content: string
-  createdAt: string
-}
-
-interface ConversationDTO {
-  id: string
-  title: string
-  companionId: string
-  endedAt: string | null
-}
-
-/** SM-2 spaced-repetition state for a single card. */
-interface SrsState {
-  interval: number      // days until next review
-  ease: number          // ease factor (starts at 2.5, min 1.3)
-  reps: number          // consecutive successful reviews
-  nextReview: number    // epoch ms timestamp
-  lastReview: number    // epoch ms timestamp
-}
-
-type Rating = 'again' | 'hard' | 'good' | 'easy'
-
-// ---------------------------------------------------------------------------
-// SM-2 algorithm
-// ---------------------------------------------------------------------------
-
-const DAY_MS = 86_400_000
-
-function newSrsState(): SrsState {
-  return { interval: 0, ease: 2.5, reps: 0, nextReview: 0, lastReview: 0 }
-}
-
-function qualityOf(rating: Rating): number {
-  return { again: 0, hard: 3, good: 4, easy: 5 }[rating]
-}
-
-function updateSrs(state: SrsState, rating: Rating): SrsState {
-  const q = qualityOf(rating)
-  const now = Date.now()
-
-  if (q < 3) {
-    // Failed - reset
-    return {
-      interval: 1,          // review again tomorrow (well, next session)
-      ease: Math.max(1.3, state.ease - 0.2),
-      reps: 0,
-      nextReview: now + DAY_MS,
-      lastReview: now,
-    }
-  }
-
-  const reps = state.reps + 1
-  let interval: number
-  if (reps === 1) {
-    interval = rating === 'easy' ? 4 : 1
-  } else if (reps === 2) {
-    interval = rating === 'easy' ? 8 : 3
-  } else {
-    interval = Math.round(state.interval * state.ease)
-  }
-
-  const ease = Math.max(1.3, state.ease + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)))
-
-  return {
-    interval,
-    ease,
-    reps,
-    nextReview: now + interval * DAY_MS,
-    lastReview: now,
-  }
-}
-
-function isDue(state: SrsState | undefined, now: number): boolean {
-  if (!state || state.nextReview === 0) return true // new card
-  return state.nextReview <= now
-}
-
-// ---------------------------------------------------------------------------
-// Persistence
-// ---------------------------------------------------------------------------
-
-const SRS_KEY = 'flashcard-srs-state'
-
-function loadAllSrsLocal(): Record<string, SrsState> {
-  try {
-    const raw = localStorage.getItem(SRS_KEY)
-    return raw ? JSON.parse(raw) as Record<string, SrsState> : {}
-  } catch {
-    return {}
-  }
-}
-
-function saveAllSrsLocal(states: Record<string, SrsState>): void {
-  try {
-    localStorage.setItem(SRS_KEY, JSON.stringify(states))
-  } catch {
-    // quota / disabled - best-effort
-  }
-}
-
-async function loadAllSrs(): Promise<Record<string, SrsState>> {
-  try {
-    const remote = await window.sophia.data.getFlashcardSrsState()
-    const states = remote as Record<string, SrsState>
-    // Merge into localStorage for instant access next time
-    saveAllSrsLocal(states)
-    return states
-  } catch {
-    return loadAllSrsLocal()
-  }
-}
-
-function saveAllSrs(states: Record<string, SrsState>): void {
-  saveAllSrsLocal(states)
-  void window.sophia.data.saveFlashcardSrsState(states as Record<string, unknown>)
-}
+import {
+  type Flashcard,
+  type SrsState,
+  type Rating,
+  newSrsState,
+  updateSrs,
+  isDue,
+  loadAllSrs,
+  saveAllSrs,
+  loadAllFlashcards
+} from '../hooks/useFlashcards'
 
 // ---------------------------------------------------------------------------
 // Component
@@ -163,38 +37,10 @@ export function FlashcardReviewView(): React.ReactElement {
   const loadFlashcards = useCallback(async () => {
     setLoading(true)
     try {
-      const conversations = await window.sophia.data.listConversations(WORLD_ID) as ConversationDTO[]
-      const endedConvs = conversations.filter((c) => c.endedAt)
-      const allCards: Flashcard[] = []
-
-      for (const conv of endedConvs) {
-        try {
-          const artifacts = await window.sophia.data.listArtifacts(conv.id) as RawArtifact[]
-          const flashcardArtifacts = artifacts.filter((a) => a.type === 'flashcards')
-          for (const art of flashcardArtifacts) {
-            const parsed = parseFlashcards(art.content)
-            for (let i = 0; i < parsed.length; i++) {
-              allCards.push({
-                id: `${art.id}_${i}`,
-                artifactId: art.id,
-                cardIndex: i,
-                conversationId: conv.id,
-                conversationTitle: conv.title,
-                createdAt: art.createdAt,
-                question: parsed[i].question,
-                answer: parsed[i].answer
-              })
-            }
-          }
-        } catch {
-          // skip
-        }
-      }
-
+      const [allCards, states] = await Promise.all([loadAllFlashcards(), loadAllSrs()])
       // Sort: due cards first (by nextReview ascending), then new cards,
       // then future-scheduled cards (shouldn't appear in a review session
       // but are kept so the user can browse them).
-      const states = await loadAllSrs()
       setSrsStates(states)
       const now = Date.now()
       allCards.sort((a, b) => {

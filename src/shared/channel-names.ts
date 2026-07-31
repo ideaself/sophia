@@ -18,3 +18,6 @@ export const CHAT_STREAM_EVENT = {
   end: 'chat:stream:end',
   usage: 'chat:stream:usage'
 } as const
+
+/** Emitted by the main process when background artifact generation finishes. */
+export const ARTIFACTS_GENERATED = 'artifacts:generated' as const
