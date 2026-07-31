@@ -35,6 +35,7 @@ interface TabState {
   title: string
   conversationId: string | null
   classMode: 'standard' | 'feynman'
+  pace: 'slow' | 'normal' | 'fast'
   messages: DisplayMessage[]
   input: string
   retryMessage: { input: string; convId: string } | null
@@ -89,6 +90,7 @@ function makeTab(conversationId?: string, title?: string): TabState {
     title: title ?? '新对话',
     conversationId: conversationId ?? null,
     classMode: 'standard',
+    pace: 'normal',
     messages: [],
     input: '',
     retryMessage: null,
@@ -447,6 +449,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           userMessage,
           worldId: WORLD_ID,
           classMode: tab.classMode,
+          pace: tab.pace,
           hideNarration
         })
       } catch {
@@ -857,6 +860,24 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             )}
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
+            <div
+              className="flex overflow-hidden rounded-full border border-surface-border-strong text-xs"
+              title="教学节奏：慢速不跳过独立知识点；快速略过已掌握内容"
+            >
+              {(['slow', 'normal', 'fast'] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => updateTab(activeIdx, { pace: p })}
+                  className={`px-2 py-1 transition-colors ${
+                    activeTab.pace === p
+                      ? 'bg-accent text-white'
+                      : 'text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
+                  }`}
+                >
+                  {p === 'slow' ? '慢' : p === 'normal' ? '标准' : '快'}
+                </button>
+              ))}
+            </div>
             <button
               onClick={() => updateTab(activeIdx, {
                 classMode: activeTab.classMode === 'feynman' ? 'standard' : 'feynman'

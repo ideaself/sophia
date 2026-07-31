@@ -122,6 +122,7 @@ export interface ChatAPI {
     worldId?: string
     classMode?: 'standard' | 'feynman'
     hideNarration?: boolean
+    pace?: 'slow' | 'normal' | 'fast'
   }) => Promise<Array<{ role: 'system' | 'user' | 'assistant'; content: string }>>
 }
 
@@ -168,7 +169,8 @@ export interface DataAPI {
     title: string
     author: string
   }>
-  searchTextbookExcerpt: (textbookId: string, chapter: string, worldId?: string) => Promise<{ chapter: string; excerpt: string } | null>
+    searchTextbookExcerpt: (textbookId: string, chapter: string, worldId?: string) => Promise<{ chapter: string; excerpt: string } | null>
+    translateTextbookExcerpt: (textbookId: string, chapter: string, worldId?: string) => Promise<{ chapter: string; excerpt: string; translation: string } | null>
   listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
   updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
   updateTextbook: (textbookId: string, updates: { title?: string; content?: string }, worldId?: string) => Promise<TextbookDTO | null>
@@ -182,8 +184,7 @@ export interface DataAPI {
     getArtifact: (artifactId: string, conversationId: string, worldId?: string) => Promise<ArtifactDTO | null>
     updateArtifact: (artifactId: string, conversationId: string, content: string, worldId?: string) => Promise<ArtifactDTO | null>
     listArtifacts: (conversationId: string, worldId?: string) => Promise<ArtifactDTO[]>
-  generateArtifacts: (conversationId: string, apiKey: string, worldId?: string) => Promise<{ count: number; types: string[] }>
-  updateTextbookProgress: (textbookId: string, progress: { currentPage?: number; totalPages?: number | null; readingPercentage?: number; lastPosition?: string }, worldId?: string) => Promise<TextbookDTO | null>
+    updateTextbookProgress: (textbookId: string, progress: { currentPage?: number; totalPages?: number | null; readingPercentage?: number; lastPosition?: string }, worldId?: string) => Promise<TextbookDTO | null>
   createReadingNote: (input: {
     textbookId: string
     worldId?: string
@@ -478,6 +479,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('epub:read-chapters', { textbookId, worldId }),
     searchTextbookExcerpt: (textbookId, chapter, worldId = 'world_default') =>
       ipcRenderer.invoke('textbook:search-excerpt', { textbookId, chapter, worldId }),
+    translateTextbookExcerpt: (textbookId, chapter, worldId = 'world_default') =>
+      ipcRenderer.invoke('textbook:translate-excerpt', { textbookId, chapter, worldId }),
     listTextbooks: (worldId) =>
       ipcRenderer.invoke('textbook:list', { worldId }),
     updateTextbookContent: (textbookId, content, worldId = 'world_default') =>
@@ -494,8 +497,6 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('artifact:update', { artifactId, conversationId, content, worldId }),
     listArtifacts: (conversationId, worldId = 'world_default') =>
       ipcRenderer.invoke('artifact:list', { conversationId, worldId }),
-    generateArtifacts: (conversationId, apiKey, worldId = 'world_default') =>
-      ipcRenderer.invoke('artifact:generate', { conversationId, apiKey, worldId }),
     updateTextbookProgress: (textbookId, progress, worldId = 'world_default') =>
       ipcRenderer.invoke('textbook:update-progress', { textbookId, ...progress, worldId }),
     createReadingNote: (input) =>

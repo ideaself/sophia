@@ -14,6 +14,8 @@
  *   4. Return the best matching passages, annotated with their chapter heading.
  */
 
+import { estimateTokens } from './token-budget'
+
 export interface TextbookSection {
   heading: string
   text: string
@@ -213,6 +215,38 @@ export function retrievePassages(
   }
 
   return passages
+}
+
+/**
+ * Extract the textbook region around the learner's current position.
+ *
+ * Sections are ordered; the section at `fraction` (0..1) is included first,
+ * followed by later sections until the token budget is used up. With no
+ * progress info, teaching starts from the beginning (existing behavior).
+ */
+export function extractRegionAroundProgress(
+  content: string,
+  fraction: number | null,
+  maxEstTokens = 2200
+): string {
+  const sections = splitSections(content)
+  if (sections.length === 0) return ''
+
+  const startIdx =
+    fraction !== null && Number.isFinite(fraction) && fraction > 0
+      ? Math.min(sections.length - 1, Math.floor(fraction * sections.length))
+      : 0
+
+  const parts: string[] = []
+  let used = 0
+  for (let i = startIdx; i < sections.length; i++) {
+    const block = `## ${sections[i].heading}\n\n${sections[i].text}`
+    const cost = estimateTokens(block)
+    if (parts.length > 0 && used + cost > maxEstTokens) break
+    parts.push(block)
+    used += cost
+  }
+  return parts.join('\n\n')
 }
 
 /**

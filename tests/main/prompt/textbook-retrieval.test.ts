@@ -4,7 +4,8 @@ import {
   extractTerms,
   retrievePassages,
   formatPassages,
-  headingMatches
+  headingMatches,
+  extractRegionAroundProgress
 } from '../../../src/main/prompt/textbook-retrieval'
 
 const TEXTBOOK = `# 前言
@@ -120,5 +121,35 @@ describe('headingMatches', () => {
   it('rejects unrelated headings', () => {
     expect(headingMatches('不确定性原理', '第一章 波粒二象性')).toBe(false)
     expect(headingMatches('', '第一章 波粒二象性')).toBe(false)
+  })
+})
+
+describe('extractRegionAroundProgress', () => {
+  it('starts from the beginning without progress info', () => {
+    const region = extractRegionAroundProgress(TEXTBOOK, null)
+    expect(region).toContain('前言')
+    expect(region).toContain('第一章')
+  })
+
+  it('starts near the given fraction and keeps later sections', () => {
+    const region = extractRegionAroundProgress(TEXTBOOK, 0.5)
+    // 4 sections, fraction 0.5 → section index 2 = 第二章
+    expect(region).toContain('第二章')
+    expect(region).toContain('第三章')
+  })
+
+  it('respects the token budget', () => {
+    const long = Array.from(
+      { length: 50 },
+      (_, i) => `## 第${i}章\n\n内容${'很长的内容'.repeat(100)}\n`
+    ).join('\n')
+    const region = extractRegionAroundProgress(long, 0, 500)
+    const count = (region.match(/## 第\d+章/g) || []).length
+    expect(count).toBeGreaterThan(0)
+    expect(count).toBeLessThan(50)
+  })
+
+  it('returns empty for empty content', () => {
+    expect(extractRegionAroundProgress('', 0.5)).toBe('')
   })
 })

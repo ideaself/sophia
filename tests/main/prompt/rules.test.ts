@@ -6,7 +6,8 @@ import {
   getPageNavigationRule,
   getTeachingLanguageRule,
   getContextFirstRules,
-  getPlainDialogueRules
+  getPlainDialogueRules,
+  getPaceRules
 } from '../../../src/main/prompt/rules'
 
 describe('getSocraticRules', () => {
@@ -143,6 +144,30 @@ describe('getPlainDialogueRules', () => {
 
   it('matches snapshot', () => {
     expect(getPlainDialogueRules()).toMatchSnapshot()
+  })
+})
+
+describe('getPaceRules', () => {
+  it('slow pace requires not skipping independent ideas', () => {
+    const rules = getPaceRules('slow')
+    expect(rules).toMatch(/不跳过独立的知识点/)
+    expect(rules).toMatch(/Take It Slow/)
+  })
+
+  it('fast pace allows skipping mastered content but keeps coverage', () => {
+    const rules = getPaceRules('fast')
+    expect(rules).toMatch(/快速略过/)
+    expect(rules).toMatch(/覆盖范围/)
+  })
+
+  it('each pace is pure (same input → same output)', () => {
+    expect(getPaceRules('slow')).toBe(getPaceRules('slow'))
+    expect(getPaceRules('fast')).toBe(getPaceRules('fast'))
+  })
+
+  it('matches snapshots', () => {
+    expect(getPaceRules('slow')).toMatchSnapshot()
+    expect(getPaceRules('fast')).toMatchSnapshot()
   })
 })
 

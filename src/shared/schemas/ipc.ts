@@ -107,6 +107,12 @@ export const IpcTextbookSearchExcerptInputSchema = z.object({
   worldId: z.string().optional()
 })
 
+export const IpcTextbookTranslateExcerptInputSchema = z.object({
+  textbookId: z.string().min(1),
+  chapter: z.string().min(1),
+  worldId: z.string().optional()
+})
+
 export const IpcGetConversationWithWorldInputSchema = z.object({
   conversationId: z.string().min(1),
   worldId: z.string().optional()
@@ -149,11 +155,6 @@ export const IpcDeleteMessageInputSchema = z.object({
 export const IpcArtifactTypeSchema = z.enum([
   'lesson_summary', 'flashcards', 'diary', 'progress', 'handoff_tail', 'farewell', 'learner_profile', 'pal_moments', 'relation', 'companion_note'
 ])
-
-export const IpcGenerateArtifactInputSchema = z.object({
-  conversationId: z.string().min(1),
-  worldId: z.string().optional()
-})
 
 export const IpcCreateArtifactInputSchema = z.object({
   conversationId: z.string().min(1),
@@ -306,7 +307,8 @@ export const IpcChatPromptMessagesInputSchema = z.object({
   userMessage: z.string().min(1),
   worldId: z.string().default('world_default'),
   classMode: z.enum(['standard', 'feynman']).optional(),
-  hideNarration: z.boolean().optional()
+  hideNarration: z.boolean().optional(),
+  pace: z.enum(['slow', 'normal', 'fast']).optional()
 })
 
 // --- IPC: Diary ---

@@ -14,7 +14,11 @@ import type { WorldId } from '../../shared/types/ids'
 import { IpcChatPromptMessagesInputSchema } from '../../shared/schemas/ipc'
 import { compressMessages, shouldCompress, splitCompressionWindow } from '../prompt/message-compressor'
 import { analyzeTeaching, shouldAnalyze, formatAssessment, type TeachingCoachAssessment } from '../prompt/teaching-coach'
-import { retrievePassages, formatPassages } from '../prompt/textbook-retrieval'
+import {
+  retrievePassages,
+  formatPassages,
+  extractRegionAroundProgress
+} from '../prompt/textbook-retrieval'
 import type { ProviderStore } from '../storage/provider-store'
 
 // ---------------------------------------------------------------
@@ -64,11 +68,25 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
     // 3. Load textbook content
     let textbookContent: string | undefined
     let textbookTitle: string | undefined
+    let progressFraction: number | null = null
     if (params.textbookId) {
       textbookContent = await textbookStore.getContent(params.textbookId, params.worldId)
       textbookContent = textbookContent || undefined
       const tb = await textbookStore.get(params.textbookId, params.worldId)
       textbookTitle = tb?.title
+      const p = tb?.progress
+      if (p && typeof p.totalPages === 'number' && p.totalPages > 0 && typeof p.currentPage === 'number' && p.currentPage > 0) {
+        progressFraction = Math.min(1, p.currentPage / p.totalPages)
+      } else if (p && typeof p.readingPercentage === 'number' && p.readingPercentage > 0) {
+        progressFraction = Math.min(1, p.readingPercentage)
+      }
+    }
+
+    // Keep the full content for cross-chapter retrieval, but teach from the
+    // learner's current position: the region starting at the current section.
+    const fullTextbookContent = textbookContent
+    if (textbookContent) {
+      textbookContent = extractRegionAroundProgress(textbookContent, progressFraction, 2200)
     }
 
     // 4. Load handoff tail from the most recent ended conversation with the same companion
@@ -185,12 +203,12 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
     // textbook from the recent conversation + current message. Deterministic,
     // no extra LLM call.
     let relatedTextbook: string | undefined
-    if (textbookContent) {
+    if (fullTextbookContent) {
       const recentTexts = [
         ...history.slice(-6).map((m) => m.content),
         params.userMessage
       ]
-      const passages = retrievePassages(textbookContent, recentTexts, {
+      const passages = retrievePassages(fullTextbookContent, recentTexts, {
         maxPassages: 3,
         maxExcerptChars: 300
       })
@@ -208,6 +226,7 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
       relatedTextbook,
       textbookTitle,
       classMode: params.classMode ?? 'standard',
+      pace: params.pace,
       hideNarration: params.hideNarration,
       handoffTail,
       palMoments,

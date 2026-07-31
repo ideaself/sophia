@@ -36,6 +36,7 @@ import {
   IpcTruncateConversationInputSchema,
   IpcChatPromptMessagesInputSchema,
   IpcTextbookSearchExcerptInputSchema,
+  IpcTextbookTranslateExcerptInputSchema,
   IpcGetConversationInputSchema,
   IpcListConversationsInputSchema,
   IpcGetMessagesInputSchema,
@@ -613,6 +614,13 @@ describe('IPC input schemas', () => {
       expect(result.success).toBe(true)
     })
 
+    it('accepts pace slow/fast', () => {
+      for (const pace of ['slow', 'normal', 'fast']) {
+        const result = IpcChatPromptMessagesInputSchema.safeParse({ ...base, pace })
+        expect(result.success).toBe(true)
+      }
+    })
+
     it('accepts input without classMode', () => {
       const result = IpcChatPromptMessagesInputSchema.safeParse(base)
       expect(result.success).toBe(true)
@@ -667,6 +675,23 @@ describe('IPC input schemas', () => {
       const result = IpcTextbookSearchExcerptInputSchema.safeParse({
         textbookId: 'tb_001',
         chapter: ''
+      })
+      expect(result.success).toBe(false)
+    })
+  })
+
+  describe('IpcTextbookTranslateExcerptInputSchema', () => {
+    it('accepts valid input', () => {
+      const result = IpcTextbookTranslateExcerptInputSchema.safeParse({
+        textbookId: 'tb_001',
+        chapter: '第二章 不确定性原理'
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects a missing chapter', () => {
+      const result = IpcTextbookTranslateExcerptInputSchema.safeParse({
+        textbookId: 'tb_001'
       })
       expect(result.success).toBe(false)
     })

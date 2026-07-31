@@ -80,50 +80,80 @@ function CopyButton({ text }: { text: string }) {
 }
 
 function CitationChip({ textbookId, chapter }: { textbookId?: string | null; chapter: string }) {
-  const [state, setState] = useState<'idle' | 'loading' | 'open' | 'error'>('idle')
-  const [excerpt, setExcerpt] = useState('')
+  const [panel, setPanel] = useState<null | 'source' | 'translation'>(null)
+  const [data, setData] = useState<{ excerpt?: string; translation?: string } | null>(null)
+  const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
-  const handleClick = async (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const load = async (mode: 'source' | 'translation') => {
     if (!textbookId) return
-    if (state === 'open') {
-      setState('idle')
+    if (panel === mode) {
+      setPanel(null)
       return
     }
-    setState('loading')
+    setPanel(mode)
+    setLoading(true)
+    setErrorMsg('')
+    setData(null)
     try {
-      const result = await window.sophia.data.searchTextbookExcerpt(textbookId, chapter)
-      if (!result) {
-        setErrorMsg('未在教材中找到对应章节')
-        setState('error')
-        return
+      if (mode === 'source') {
+        const result = await window.sophia.data.searchTextbookExcerpt(textbookId, chapter)
+        if (!result) {
+          setErrorMsg('未在教材中找到对应章节')
+          return
+        }
+        setData({ excerpt: result.excerpt })
+      } else {
+        const result = await window.sophia.data.translateTextbookExcerpt(textbookId, chapter)
+        if (!result) {
+          setErrorMsg('翻译不可用（可能未配置模型）')
+          return
+        }
+        setData({ excerpt: result.excerpt, translation: result.translation })
       }
-      setExcerpt(result.excerpt)
-      setState('open')
     } catch {
-      setErrorMsg('教材原文读取失败')
-      setState('error')
+      setErrorMsg('读取失败，请重试')
+    } finally {
+      setLoading(false)
     }
   }
 
   return (
-    <span className="relative inline-block align-middle">
-      <button
-        onClick={handleClick}
-        disabled={!textbookId}
-        className="mb-1 rounded border border-accent-border bg-accent-subtle px-2 py-0.5 text-xs text-accent-hover hover:bg-accent-subtle/70 disabled:opacity-50"
-        title={textbookId ? '查看教材原文' : '当前课堂未绑定教材'}
-      >
-        📖 教材原文 · {chapter}
-      </button>
-      {(state === 'loading' || state === 'open' || state === 'error') && (
+    <span className="relative inline-flex flex-col items-start">
+      <span className="mb-1 flex flex-wrap gap-1">
+        <button
+          onClick={(e) => { e.stopPropagation(); load('source') }}
+          disabled={!textbookId}
+          className="rounded border border-accent-border bg-accent-subtle px-2 py-0.5 text-xs text-accent-hover hover:bg-accent-subtle/70 disabled:opacity-50"
+          title={textbookId ? '查看教材原文' : '当前课堂未绑定教材'}
+        >
+          📖 教材原文 · {chapter}
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); load('translation') }}
+          disabled={!textbookId}
+          className="rounded border border-accent-border bg-accent-subtle px-2 py-0.5 text-xs text-accent-hover hover:bg-accent-subtle/70 disabled:opacity-50"
+          title={textbookId ? '把这段教材原文翻译成中文' : '当前课堂未绑定教材'}
+        >
+          🌐 翻译
+        </button>
+      </span>
+      {panel && (
         <span className="absolute left-0 top-full z-30 mt-1 block w-80 whitespace-pre-wrap rounded-lg border border-surface-border bg-bg-surface p-3 text-xs leading-relaxed text-text-secondary shadow-lg">
-          {state === 'loading'
-            ? '加载中...'
-            : state === 'error'
-              ? errorMsg
-              : excerpt}
+          {loading ? (
+            '加载中...'
+          ) : errorMsg ? (
+            errorMsg
+          ) : panel === 'source' ? (
+            data?.excerpt
+          ) : (
+            <>
+              <p className="mb-2 text-[10px] font-medium uppercase text-text-muted">原文</p>
+              <p className="mb-3">{data?.excerpt}</p>
+              <p className="mb-1 text-[10px] font-medium uppercase text-text-muted">译文</p>
+              <p>{data?.translation}</p>
+            </>
+          )}
         </span>
       )}
     </span>

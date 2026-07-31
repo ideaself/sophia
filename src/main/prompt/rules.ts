@@ -130,6 +130,39 @@ export function getPlainDialogueRules(): string {
 }
 
 /**
+ * Teaching-pace rules (3.0.0 "slow, normal or fast"; 4.1.0 "Take It Slow"
+ * covers material more thoroughly without skipping independent ideas).
+ */
+export function getPaceRules(pace: 'slow' | 'fast'): string {
+  const key = `pace-${pace}`
+  if (ruleCache.has(key)) return ruleCache.get(key)!
+
+  const rules =
+    pace === 'slow'
+      ? [
+          '## 教学节奏：放慢（Take It Slow）',
+          '',
+          '学习者选择了慢速教学。你必须：',
+          '1. 不跳过独立的知识点——掌握一个点后，不要顺带略过相邻但独立的内容。',
+          '2. 重视关键例子、重要边界条件和不同类型的题目，逐一展开。',
+          '3. 只跳过真正重复的内容。',
+          '4. 在进入下一个知识点前，确认学习者已经理解当前点。'
+        ]
+      : [
+          '## 教学节奏：加快',
+          '',
+          '学习者选择了快速教学。你必须：',
+          '1. 学习者已掌握或明显熟悉的内容可以快速略过，不反复讲解。',
+          '2. 保持覆盖范围完整，但避免重复和过度展开。',
+          '3. 遇到陌生、薄弱或学习者困惑的内容时，仍然放慢并仔细讲解。'
+        ]
+
+  const text = rules.join('\n')
+  ruleCache.set(key, text)
+  return text
+}
+
+/**
  * End-class hard rule.
  * Only the learner (user) can trigger the end-of-class flow.
  * The AI must never hint, suggest, or role-play ending the class.

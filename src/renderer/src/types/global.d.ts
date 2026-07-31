@@ -21,6 +21,7 @@ declare global {
       worldId?: string
       classMode?: 'standard' | 'feynman'
       hideNarration?: boolean
+      pace?: 'slow' | 'normal' | 'fast'
     }) => Promise<Array<{ role: 'system' | 'user' | 'assistant'; content: string }>>
   }
 
@@ -150,6 +151,7 @@ declare global {
     readTextbookOriginal: (textbookId: string, worldId?: string) => Promise<{ data: Uint8Array; fileName: string } | null>
     readEpubChapters: (textbookId: string, worldId?: string) => Promise<EpubChaptersResult>
     searchTextbookExcerpt: (textbookId: string, chapter: string, worldId?: string) => Promise<{ chapter: string; excerpt: string } | null>
+    translateTextbookExcerpt: (textbookId: string, chapter: string, worldId?: string) => Promise<{ chapter: string; excerpt: string; translation: string } | null>
     listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
     updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
     updateTextbook: (textbookId: string, updates: { title?: string; content?: string }, worldId?: string) => Promise<TextbookDTO | null>
@@ -163,7 +165,6 @@ declare global {
     getArtifact: (artifactId: string, conversationId: string, worldId?: string) => Promise<ArtifactDTO | null>
     updateArtifact: (artifactId: string, conversationId: string, content: string, worldId?: string) => Promise<ArtifactDTO | null>
     listArtifacts: (conversationId: string, worldId?: string) => Promise<ArtifactDTO[]>
-    generateArtifacts: (conversationId: string, apiKey: string, worldId?: string) => Promise<{ count: number; types: string[] }>
     updateTextbookProgress: (textbookId: string, progress: { currentPage?: number; totalPages?: number | null; readingPercentage?: number; lastPosition?: string }, worldId?: string) => Promise<TextbookDTO | null>
     createReadingNote: (input: {
       textbookId: string

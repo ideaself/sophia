@@ -26,7 +26,8 @@ import {
   getPageNavigationRule,
   getTeachingLanguageRule,
   getContextFirstRules,
-  getPlainDialogueRules
+  getPlainDialogueRules,
+  getPaceRules
 } from './rules'
 import { truncateToBudget, windowMessages } from './token-budget'
 
@@ -53,6 +54,8 @@ export interface BuildSystemPromptParams {
   teachingCoachAssessment?: string
   /** Classroom mode: 'standard' Socratic dialogue or 'feynman' teach-back. */
   classMode?: ClassMode
+  /** Teaching pace: 'slow' (Take It Slow), 'normal' (default), or 'fast'. */
+  pace?: 'slow' | 'normal' | 'fast'
   /** Hide narration/action descriptions — plain dialogue only. */
   hideNarration?: boolean
   /** Cross-chapter retrieved textbook passages (pre-formatted string). */
@@ -259,6 +262,7 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
     palMoments,
     relationState,
     classMode,
+    pace,
     relatedTextbook,
     textbookTitle,
     hideNarration,
@@ -295,6 +299,11 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   // Feynman teach-back mode
   if (classMode === 'feynman') {
     segments.push(buildFeynmanSegment())
+  }
+
+  // Teaching pace (only when the learner explicitly chose non-default)
+  if (pace === 'slow' || pace === 'fast') {
+    segments.push(getPaceRules(pace))
   }
 
   // Optional handoff tail from previous session

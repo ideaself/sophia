@@ -464,6 +464,39 @@ describe('hide narration', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Teaching pace
+// ---------------------------------------------------------------------------
+
+describe('teaching pace', () => {
+  it('adds the slow-pace segment when pace is slow', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext,
+      pace: 'slow'
+    })
+    expect(prompt).toContain('教学节奏：放慢')
+  })
+
+  it('adds the fast-pace segment when pace is fast', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext,
+      pace: 'fast'
+    })
+    expect(prompt).toContain('教学节奏：加快')
+  })
+
+  it('omits pace segments for the default pace', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext,
+      pace: 'normal'
+    })
+    expect(prompt).not.toMatch(/教学节奏：放慢|教学节奏：加快/)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Injection hardening tests
 // ---------------------------------------------------------------------------
 

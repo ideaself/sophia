@@ -22,6 +22,8 @@ export function HistoryView(): React.ReactElement {
   const [diaryMonthContent, setDiaryMonthContent] = useState<string | null>(null)
   const [loadingDiary, setLoadingDiary] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [editingArtifact, setEditingArtifact] = useState<{ conversationId: string; artifactId: string } | null>(null)
+  const [editArtifactText, setEditArtifactText] = useState('')
 
   const setView = useAppStore((s) => s.setView)
   const setLoadConversationId = useAppStore((s) => s.setLoadConversationId)
@@ -265,6 +267,28 @@ export function HistoryView(): React.ReactElement {
     await window.sophia.data.writeTextFile(result.filePath, content)
   }
 
+  const handleStartArtifactEdit = (conversationId: string, artifact: ArtifactDTO) => {
+    setEditingArtifact({ conversationId, artifactId: artifact.id })
+    setEditArtifactText(artifact.content)
+  }
+
+  const handleSaveArtifact = async () => {
+    if (!editingArtifact || !editArtifactText.trim()) return
+    await window.sophia.data.updateArtifact(
+      editingArtifact.artifactId,
+      editingArtifact.conversationId,
+      editArtifactText.trim()
+    )
+    setExpandedArtifacts((prev) =>
+      prev.map((a) =>
+        a.id === editingArtifact.artifactId
+          ? { ...a, content: editArtifactText.trim() }
+          : a
+      )
+    )
+    setEditingArtifact(null)
+  }
+
   return (
     <div className="p-8">
       <h2 className="mb-6 text-2xl font-bold">学习历史</h2>
@@ -485,24 +509,58 @@ export function HistoryView(): React.ReactElement {
                         <h5 className="text-xs font-medium text-text-muted uppercase">学习资料</h5>
                         {expandedArtifacts.map((art) => (
                           <div key={art.id} className="rounded bg-bg-elevated/50 px-3 py-2">
-                            <p className="text-xs font-medium text-text-secondary mb-1">
-                              {art.type === 'lesson_summary' ? '📋 课堂总结' :
-                               art.type === 'flashcards' ? '🃏 记忆卡片' :
-                               art.type === 'diary' ? '📝 学习日记' :
-                               art.type === 'progress' ? '📈 学习进展' :
-                               art.type === 'handoff_tail' ? '🔗 接力尾巴' :
-                               art.type === 'farewell' ? '👋 告别语' :
-                               art.type === 'learner_profile' ? '👤 学习者画像' :
-                               art.type === 'pal_moments' ? '💭 互动备忘' :
-                               art.type === 'relation' ? '💞 关系状态' :
-                               art.type === 'companion_note' ? '🤔 伙伴独白' :
-                               art.type === 'feynman_note' ? '🥚 费曼知识蛋' : art.type}
-                            </p>
-                            <div className="markdown-body text-xs text-text-secondary max-h-32 overflow-auto">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {art.content}
-                              </ReactMarkdown>
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                              <p className="text-xs font-medium text-text-secondary">
+                                {art.type === 'lesson_summary' ? '📋 课堂总结' :
+                                 art.type === 'flashcards' ? '🃏 记忆卡片' :
+                                 art.type === 'diary' ? '📝 学习日记' :
+                                 art.type === 'progress' ? '📈 学习进展' :
+                                 art.type === 'handoff_tail' ? '🔗 接力尾巴' :
+                                 art.type === 'farewell' ? '👋 告别语' :
+                                 art.type === 'learner_profile' ? '👤 学习者画像' :
+                                 art.type === 'pal_moments' ? '💭 互动备忘' :
+                                 art.type === 'relation' ? '💞 关系状态' :
+                                 art.type === 'companion_note' ? '🤔 伙伴独白' :
+                                 art.type === 'feynman_note' ? '🥚 费曼知识蛋' : art.type}
+                              </p>
+                              <button
+                                onClick={() => handleStartArtifactEdit(conv.id, art)}
+                                className="text-xs text-text-muted hover:text-text-secondary"
+                                title="编辑产物内容"
+                              >
+                                ✏️
+                              </button>
                             </div>
+                            {editingArtifact?.artifactId === art.id ? (
+                              <div className="space-y-2">
+                                <textarea
+                                  value={editArtifactText}
+                                  onChange={(e) => setEditArtifactText(e.target.value)}
+                                  rows={6}
+                                  className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-xs text-text-primary focus:border-accent-border focus:outline-none resize-none"
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={handleSaveArtifact}
+                                    className="rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent-hover"
+                                  >
+                                    保存
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingArtifact(null)}
+                                    className="text-xs text-text-muted hover:text-text-secondary"
+                                  >
+                                    取消
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="markdown-body text-xs text-text-secondary max-h-32 overflow-auto">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {art.content}
+                                </ReactMarkdown>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

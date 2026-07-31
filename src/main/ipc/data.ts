@@ -12,12 +12,16 @@ import type { ProviderStore } from '../storage/provider-store'
 import { generateArtifacts } from '../artifacts/generate'
 import { extractText, getEpubChapters } from '../parsers'
 import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
+import { DeepSeekClient } from '../llm/deepseek-client'
+import { createDeepSeekHttpAdapter } from '../llm/deepseek-http-adapter'
 import { PickedFileRegistry } from './picked-files'
 import {
   learnerPath,
   palMomentsPath,
   relationPath,
-  handoffMetaPath
+  handoffMetaPath,
+  textbookDir,
+  companionDir
 } from '../storage/app-data'
 import {
   IpcCreateConversationInputSchema,
@@ -35,7 +39,6 @@ import {
   IpcDeleteMessageInputSchema,
   IpcRedoArtifactsInputSchema,
   IpcTruncateConversationInputSchema,
-  IpcGenerateArtifactInputSchema,
   IpcCreateArtifactInputSchema,
   IpcGetArtifactInputSchema,
   IpcUpdateArtifactInputSchema,
@@ -49,6 +52,7 @@ import {
   IpcReadOriginalInputSchema,
   IpcReadEpubChaptersInputSchema,
   IpcTextbookSearchExcerptInputSchema,
+  IpcTextbookTranslateExcerptInputSchema,
   IpcCreateReadingNoteInputSchema,
   IpcListReadingNotesInputSchema,
   IpcUpdateReadingNoteInputSchema,
@@ -190,38 +194,6 @@ export function registerConversationIpc(
       console.error(`Artifact redo error for ${conversationId}:`, err)
       return { success: false, artifacts: 0, types: validTypes }
     }
-  })
-
-  ipcMain.handle('artifact:generate', async (_event, input: unknown) => {
-    const parsed = IpcGenerateArtifactInputSchema.parse(input)
-    const { conversationId, worldId = 'world_default' } = parsed
-
-    let apiKey = ''
-    let model = 'deepseek-v4-flash'
-    let baseUrl = 'https://api.deepseek.com'
-
-    if (providerStore) {
-      const active = await providerStore.getActive()
-      if (active) {
-        const key = await providerStore.readApiKey(active.id)
-        if (key) {
-          apiKey = key
-          model = active.selectedModel || model
-          baseUrl = active.baseUrl || baseUrl
-        }
-      }
-    }
-
-    if (!apiKey) return { count: 0, types: [] as string[] }
-
-    const messages = await conversationStore.getMessages(conversationId, worldId)
-    const { results } = await generateArtifacts(messages, { apiKey, model, baseUrl })
-
-    for (const result of results) {
-      await artifactStore.create(conversationId as ConversationId, worldId as WorldId, result.type, result.content)
-    }
-
-    return { count: results.length, types: results.map((r) => r.type) }
   })
 
   // --- Messages ---
@@ -379,8 +351,6 @@ export function registerConversationIpc(
   })
 
   ipcMain.handle('epub:read-chapters', async (_event, input: unknown) => {
-    const { join } = await import('node:path')
-    const { textbookDir } = await import('../storage/app-data')
     const parsed = IpcReadEpubChaptersInputSchema.parse(input)
     const worldId = parsed.worldId ?? 'world_default'
     const textbook = await textbookStore.get(parsed.textbookId, worldId)
@@ -407,6 +377,58 @@ export function registerConversationIpc(
     return {
       chapter: matched.heading,
       excerpt: matched.text.slice(0, 500).trim()
+    }
+  })
+
+  // Translate a textbook citation into the teaching language (Chinese).
+  // 3.1.0: "Translate the textbook source in one tap" for language learners.
+  ipcMain.handle('textbook:translate-excerpt', async (_event, input: unknown) => {
+    const parsed = IpcTextbookTranslateExcerptInputSchema.parse(input)
+    const worldId = parsed.worldId ?? 'world_default'
+    const content = await textbookStore.getContent(parsed.textbookId, worldId)
+    if (!content) return null
+
+    const sections = splitSections(content)
+    const target = parsed.chapter.trim()
+    const exact = sections.find((s) => s.heading.includes(target) || target.includes(s.heading))
+    const matched = exact ?? sections.find((s) => headingMatches(target, s.heading))
+    if (!matched) return null
+    const excerpt = matched.text.slice(0, 500).trim()
+    if (!excerpt) return null
+
+    let apiKey = ''
+    let model = 'deepseek-v4-flash'
+    let baseUrl = 'https://api.deepseek.com'
+    if (providerStore) {
+      const active = await providerStore.getActive()
+      if (active) {
+        const key = await providerStore.readApiKey(active.id)
+        if (key) {
+          apiKey = key
+          model = active.selectedModel || model
+          baseUrl = active.baseUrl || baseUrl
+        }
+      }
+    }
+    if (!apiKey) return null
+
+    const endpoint = baseUrl.replace(/\/$/, '') + '/chat/completions'
+    const adapter = createDeepSeekHttpAdapter({ endpoint })
+    const client = new DeepSeekClient(apiKey, adapter, model)
+    const response = await client.chat([
+      {
+        role: 'system',
+        content: '你是一位教材翻译助手。请把用户提供的教材原文段落翻译成简体中文。' +
+          '保留专业术语（首次出现时可在括号中注出原文），不要添加任何解释或评论。'
+      },
+      { role: 'user', content: `【原文】\n${excerpt}` }
+    ])
+    if (!response.content) return null
+
+    return {
+      chapter: matched.heading,
+      excerpt,
+      translation: response.content.trim()
     }
   })
 
@@ -501,7 +523,6 @@ export function registerConversationIpc(
     if (!pickedFiles.has(parsed.filePath)) {
       throw new Error('Target file must be selected through the save dialog')
     }
-    const { writeFile } = await import('node:fs/promises')
     await writeFile(parsed.filePath, parsed.content, 'utf-8')
     return { success: true }
   })
@@ -512,7 +533,6 @@ export function registerConversationIpc(
 
   ipcMain.handle('flashcard:get-srs-state', async () => {
     try {
-      const { readFile } = await import('node:fs/promises')
       const raw = await readFile(srsStatePath, 'utf-8')
       return JSON.parse(raw)
     } catch {
@@ -521,7 +541,6 @@ export function registerConversationIpc(
   })
 
   ipcMain.handle('flashcard:save-srs-state', async (_event, input: unknown) => {
-    const { writeFile, mkdir } = await import('node:fs/promises')
     await mkdir(dataRoot, { recursive: true })
     await writeFile(srsStatePath, JSON.stringify(input), 'utf-8')
     return { success: true }
@@ -745,7 +764,6 @@ async function runArtifactPipeline(
 
 async function readCompanionName(dataRoot: string, companionId: string): Promise<string | null> {
   try {
-    const { companionDir } = await import('../storage/app-data')
     const indexPath = join(companionDir(dataRoot), 'index.json')
     const content = await readFile(indexPath, 'utf-8')
     const companions = CompanionSchema.array().parse(JSON.parse(content)) as Array<{ id: string; name: string }>
