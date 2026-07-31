@@ -28,6 +28,8 @@ export function SettingsView(): React.ReactElement {
   const [hideNarration, setHideNarration] = useState(
     () => localStorage.getItem('sophia.hideNarration') === '1'
   )
+  const [backingUp, setBackingUp] = useState(false)
+  const [backupMsg, setBackupMsg] = useState<string | null>(null)
 
   const handleToggleThinking = (enabled: boolean) => {
     setThinkingEnabled(enabled)
@@ -37,6 +39,24 @@ export function SettingsView(): React.ReactElement {
   const handleToggleHideNarration = (enabled: boolean) => {
     setHideNarration(enabled)
     localStorage.setItem('sophia.hideNarration', enabled ? '1' : '0')
+  }
+
+  const handleExportBackup = async () => {
+    setBackingUp(true)
+    setBackupMsg(null)
+    try {
+      const result = await window.sophia.dialog.saveFile({
+        defaultPath: `sophia-backup-${new Date().toISOString().slice(0, 10)}.zip`,
+        filters: [{ name: 'ZIP 备份', extensions: ['zip'] }]
+      })
+      if (result.canceled || !result.filePath) return
+      const backup = await window.sophia.data.exportBackup(result.filePath)
+      setBackupMsg(`备份完成，共 ${backup.fileCount} 个文件`)
+    } catch (err) {
+      setBackupMsg(err instanceof Error ? err.message : '备份失败')
+    } finally {
+      setBackingUp(false)
+    }
   }
 
   const loadProviders = useCallback(async () => {
@@ -165,13 +185,32 @@ export function SettingsView(): React.ReactElement {
 
   return (
     <div className="mx-auto max-w-2xl p-8">
-      <h2 className="mb-6 text-2xl font-bold">Settings</h2>
+      <h2 className="mb-6 text-2xl font-bold">设置</h2>
 
       <ThemeSwitcher />
 
       <WebDavSyncView />
 
       <div className="mb-8" />
+
+      <div className="mb-8">
+        <h3 className="mb-3 text-lg font-semibold">数据备份</h3>
+        <div className="rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
+          <p className="text-sm text-text-secondary">
+            将全部学习数据（对话、产物、教材、闪卡复习状态等）打包为一个 zip 文件，用于本地备份。
+          </p>
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={handleExportBackup}
+              disabled={backingUp}
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {backingUp ? '备份中...' : '导出全部数据备份'}
+            </button>
+            {backupMsg && <span className="text-xs text-text-muted">{backupMsg}</span>}
+          </div>
+        </div>
+      </div>
 
       <div className="mb-8">
         <h3 className="mb-3 text-lg font-semibold">课堂行为</h3>
@@ -201,7 +240,7 @@ export function SettingsView(): React.ReactElement {
         </label>
       </div>
 
-      <h2 className="mb-6 text-2xl font-bold">API Provider Settings</h2>
+      <h2 className="mb-6 text-2xl font-bold">模型服务设置</h2>
 
       {error && (
         <div className="mb-4 rounded border border-red-800 bg-red-900/30 px-4 py-2 text-sm text-red-300">
@@ -225,7 +264,7 @@ export function SettingsView(): React.ReactElement {
                   <h4 className="font-medium">{p.name}</h4>
                   {p.isActive && (
                     <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-white">
-                      ACTIVE
+                      当前
                     </span>
                   )}
                   <span className="rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
@@ -234,9 +273,9 @@ export function SettingsView(): React.ReactElement {
                 </div>
                 <p className="mt-1 text-xs text-text-muted truncate">{p.baseUrl}</p>
                 <p className="mt-0.5 text-xs text-text-muted">
-                  Model: {p.selectedModel || <span className="text-text-muted">none selected</span>}
+                  模型：{p.selectedModel || <span className="text-text-muted">未选择</span>}
                   {p.models.length > 0 && (
-                    <span className="text-text-muted"> ({p.models.length} available)</span>
+                    <span className="text-text-muted">（{p.models.length} 个可用）</span>
                   )}
                 </p>
               </div>
@@ -246,14 +285,14 @@ export function SettingsView(): React.ReactElement {
                     onClick={() => handleSetActive(p.id)}
                     className="rounded border border-accent px-3 py-1 text-xs text-accent-hover hover:bg-accent-subtle"
                   >
-                    Set Active
+                    设为默认
                   </button>
                 )}
                 <button
                   onClick={() => openEditModal(p)}
                   className="rounded border border-surface-border-strong px-3 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
                 >
-                  Edit
+                  编辑
                 </button>
                 {deleteConfirmId === p.id ? (
                   <>
@@ -261,13 +300,13 @@ export function SettingsView(): React.ReactElement {
                       onClick={() => handleDelete(p.id)}
                       className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-500"
                     >
-                      Confirm
+                      确认删除
                     </button>
                     <button
                       onClick={() => setDeleteConfirmId(null)}
                       className="rounded border border-surface-border-strong px-3 py-1 text-xs text-text-muted hover:bg-bg-elevated"
                     >
-                      Cancel
+                      取消
                     </button>
                   </>
                 ) : (
@@ -275,7 +314,7 @@ export function SettingsView(): React.ReactElement {
                     onClick={() => setDeleteConfirmId(p.id)}
                     className="rounded border border-surface-border-strong px-3 py-1 text-xs text-red-400 hover:bg-red-900/30"
                   >
-                    Delete
+                    删除
                   </button>
                 )}
               </div>
@@ -285,8 +324,8 @@ export function SettingsView(): React.ReactElement {
 
         {providers.length === 0 && (
           <div className="rounded-lg border border-dashed border-surface-border p-8 text-center">
-            <p className="text-text-muted mb-3">No API providers configured</p>
-            <p className="text-xs text-text-muted">Add a provider to start using the AI classroom</p>
+            <p className="text-text-muted mb-3">尚未配置模型服务</p>
+            <p className="text-xs text-text-muted">添加一个模型服务即可开始使用 AI 课堂</p>
           </div>
         )}
       </div>
@@ -295,7 +334,7 @@ export function SettingsView(): React.ReactElement {
         onClick={openAddModal}
         className="rounded-lg border border-dashed border-surface-border-strong w-full px-4 py-3 text-sm text-text-muted hover:border-accent-border hover:text-accent-hover transition-colors"
       >
-        + Add Provider
+        + 添加模型服务
       </button>
 
       {modalOpen && (
@@ -303,7 +342,7 @@ export function SettingsView(): React.ReactElement {
           <div className="flex w-[520px] flex-col rounded-lg border border-surface-border-strong bg-bg-deep shadow-xl max-h-[85vh]">
             <div className="flex items-center justify-between border-b border-surface-border px-6 py-4">
               <h3 className="text-lg font-semibold">
-                {editingProvider ? 'Edit Provider' : 'Add Provider'}
+                {editingProvider ? '编辑模型服务' : '添加模型服务'}
               </h3>
               <button
                 onClick={() => setModalOpen(false)}
@@ -314,18 +353,18 @@ export function SettingsView(): React.ReactElement {
             </div>
             <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
               <div>
-                <label className="mb-1 block text-xs font-medium text-text-muted">Name</label>
+                <label className="mb-1 block text-xs font-medium text-text-muted">名称</label>
                 <input
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="My Provider"
+                  placeholder="我的服务"
                   className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-text-muted">Type</label>
+                <label className="mb-1 block text-xs font-medium text-text-muted">类型</label>
                 <div className="flex gap-2">
                   {(['deepseek', 'mimo', 'custom'] as const).map((t) => (
                     <button
@@ -343,14 +382,14 @@ export function SettingsView(): React.ReactElement {
                           : 'border border-surface-border-strong text-text-muted hover:bg-bg-elevated'
                       }`}
                     >
-                      {t === 'deepseek' ? 'DeepSeek' : t === 'mimo' ? 'MiMo' : 'Custom'}
+                      {t === 'deepseek' ? 'DeepSeek' : t === 'mimo' ? 'MiMo' : '自定义'}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-text-muted">Base URL</label>
+                <label className="mb-1 block text-xs font-medium text-text-muted">接口地址</label>
                 <input
                   type="text"
                   value={form.baseUrl}
@@ -362,7 +401,7 @@ export function SettingsView(): React.ReactElement {
 
               <div>
                 <label className="mb-1 block text-xs font-medium text-text-muted">
-                  API Key {editingProvider && '(leave blank to keep current)'}
+                  API Key {editingProvider && '（留空表示保持不变）'}
                 </label>
                 <input
                   type="password"
@@ -379,26 +418,26 @@ export function SettingsView(): React.ReactElement {
                   disabled={testing || !form.baseUrl}
                   className="rounded border border-surface-border-strong px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
                 >
-                  {testing ? 'Testing...' : 'Test Connection'}
+                  {testing ? '测试中...' : '测试连接'}
                 </button>
                 <button
                   onClick={handleFetchModels}
                   disabled={fetchingModels || !form.baseUrl}
                   className="rounded border border-surface-border-strong px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
                 >
-                  {fetchingModels ? 'Fetching...' : 'Fetch Models'}
+                  {fetchingModels ? '获取中...' : '获取模型'}
                 </button>
               </div>
               {testResult && (
                 <p className={`text-xs ${testResult.ok ? 'text-green-400' : 'text-red-400'}`}>
-                  {testResult.ok ? 'OK: ' : 'Error: '}{testResult.msg}
+                  {testResult.ok ? '成功：' : '错误：'}{testResult.msg}
                 </p>
               )}
 
               {form.models.length > 0 && (
                 <div>
                   <label className="mb-1 block text-xs font-medium text-text-muted">
-                    Model ({form.models.length} available)
+                    模型（{form.models.length} 个可用）
                   </label>
                   <select
                     value={form.selectedModel}
@@ -414,13 +453,13 @@ export function SettingsView(): React.ReactElement {
               {form.models.length === 0 && (
                 <div>
                   <label className="mb-1 block text-xs font-medium text-text-muted">
-                    Model (manual entry)
+                    模型（手动输入）
                   </label>
                   <input
                     type="text"
                     value={form.selectedModel}
                     onChange={(e) => setForm((f) => ({ ...f, selectedModel: e.target.value }))}
-                    placeholder="e.g. deepseek-v4-pro"
+                    placeholder="例如 deepseek-v4-pro"
                     className="w-full rounded border border-surface-border-strong bg-bg-surface px-3 py-2 text-sm text-text-primary placeholder-gray-600 focus:border-accent-border focus:outline-none"
                   />
                 </div>
@@ -432,14 +471,14 @@ export function SettingsView(): React.ReactElement {
                 onClick={() => setModalOpen(false)}
                 className="rounded border border-surface-border-strong px-4 py-2 text-sm hover:bg-bg-elevated"
               >
-                Cancel
+                取消
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving || !form.name.trim() || !form.baseUrl.trim()}
                 className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
               >
-                {saving ? 'Saving...' : editingProvider ? 'Update' : 'Create'}
+                {saving ? '保存中...' : editingProvider ? '更新' : '创建'}
               </button>
             </div>
           </div>
@@ -447,7 +486,7 @@ export function SettingsView(): React.ReactElement {
       )}
 
       <p className="mt-6 text-xs text-text-muted">
-        API keys are stored locally with system encryption. They are never uploaded or shared.
+        API Key 使用系统加密保存在本地，绝不会上传或共享。
       </p>
     </div>
   )

@@ -125,6 +125,7 @@ declare global {
 
   interface DataAPI {
     writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>
+    exportBackup: (filePath: string) => Promise<{ fileCount: number }>
     createConversation: (input: {
       worldId: string
       companionId: string

@@ -61,6 +61,7 @@ type MessageRow =
   | { kind: 'end'; key: string }
 
 const WORLD_ID = 'world_default'
+const MAX_INPUT_LENGTH = 20000
 
 const MATH_SYMBOL_GROUPS: Array<{ id: string; label: string; items: string[] }> = [
   {
@@ -122,7 +123,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const loadedIdRef = useRef<string | null>(null)
   // In-conversation search (Ctrl+F)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -214,6 +215,14 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       inputRef.current?.focus()
     })
   }, [activeTab.input, setActiveTabInput])
+
+  // Auto-grow the message textarea up to ~6 rows
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 168) + 'px'
+  }, [activeTab.input, activeIdx])
 
   // Load conversation from history
   useEffect(() => {
@@ -386,6 +395,10 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     try {
       const userMessage = retryInput ?? tab.input.trim()
       if (!userMessage || !companion) return
+      if (userMessage.length > MAX_INPUT_LENGTH) {
+        setSendError(`消息过长（上限 ${MAX_INPUT_LENGTH} 字），请分段发送`)
+        return
+      }
 
       if (chatStream.state.isStreaming) {
         await chatStream.cancel()
@@ -1165,9 +1178,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           >
             Σ
           </button>
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
             value={activeTab.input}
             onChange={(e) => setActiveTabInput(e.target.value)}
             onKeyDown={(e) => {
@@ -1176,9 +1188,10 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                 handleSend()
               }
             }}
-            placeholder="输入你的问题... (Enter 发送)"
+            rows={1}
+            placeholder="输入你的问题... (Enter 发送，Shift+Enter 换行)"
             disabled={chatStream.state.isStreaming}
-            className="flex-1 rounded border border-surface-border-strong bg-bg-deep px-4 py-2 text-sm text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none disabled:opacity-50"
+            className="flex-1 resize-none overflow-y-auto rounded border border-surface-border-strong bg-bg-deep px-4 py-2 text-sm leading-relaxed text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none disabled:opacity-50"
           />
           {chatStream.state.isStreaming ? (
             <button

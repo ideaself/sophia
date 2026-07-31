@@ -278,6 +278,10 @@ export const IpcWriteTextFileInputSchema = z.object({
   content: z.string()
 })
 
+export const IpcExportBackupInputSchema = z.object({
+  filePath: z.string().min(1)
+})
+
 export const IpcDialogFileFiltersSchema = z.array(z.object({
   name: z.string(),
   extensions: z.array(z.string())

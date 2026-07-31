@@ -73,6 +73,7 @@ function CopyButton({ text }: { text: string }) {
           : 'text-text-muted hover:text-text-secondary hover:bg-bg-elevated'
       }`}
       title="复制"
+      aria-label="复制消息内容"
     >
       {copied ? '已复制' : '📋'}
     </button>
@@ -126,6 +127,7 @@ function CitationChip({ textbookId, chapter }: { textbookId?: string | null; cha
           disabled={!textbookId}
           className="rounded border border-accent-border bg-accent-subtle px-2 py-0.5 text-xs text-accent-hover hover:bg-accent-subtle/70 disabled:opacity-50"
           title={textbookId ? '查看教材原文' : '当前课堂未绑定教材'}
+          aria-label={textbookId ? '查看教材原文' : '未绑定教材'}
         >
           📖 教材原文 · {chapter}
         </button>
@@ -134,6 +136,7 @@ function CitationChip({ textbookId, chapter }: { textbookId?: string | null; cha
           disabled={!textbookId}
           className="rounded border border-accent-border bg-accent-subtle px-2 py-0.5 text-xs text-accent-hover hover:bg-accent-subtle/70 disabled:opacity-50"
           title={textbookId ? '把这段教材原文翻译成中文' : '当前课堂未绑定教材'}
+          aria-label={textbookId ? '翻译教材原文' : '未绑定教材'}
         >
           🌐 翻译
         </button>
@@ -192,6 +195,7 @@ function SpeakButton({ text }: { text: string }) {
             : 'text-text-muted hover:text-text-secondary'
         }`}
         title={tts.speaking ? '停止朗读' : '朗读'}
+        aria-label={tts.speaking ? '停止朗读' : '朗读'}
       >
         {tts.speaking ? '⏹️' : '🔊'}
       </button>
@@ -347,6 +351,7 @@ export function ChatMessage({
                   onClick={() => onRewind(id)}
                   className="text-xs text-text-muted hover:text-text-secondary px-1"
                   title="从这里重新开始（删除其后所有消息）"
+                  aria-label="从这里重新开始"
                 >
                   ↩️
                 </button>
@@ -356,6 +361,7 @@ export function ChatMessage({
                   onClick={() => { setEditText(content); setEditing(true) }}
                   className="text-xs text-text-muted hover:text-text-secondary px-1"
                   title="编辑"
+                  aria-label="编辑消息"
                 >
                   ✏️
                 </button>
@@ -365,6 +371,7 @@ export function ChatMessage({
                   onClick={() => onRegenerate(id)}
                   className="text-xs text-text-muted hover:text-text-secondary px-1"
                   title="重新生成"
+                  aria-label="重新生成回复"
                 >
                   🔄
                 </button>
@@ -374,6 +381,7 @@ export function ChatMessage({
                   onClick={() => onDelete(id)}
                   className="text-xs text-text-muted hover:text-red-400 px-1"
                   title="删除"
+                  aria-label="删除消息"
                 >
                   🗑️
                 </button>

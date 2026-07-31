@@ -5,6 +5,19 @@ import { useAppStore } from '../stores/useAppStore'
 import { useCompanionStore } from '../stores/useCompanionStore'
 import { useTextbookStore } from '../stores/useTextbookStore'
 import { WORLD_ID } from '../types/models'
+import { ArtifactType } from '../../../shared/types/ids'
+import { parseSelfTestQuestions } from '../../../shared/self-test-utils'
+import { SelfTestModal } from './SelfTestModal'
+
+/** Artifact types persisted as standalone artifacts (redo-able from history). */
+const STORED_ARTIFACT_TYPES = [
+  ArtifactType.LessonSummary,
+  ArtifactType.Flashcards,
+  ArtifactType.Diary,
+  ArtifactType.Progress,
+  ArtifactType.HandoffTail,
+  ArtifactType.CompanionNote
+]
 
 export function HistoryView(): React.ReactElement {
   const [conversations, setConversations] = useState<ConversationDTO[]>([])
@@ -24,6 +37,9 @@ export function HistoryView(): React.ReactElement {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [editingArtifact, setEditingArtifact] = useState<{ conversationId: string; artifactId: string } | null>(null)
   const [editArtifactText, setEditArtifactText] = useState('')
+  const [selfTestOpen, setSelfTestOpen] = useState(false)
+  const [selfTestQuestions, setSelfTestQuestions] = useState<ReturnType<typeof parseSelfTestQuestions>>([])
+  const [redoingMissing, setRedoingMissing] = useState(false)
 
   const setView = useAppStore((s) => s.setView)
   const setLoadConversationId = useAppStore((s) => s.setLoadConversationId)
@@ -289,6 +305,26 @@ export function HistoryView(): React.ReactElement {
     setEditingArtifact(null)
   }
 
+  const handleRedoMissingArtifacts = async (conversationId: string) => {
+    if (redoingMissing) return
+    const missing = STORED_ARTIFACT_TYPES.filter(
+      (t) => !expandedArtifacts.some((a) => a.type === t)
+    )
+    if (missing.length === 0) return
+    setRedoingMissing(true)
+    try {
+      const result = await window.sophia.data.redoArtifacts(conversationId, missing, WORLD_ID)
+      if (result.success) {
+        const artifacts = await window.sophia.data.listArtifacts(conversationId)
+        setExpandedArtifacts(artifacts)
+      }
+    } catch {
+      // keep the button for a retry
+    } finally {
+      setRedoingMissing(false)
+    }
+  }
+
   return (
     <div className="p-8">
       <h2 className="mb-6 text-2xl font-bold">学习历史</h2>
@@ -500,6 +536,23 @@ export function HistoryView(): React.ReactElement {
 
             {expandedId === conv.id && (
               <div className="border-t border-surface-border px-4 py-3 space-y-3 max-h-96 overflow-auto">
+                {conv.endedAt &&
+                  STORED_ARTIFACT_TYPES.some(
+                    (t) => !expandedArtifacts.some((a) => a.type === t)
+                  ) && (
+                    <div className="flex items-center justify-between rounded border border-amber-800 bg-amber-900/20 px-3 py-2">
+                      <p className="text-xs text-amber-300">
+                        有学习摘要缺失，可只补齐缺失项
+                      </p>
+                      <button
+                        onClick={() => handleRedoMissingArtifacts(conv.id)}
+                        disabled={redoingMissing}
+                        className="flex-shrink-0 rounded bg-amber-700 px-3 py-1 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+                      >
+                        {redoingMissing ? '补齐中...' : '补齐缺失产物'}
+                      </button>
+                    </div>
+                  )}
                 {loadingMessages ? (
                   <p className="text-xs text-text-muted">加载中...</p>
                 ) : (
@@ -523,13 +576,28 @@ export function HistoryView(): React.ReactElement {
                                  art.type === 'companion_note' ? '🤔 伙伴独白' :
                                  art.type === 'feynman_note' ? '🥚 费曼知识蛋' : art.type}
                               </p>
-                              <button
-                                onClick={() => handleStartArtifactEdit(conv.id, art)}
-                                className="text-xs text-text-muted hover:text-text-secondary"
-                                title="编辑产物内容"
-                              >
-                                ✏️
-                              </button>
+                              <div className="flex items-center gap-2">
+                                {art.type === 'lesson_summary' &&
+                                  parseSelfTestQuestions(art.content).length > 0 && (
+                                    <button
+                                      onClick={() => {
+                                        setSelfTestQuestions(parseSelfTestQuestions(art.content))
+                                        setSelfTestOpen(true)
+                                      }}
+                                      className="text-xs text-accent-hover hover:underline"
+                                      title="进入课后自测"
+                                    >
+                                      🎯 自测
+                                    </button>
+                                  )}
+                                <button
+                                  onClick={() => handleStartArtifactEdit(conv.id, art)}
+                                  className="text-xs text-text-muted hover:text-text-secondary"
+                                  title="编辑产物内容"
+                                >
+                                  ✏️
+                                </button>
+                              </div>
                             </div>
                             {editingArtifact?.artifactId === art.id ? (
                               <div className="space-y-2">
@@ -596,6 +664,12 @@ export function HistoryView(): React.ReactElement {
           <p className="text-text-muted">暂无历史记录。</p>
         )}
       </div>
+      {selfTestOpen && selfTestQuestions.length > 0 && (
+        <SelfTestModal
+          questions={selfTestQuestions}
+          onClose={() => setSelfTestOpen(false)}
+        />
+      )}
     </div>
   )
 }

@@ -37,6 +37,7 @@ import {
   IpcChatPromptMessagesInputSchema,
   IpcTextbookSearchExcerptInputSchema,
   IpcTextbookTranslateExcerptInputSchema,
+  IpcExportBackupInputSchema,
   IpcGetConversationInputSchema,
   IpcListConversationsInputSchema,
   IpcGetMessagesInputSchema,
@@ -693,6 +694,20 @@ describe('IPC input schemas', () => {
       const result = IpcTextbookTranslateExcerptInputSchema.safeParse({
         textbookId: 'tb_001'
       })
+      expect(result.success).toBe(false)
+    })
+  })
+
+  describe('IpcExportBackupInputSchema', () => {
+    it('accepts a file path', () => {
+      const result = IpcExportBackupInputSchema.safeParse({
+        filePath: 'C:\\backup\\data.zip'
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects an empty file path', () => {
+      const result = IpcExportBackupInputSchema.safeParse({ filePath: '' })
       expect(result.success).toBe(false)
     })
   })

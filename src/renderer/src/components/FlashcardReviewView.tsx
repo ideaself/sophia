@@ -29,6 +29,7 @@ export function FlashcardReviewView(): React.ReactElement {
   const [isFlipped, setIsFlipped] = useState(false)
   const [loading, setLoading] = useState(true)
   const [sessionReviewed, setSessionReviewed] = useState(0)
+  const [sessionCorrect, setSessionCorrect] = useState(0)
   const [editing, setEditing] = useState(false)
   const [editQuestion, setEditQuestion] = useState('')
   const [editAnswer, setEditAnswer] = useState('')
@@ -79,6 +80,7 @@ export function FlashcardReviewView(): React.ReactElement {
     setSrsStates(newStates)
     saveAllSrs(newStates)
     setSessionReviewed((n) => n + 1)
+    if (rating !== 'again') setSessionCorrect((n) => n + 1)
 
     // Move to next card
     if (currentIndex < flashcards.length - 1) {
@@ -208,7 +210,7 @@ export function FlashcardReviewView(): React.ReactElement {
         <h2 className="text-2xl font-bold">记忆卡片复习</h2>
         <div className="flex items-center gap-4">
           <span className="text-sm text-text-muted">
-            待复习 {dueCount} · 本次已复习 {sessionReviewed}
+            待复习 {dueCount} · 本次已复习 {sessionReviewed} · 答对 {sessionCorrect}
           </span>
           <button
             onClick={handleExportAnki}

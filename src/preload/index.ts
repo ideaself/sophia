@@ -140,7 +140,8 @@ export interface ChatAPI {
 // ---------------------------------------------------------------
 
 export interface DataAPI {
-  writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>
+    writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>
+    exportBackup: (filePath: string) => Promise<{ fileCount: number }>
   createConversation: (input: {
     worldId: string
     companionId: string
@@ -466,6 +467,7 @@ const sophia: SophiaAPI = {
   },
   data: {
     writeTextFile: (filePath, content) => ipcRenderer.invoke('file:writeText', { filePath, content }),
+    exportBackup: (filePath) => ipcRenderer.invoke('data:export-backup', { filePath }),
     createConversation: (input) =>
       ipcRenderer.invoke('conversation:create', input),
     getConversation: (conversationId, worldId = 'world_default') =>

@@ -15,6 +15,7 @@ import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
 import { DeepSeekClient } from '../llm/deepseek-client'
 import { createDeepSeekHttpAdapter } from '../llm/deepseek-http-adapter'
 import { PickedFileRegistry } from './picked-files'
+import { createBackupZip } from '../backup/backup'
 import {
   learnerPath,
   palMomentsPath,
@@ -58,6 +59,7 @@ import {
   IpcUpdateReadingNoteInputSchema,
   IpcDeleteReadingNoteInputSchema,
   IpcWriteTextFileInputSchema,
+  IpcExportBackupInputSchema,
   IpcOpenFileDialogInputSchema,
   IpcSaveFileDialogInputSchema,
   IpcConfirmDialogInputSchema,
@@ -555,6 +557,15 @@ export function registerConversationIpc(
     }
     await writeFile(parsed.filePath, parsed.content, 'utf-8')
     return { success: true }
+  })
+
+  // Full local backup: zip the whole data directory
+  ipcMain.handle('data:export-backup', async (_event, input: unknown) => {
+    const parsed = IpcExportBackupInputSchema.parse(input)
+    if (!pickedFiles.has(parsed.filePath)) {
+      throw new Error('Target file must be selected through the save dialog')
+    }
+    return createBackupZip(dataRoot, parsed.filePath)
   })
 
   // --- Flashcard SRS State (persisted for WebDAV sync) ---

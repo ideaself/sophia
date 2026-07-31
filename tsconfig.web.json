@@ -27,6 +27,8 @@
     "src/shared/tab-persistence.ts",
     "src/shared/tts-utils.ts",
     "src/shared/flashcard-utils.ts",
-    "src/shared/study-time.ts"
+    "src/shared/study-time.ts",
+    "src/shared/self-test-utils.ts",
+    "src/shared/types/ids.ts"
   ]
 }
