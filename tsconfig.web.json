@@ -29,6 +29,7 @@
     "src/shared/flashcard-utils.ts",
     "src/shared/study-time.ts",
     "src/shared/self-test-utils.ts",
+    "src/shared/reading-notes-utils.ts",
     "src/shared/types/ids.ts"
   ]
 }

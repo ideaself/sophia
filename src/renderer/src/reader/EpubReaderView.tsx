@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
 import { useTTS, stopTTS } from '../hooks/useTTS'
 import { TTSControlPanel } from '../components/TTSControlPanel'
+import { applyNotesToHtml } from '../../../shared/reading-notes-utils'
 
 interface EpubChapterData {
   id: string
@@ -60,6 +61,7 @@ function htmlToPlainText(html: string): string {
 
 export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewProps): React.ReactElement {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const [chapters, setChapters] = useState<EpubChapterData[]>([])
   const [chapterIndex, setChapterIndex] = useState(0)
   const [error, setError] = useState('')
@@ -69,6 +71,13 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
   const [ttsOpen, setTtsOpen] = useState(false)
   const tts = useTTS('zh-CN')
   const tocRef = useRef<HTMLDivElement>(null)
+  const [notes, setNotes] = useState<ReadingNoteDTO[]>([])
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [selMenu, setSelMenu] = useState<{ x: number; y: number; text: string } | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [noteDraftOpen, setNoteDraftOpen] = useState(false)
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [editingNoteText, setEditingNoteText] = useState('')
 
   // ---- Load chapters ----
   useEffect(() => {
@@ -156,16 +165,107 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
   useEffect(() => {
     tts.stop()
     setTtsOpen(false)
+    setSelMenu(null)
+    setNoteDraftOpen(false)
   }, [chapterIndex])
 
   // ---- Stop TTS when leaving the reader ----
   useEffect(() => stopTTS, [])
+
+  // ---- Load reading notes for this textbook ----
+  useEffect(() => {
+    window.sophia.data.listReadingNotes(textbookId)
+      .then(setNotes)
+      .catch(() => setNotes([]))
+  }, [textbookId])
 
   const current = chapters[chapterIndex]
   const safeHtml = useMemo(
     () => (current ? DOMPurify.sanitize(current.html, SANITIZE_CONFIG) : ''),
     [current]
   )
+  const highlightedHtml = useMemo(
+    () => applyNotesToHtml(safeHtml, notes, chapterIndex),
+    [safeHtml, notes, chapterIndex]
+  )
+
+  // ---- Selection toolbar (highlight / underline / note) ----
+  const handleContentMouseUp = () => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+      setSelMenu(null)
+      setNoteDraftOpen(false)
+      return
+    }
+    const text = sel.toString().trim()
+    const range = sel.getRangeAt(0)
+    const container = contentRef.current
+    if (
+      !container ||
+      !container.contains(range.commonAncestorContainer) ||
+      text.length === 0 ||
+      text.length > 1000
+    ) {
+      setSelMenu(null)
+      setNoteDraftOpen(false)
+      return
+    }
+    const rect = range.getBoundingClientRect()
+    setSelMenu({ x: rect.left + rect.width / 2, y: rect.top, text })
+  }
+
+  const createNote = async (type: 'highlight' | 'underline' | 'note', readerNote = '') => {
+    if (!selMenu) return
+    try {
+      await window.sophia.data.createReadingNote({
+        textbookId,
+        content: selMenu.text,
+        position: String(chapterIndex),
+        chapter: current?.title ?? `第 ${chapterIndex + 1} 章`,
+        type,
+        readerNote
+      })
+      const updated = await window.sophia.data.listReadingNotes(textbookId)
+      setNotes(updated)
+    } catch {
+      // best-effort — keep the selection so the user can retry
+      return
+    }
+    window.getSelection()?.removeAllRanges()
+    setSelMenu(null)
+    setNoteDraftOpen(false)
+    setNoteDraft('')
+  }
+
+  const jumpToNote = (note: ReadingNoteDTO) => {
+    const idx = parseInt(note.position, 10)
+    if (!Number.isNaN(idx) && idx >= 0 && idx < chapters.length && idx !== chapterIndex) {
+      goToChapter(idx)
+    }
+    setTimeout(() => {
+      document.querySelector(`[data-note="${note.id}"]`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      })
+    }, 250)
+  }
+
+  const startEditNote = (note: ReadingNoteDTO) => {
+    setEditingNoteId(note.id)
+    setEditingNoteText(note.readerNote)
+  }
+
+  const saveEditNote = async (note: ReadingNoteDTO) => {
+    const text = editingNoteText.trim()
+    await window.sophia.data.updateReadingNote(note.id, textbookId, { readerNote: text })
+    setNotes((prev) => prev.map((n) => (n.id === note.id ? { ...n, readerNote: text } : n)))
+    setEditingNoteId(null)
+  }
+
+  const deleteNote = async (note: ReadingNoteDTO) => {
+    await window.sophia.data.deleteReadingNote(note.id, textbookId)
+    setNotes((prev) => prev.filter((n) => n.id !== note.id))
+  }
 
   const goToChapter = (idx: number) => {
     setChapterIndex(idx)
@@ -175,7 +275,7 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-bg-deep">
       {/* ---- Toolbar ---- */}
-      <div className="flex items-center justify-between border-b border-surface-border px-4 py-2">
+      <div className="relative flex items-center justify-between border-b border-surface-border px-4 py-2">
         <div className="flex min-w-0 items-center gap-3">
           <h3 className="truncate text-sm font-medium text-text-primary">{title}</h3>
           {chapters.length > 0 && (
@@ -241,6 +341,102 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
               )}
             </div>
           )}
+          {/* Reading notes */}
+          {chapters.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setNotesOpen((v) => !v)}
+                className={`rounded border px-2 py-1 text-xs ${
+                  notesOpen
+                    ? 'border-accent text-accent'
+                    : 'border-surface-border-strong hover:bg-bg-elevated'
+                }`}
+              >
+                📌 笔记{notes.length > 0 && ` (${notes.length})`}
+              </button>
+              {notesOpen && (
+                <div className="absolute right-0 top-full z-20 mt-1 max-h-[70vh] w-96 overflow-auto rounded border border-surface-border bg-bg-surface p-3 shadow-lg">
+                  {notes.length === 0 ? (
+                    <p className="text-xs text-text-muted">
+                      暂无笔记。选中文字即可高亮、下划线或添加笔记。
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {notes.map((note) => (
+                        <div
+                          key={note.id}
+                          className="rounded border border-surface-border-strong/60 bg-bg-elevated/40 px-3 py-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] text-text-muted">
+                              {note.type === 'underline'
+                                ? '〰️ 下划线'
+                                : note.type === 'note'
+                                  ? '📝 笔记'
+                                  : '🖍️ 高亮'} · {note.chapter}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => startEditNote(note)}
+                                className="text-xs text-text-muted hover:text-text-secondary"
+                                title="编辑笔记"
+                                aria-label="编辑笔记"
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                onClick={() => deleteNote(note)}
+                                className="text-xs text-text-muted hover:text-red-400"
+                                title="删除笔记"
+                                aria-label="删除笔记"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => jumpToNote(note)}
+                            className="mt-1 block max-w-full truncate text-left text-xs text-text-secondary hover:text-accent-hover"
+                            title="跳转到文中位置"
+                          >
+                            {note.content}
+                          </button>
+                          {editingNoteId === note.id ? (
+                            <div className="mt-2 space-y-1">
+                              <textarea
+                                rows={2}
+                                value={editingNoteText}
+                                onChange={(e) => setEditingNoteText(e.target.value)}
+                                className="w-full resize-none rounded border border-surface-border-strong bg-bg-deep px-2 py-1 text-xs text-text-primary focus:outline-none"
+                              />
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  onClick={() => setEditingNoteId(null)}
+                                  className="text-xs text-text-muted hover:text-text-secondary"
+                                >
+                                  取消
+                                </button>
+                                <button
+                                  onClick={() => saveEditNote(note)}
+                                  className="rounded bg-accent px-2 py-0.5 text-xs text-white hover:bg-accent-hover"
+                                >
+                                  保存
+                                </button>
+                              </div>
+                            </div>
+                          ) : note.readerNote ? (
+                            <p className="mt-1 whitespace-pre-wrap text-xs text-text-secondary">
+                              {note.readerNote}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {/* Font size */}
           <button
             onClick={() => setFontSize((s) => Math.max(10, s - 2))}
@@ -285,12 +481,75 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
           <p className="mt-8 text-sm text-text-muted">加载中...</p>
         ) : (
           <div
+            ref={contentRef}
+            onMouseUp={handleContentMouseUp}
             className="epub-content mx-auto max-w-4xl leading-relaxed text-text-secondary [&_img]:my-4 [&_img]:mx-auto [&_img]:max-w-full [&_img]:h-auto [&_svg]:my-4 [&_svg]:mx-auto [&_svg]:max-w-full [&_svg]:h-auto [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:mt-6 [&_h1]:mb-3 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h3]:text-lg [&_h3]:font-medium [&_h3]:mt-4 [&_h3]:mb-2 [&_p]:my-3 [&_a]:text-blue-400 [&_a]:underline"
             style={{ fontSize: `${fontSize}px` }}
-            dangerouslySetInnerHTML={{ __html: safeHtml }}
+            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
           />
         )}
       </div>
+      {/* Selection toolbar */}
+      {selMenu && (
+        <div
+          className="fixed z-30 flex items-center gap-1 rounded-lg border border-surface-border bg-bg-surface px-2 py-1 shadow-lg"
+          style={{ left: selMenu.x, top: selMenu.y - 8, transform: 'translate(-50%, -100%)' }}
+        >
+          <button
+            onClick={() => createNote('highlight')}
+            className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
+            title="高亮选中文字"
+            aria-label="高亮选中文字"
+          >
+            🖍️ 高亮
+          </button>
+          <button
+            onClick={() => createNote('underline')}
+            className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
+            title="下划线"
+            aria-label="下划线"
+          >
+            〰️ 下划线
+          </button>
+          <button
+            onClick={() => setNoteDraftOpen(true)}
+            className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
+            title="添加笔记"
+            aria-label="添加笔记"
+          >
+            📝 笔记
+          </button>
+        </div>
+      )}
+      {noteDraftOpen && selMenu && (
+        <div
+          className="fixed z-30 w-72 rounded-lg border border-surface-border bg-bg-surface p-3 shadow-lg"
+          style={{ left: selMenu.x, top: selMenu.y - 12, transform: 'translate(-50%, -100%)' }}
+        >
+          <textarea
+            rows={3}
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            autoFocus
+            placeholder="写下你的想法..."
+            className="w-full resize-none rounded border border-surface-border-strong bg-bg-deep px-2 py-1.5 text-xs text-text-primary placeholder-gray-500 focus:outline-none"
+          />
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              onClick={() => { setNoteDraftOpen(false); setNoteDraft('') }}
+              className="text-xs text-text-muted hover:text-text-secondary"
+            >
+              取消
+            </button>
+            <button
+              onClick={() => createNote('note', noteDraft.trim())}
+              className="rounded bg-accent px-3 py-1 text-xs text-white hover:bg-accent-hover"
+            >
+              保存笔记
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
