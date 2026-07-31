@@ -64,9 +64,29 @@ function createWindow(): void {
   }
 
   // System tray
-  let tray: Tray | null = null
+  void setupTray(mainWindow)
+
+  // Hide to tray instead of closing
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault()
+      mainWindow.hide()
+    }
+  })
+}
+
+/**
+ * Create the system tray with the real application icon.
+ *
+ * In dev the repo's build/icon.png is used; in the packaged app that file
+ * is not shipped, so the icon is pulled from the executable itself — the
+ * same embedded icon electron-builder stamps from build/icon.png, which
+ * keeps the tray identical to the taskbar/window icon.
+ */
+async function setupTray(mainWindow: BrowserWindow): Promise<void> {
   try {
-    tray = new Tray(makeIcon(32))
+    const trayIcon = await loadTrayIcon()
+    const tray = new Tray(trayIcon)
     tray.setToolTip('SophiaLocal')
 
     const contextMenu = Menu.buildFromTemplate([
@@ -81,8 +101,7 @@ function createWindow(): void {
       {
         label: '退出',
         click: () => {
-          tray?.destroy()
-          tray = null
+          tray.destroy()
           app.quit()
         }
       }
@@ -93,17 +112,35 @@ function createWindow(): void {
       mainWindow.show()
       mainWindow.focus()
     })
-
-    // Hide to tray instead of closing
-    mainWindow.on('close', (event) => {
-      if (!isQuitting) {
-        event.preventDefault()
-        mainWindow.hide()
-      }
-    })
   } catch {
     // Tray not available (e.g. headless/CI)
   }
+}
+
+async function loadTrayIcon(): Promise<Electron.NativeImage> {
+  // 1. Dev: the repo's real icon is on disk next to the source tree.
+  const repoIcon = nativeImage.createFromPath(join(__dirname, '../../build/icon.png'))
+  if (!repoIcon.isEmpty()) {
+    return makeTraySized(repoIcon)
+  }
+
+  // 2. Packaged: reuse the icon embedded in the executable.
+  try {
+    const exeIcon = await app.getFileIcon(process.execPath, { size: 'small' })
+    if (!exeIcon.isEmpty()) {
+      return makeTraySized(exeIcon)
+    }
+  } catch {
+    // fall through to placeholder
+  }
+
+  // 3. Fallback placeholder (should never show in normal use).
+  return makeIcon(16)
+}
+
+/** Fit an icon for the Windows tray (16×16 — the documented safe size). */
+function makeTraySized(src: Electron.NativeImage): Electron.NativeImage {
+  return src.resize({ width: 16, height: 16, quality: 'best' })
 }
 
 let isQuitting = false
