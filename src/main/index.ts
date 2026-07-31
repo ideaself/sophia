@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, nativeImage, session } from 'electron'
+import trayIconDataUrl from '../../build/icon.png?inline'
 import { join } from 'path'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerChatStreamIpc } from './ipc/chat-stream'
@@ -64,7 +65,7 @@ function createWindow(): void {
   }
 
   // System tray
-  void setupTray(mainWindow)
+  setupTray(mainWindow)
 
   // Hide to tray instead of closing
   mainWindow.on('close', (event) => {
@@ -75,18 +76,10 @@ function createWindow(): void {
   })
 }
 
-/**
- * Create the system tray with the real application icon.
- *
- * In dev the repo's build/icon.png is used; in the packaged app that file
- * is not shipped, so the icon is pulled from the executable itself — the
- * same embedded icon electron-builder stamps from build/icon.png, which
- * keeps the tray identical to the taskbar/window icon.
- */
-async function setupTray(mainWindow: BrowserWindow): Promise<void> {
+/** Create the system tray with the real application icon. */
+function setupTray(mainWindow: BrowserWindow): void {
   try {
-    const trayIcon = await loadTrayIcon()
-    const tray = new Tray(trayIcon)
+    const tray = new Tray(loadTrayIcon())
     tray.setToolTip('SophiaLocal')
 
     const contextMenu = Menu.buildFromTemplate([
@@ -117,24 +110,18 @@ async function setupTray(mainWindow: BrowserWindow): Promise<void> {
   }
 }
 
-async function loadTrayIcon(): Promise<Electron.NativeImage> {
-  // 1. Dev: the repo's real icon is on disk next to the source tree.
-  const repoIcon = nativeImage.createFromPath(join(__dirname, '../../build/icon.png'))
-  if (!repoIcon.isEmpty()) {
-    return makeTraySized(repoIcon)
+/**
+ * Load the real app icon for the tray.
+ *
+ * build/icon.png is shipped inside the package (see the "files" list in
+ * package.json), so the same path works in dev and in the installed app.
+ */
+function loadTrayIcon(): Electron.NativeImage {
+  const icon = nativeImage.createFromDataURL(trayIconDataUrl)
+  if (!icon.isEmpty()) {
+    return makeTraySized(icon)
   }
-
-  // 2. Packaged: reuse the icon embedded in the executable.
-  try {
-    const exeIcon = await app.getFileIcon(process.execPath, { size: 'small' })
-    if (!exeIcon.isEmpty()) {
-      return makeTraySized(exeIcon)
-    }
-  } catch {
-    // fall through to placeholder
-  }
-
-  // 3. Fallback placeholder (should never show in normal use).
+  // Fallback placeholder (should never show in normal use).
   return makeIcon(16)
 }
 
