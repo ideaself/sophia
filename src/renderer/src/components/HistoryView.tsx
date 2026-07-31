@@ -334,7 +334,7 @@ export function HistoryView(): React.ReactElement {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleSearch()}
           placeholder="搜索对话内容... (输入至少 2 个字)"
           className="flex-1 rounded border border-surface-border-strong bg-bg-surface px-4 py-2 text-sm text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
         />
@@ -473,7 +473,7 @@ export function HistoryView(): React.ReactElement {
                         value={editingTitle}
                         onChange={(e) => setEditingTitle(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveTitle(conv.id)
+                          if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSaveTitle(conv.id)
                           if (e.key === 'Escape') setEditingId(null)
                         }}
                         className="flex-1 rounded border border-accent-border bg-bg-deep px-2 py-1 text-sm text-text-primary focus:outline-none"

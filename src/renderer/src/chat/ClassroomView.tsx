@@ -883,7 +883,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                       value={titleInput}
                       onChange={(e) => setTitleInput(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSaveTitle()
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSaveTitle()
                         if (e.key === 'Escape') setEditingTitle(false)
                       }}
                       onBlur={handleSaveTitle}
@@ -966,7 +966,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 goToMatch(e.shiftKey ? -1 : 1)
               }
@@ -1183,7 +1183,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             value={activeTab.input}
             onChange={(e) => setActiveTabInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 handleSend()
               }
