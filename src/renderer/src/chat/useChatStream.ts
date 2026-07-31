@@ -41,8 +41,8 @@ export function useChatStream(): CreateChatStreamControllerResult {
   }
 
   const send = useCallback(
-    (messages: ChatMessage[], model?: string) =>
-      controllerRef.current!.send(messages, model),
+    (messages: ChatMessage[], model?: string, thinking?: boolean) =>
+      controllerRef.current!.send(messages, model, thinking),
     []
   )
 

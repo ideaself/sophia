@@ -53,7 +53,8 @@ export const ChatStreamStartInputSchema = z.object({
   model: z
     .string()
     .min(1)
-    .default('deepseek-v4-pro')
+    .default('deepseek-v4-pro'),
+  thinking: z.boolean().optional()
 }).refine(
   (input) => {
     // System role only allowed as the first message (index 0)
@@ -101,6 +102,11 @@ export type ActiveProviderReader = () => Promise<{ model: string; baseUrl: strin
 interface TokenPayload {
   sessionId: string
   token: string
+}
+
+interface ThinkingPayload {
+  sessionId: string
+  text: string
 }
 
 interface ErrorPayload {
@@ -170,7 +176,8 @@ export function registerChatStreamIpc(
         messages: parsed.messages,
         model,
         apiKey,
-        _endpoint
+        _endpoint,
+        thinking: parsed.thinking ?? false
       },
       { streamChat: (p) => adapterFactory(p) },
       (event) => {
@@ -180,6 +187,12 @@ export function registerChatStreamIpc(
               sessionId,
               token: event.token
             } satisfies TokenPayload)
+            break
+          case 'thinking':
+            wc.send(CHAT_STREAM_EVENT.thinking, {
+              sessionId,
+              text: event.text
+            } satisfies ThinkingPayload)
             break
           case 'error':
             wc.send(CHAT_STREAM_EVENT.error, {

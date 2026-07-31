@@ -22,6 +22,14 @@ export function SettingsView(): React.ReactElement {
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [thinkingEnabled, setThinkingEnabled] = useState(
+    () => localStorage.getItem('sophia.thinkingEnabled') === '1'
+  )
+
+  const handleToggleThinking = (enabled: boolean) => {
+    setThinkingEnabled(enabled)
+    localStorage.setItem('sophia.thinkingEnabled', enabled ? '1' : '0')
+  }
 
   const loadProviders = useCallback(async () => {
     const list = await window.sophia.providers.list()
@@ -156,6 +164,22 @@ export function SettingsView(): React.ReactElement {
       <WebDavSyncView />
 
       <div className="mb-8" />
+
+      <div className="mb-8">
+        <h3 className="mb-3 text-lg font-semibold">课堂行为</h3>
+        <label className="flex cursor-pointer items-center justify-between rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
+          <div className="pr-4">
+            <p className="text-sm font-medium">课堂追问启用深度思考（Thinking）</p>
+            <p className="mt-0.5 text-xs text-text-muted">让模型先推理再回答，质量更高但响应更慢；课后摘要、闪卡等生成不受影响</p>
+          </div>
+          <input
+            type="checkbox"
+            checked={thinkingEnabled}
+            onChange={(e) => handleToggleThinking(e.target.checked)}
+            className="h-4 w-4 flex-shrink-0"
+          />
+        </label>
+      </div>
 
       <h2 className="mb-6 text-2xl font-bold">API Provider Settings</h2>
 

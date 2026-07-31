@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
+import { useTTS, stopTTS } from '../hooks/useTTS'
+import { TTSControlPanel } from '../components/TTSControlPanel'
 
 interface EpubChapterData {
   id: string
@@ -64,7 +66,8 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
   const saved = useMemo(() => loadProgress(textbookId), [textbookId])
   const [fontSize, setFontSize] = useState(saved?.fontSize ?? 16)
   const [tocOpen, setTocOpen] = useState(false)
-  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [ttsOpen, setTtsOpen] = useState(false)
+  const tts = useTTS('zh-CN')
   const tocRef = useRef<HTMLDivElement>(null)
 
   // ---- Load chapters ----
@@ -79,7 +82,21 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
           return
         }
         setChapters(result.chapters)
-        if (saved && saved.chapterIndex >= 0 && saved.chapterIndex < result.chapters.length) {
+        // Try loading synced progress from textbook store (falls back to localStorage)
+        const tb = await window.sophia.data.getTextbook(textbookId)
+        if (tb?.progress?.lastPosition) {
+          try {
+            const synced = JSON.parse(tb.progress.lastPosition) as Partial<SavedProgress>
+            if (typeof synced.chapterIndex === 'number' && synced.chapterIndex >= 0 && synced.chapterIndex < result.chapters.length) {
+              setChapterIndex(synced.chapterIndex)
+            }
+            if (typeof synced.fontSize === 'number') {
+              setFontSize(synced.fontSize)
+            }
+          } catch {
+            // lastPosition might contain non-JSON (e.g. LLM progress content) - ignore
+          }
+        } else if (saved && saved.chapterIndex >= 0 && saved.chapterIndex < result.chapters.length) {
           setChapterIndex(saved.chapterIndex)
         }
       } catch (err) {
@@ -106,10 +123,18 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
   useEffect(() => {
     if (chapters.length === 0) return
     const id = requestAnimationFrame(() => {
-      saveProgress(textbookId, {
+      const progress = {
         chapterIndex,
         fontSize,
         scrollY: scrollContainerRef.current?.scrollTop ?? 0
+      }
+      saveProgress(textbookId, progress)
+      // Also persist to textbook store for WebDAV sync
+      void window.sophia.data.updateTextbookProgress(textbookId, {
+        currentPage: chapterIndex + 1,
+        totalPages: chapters.length,
+        readingPercentage: chapters.length > 0 ? (chapterIndex + 1) / chapters.length : 0,
+        lastPosition: JSON.stringify(progress)
       })
     })
     return () => cancelAnimationFrame(id)
@@ -127,43 +152,20 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
     return () => document.removeEventListener('mousedown', handler)
   }, [tocOpen])
 
-  // ---- Stop TTS on unmount / chapter change ----
+  // ---- Stop TTS on chapter change ----
   useEffect(() => {
-    return () => {
-      if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel()
-    }
-  }, [])
-  useEffect(() => {
-    if (typeof speechSynthesis !== 'undefined') {
-      speechSynthesis.cancel()
-      setIsSpeaking(false)
-    }
+    tts.stop()
+    setTtsOpen(false)
   }, [chapterIndex])
+
+  // ---- Stop TTS when leaving the reader ----
+  useEffect(() => stopTTS, [])
 
   const current = chapters[chapterIndex]
   const safeHtml = useMemo(
     () => (current ? DOMPurify.sanitize(current.html, SANITIZE_CONFIG) : ''),
     [current]
   )
-
-  // ---- TTS ----
-  const toggleSpeak = () => {
-    if (typeof speechSynthesis === 'undefined') return
-    if (isSpeaking) {
-      speechSynthesis.cancel()
-      setIsSpeaking(false)
-      return
-    }
-    const text = htmlToPlainText(safeHtml)
-    if (!text) return
-    const utter = new SpeechSynthesisUtterance(text)
-    utter.lang = 'zh-CN'
-    utter.rate = 1.0
-    utter.onend = () => setIsSpeaking(false)
-    utter.onerror = () => setIsSpeaking(false)
-    speechSynthesis.speak(utter)
-    setIsSpeaking(true)
-  }
 
   const goToChapter = (idx: number) => {
     setChapterIndex(idx)
@@ -210,17 +212,34 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
             </div>
           )}
           {/* TTS */}
-          {chapters.length > 0 && typeof speechSynthesis !== 'undefined' && (
-            <button
-              onClick={toggleSpeak}
-              className={`rounded border px-2 py-1 text-xs ${
-                isSpeaking
-                  ? 'border-accent text-accent'
-                  : 'border-surface-border-strong hover:bg-bg-elevated'
-              }`}
-            >
-              {isSpeaking ? '停止朗读' : '朗读'}
-            </button>
+          {chapters.length > 0 && tts.supported && (
+            <div className="relative">
+              <button
+                onClick={() => {
+                  if (tts.speaking) {
+                    tts.stop()
+                    setTtsOpen(false)
+                    return
+                  }
+                  const text = htmlToPlainText(safeHtml)
+                  if (!text) return
+                  tts.speak(text)
+                  setTtsOpen(true)
+                }}
+                className={`rounded border px-2 py-1 text-xs ${
+                  tts.speaking
+                    ? 'border-accent text-accent'
+                    : 'border-surface-border-strong hover:bg-bg-elevated'
+                }`}
+              >
+                {tts.speaking ? '停止朗读' : '朗读'}
+              </button>
+              {ttsOpen && (
+                <div className="absolute right-0 top-full z-20 mt-1">
+                  <TTSControlPanel tts={tts} />
+                </div>
+              )}
+            </div>
           )}
           {/* Font size */}
           <button

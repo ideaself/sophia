@@ -17,6 +17,11 @@ export function HistoryView(): React.ReactElement {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
+  const [diaryMonths, setDiaryMonths] = useState<string[]>([])
+  const [openDiaryMonth, setOpenDiaryMonth] = useState<string | null>(null)
+  const [diaryMonthContent, setDiaryMonthContent] = useState<string | null>(null)
+  const [loadingDiary, setLoadingDiary] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const setView = useAppStore((s) => s.setView)
   const setLoadConversationId = useAppStore((s) => s.setLoadConversationId)
@@ -25,7 +30,26 @@ export function HistoryView(): React.ReactElement {
 
   useEffect(() => {
     window.sophia.data.listConversations(WORLD_ID).then(setConversations)
+    window.sophia.data.diary.listMonths(WORLD_ID).then(setDiaryMonths)
   }, [])
+
+  const handleToggleDiaryMonth = async (month: string) => {
+    if (openDiaryMonth === month) {
+      setOpenDiaryMonth(null)
+      setDiaryMonthContent(null)
+      return
+    }
+    setLoadingDiary(true)
+    setOpenDiaryMonth(month)
+    try {
+      const content = await window.sophia.data.diary.getMonth(month)
+      setDiaryMonthContent(content)
+    } catch {
+      setDiaryMonthContent(null)
+    } finally {
+      setLoadingDiary(false)
+    }
+  }
 
   const handleStartEdit = (conv: ConversationDTO) => {
     setEditingId(conv.id)
@@ -181,6 +205,66 @@ export function HistoryView(): React.ReactElement {
     await window.sophia.data.writeTextFile(result.filePath, content)
   }
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const allSelected = conversations.length > 0 && conversations.every((c) => selectedIds.has(c.id))
+
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(conversations.map((c) => c.id)))
+  }
+
+  const handleBatchExport = async () => {
+    if (selectedIds.size === 0) return
+    const selected = conversations.filter((c) => selectedIds.has(c.id))
+    const lines: string[] = [
+      '# 学习记录批量导出',
+      '',
+      `**导出时间**: ${new Date().toLocaleString()}`,
+      `**课程数**: ${selected.length}`,
+      ''
+    ]
+    for (const conv of selected) {
+      const msgs = await window.sophia.data.listMessages(conv.id)
+      const compName = companionMap[conv.companionId] ?? conv.companionId
+      lines.push(
+        '',
+        '---',
+        '',
+        `## ${conv.title}`,
+        '',
+        `**AI 角色**: ${compName}`,
+        `**对话时间**: ${new Date(conv.createdAt).toLocaleString()}`,
+        `**消息数**: ${msgs.length}`,
+        ''
+      )
+      for (const msg of msgs) {
+        const label = msg.role === 'user' ? '你' : msg.role === 'assistant' ? compName : '系统'
+        lines.push(`### ${label} — ${new Date(msg.createdAt).toLocaleString()}`)
+        lines.push('')
+        lines.push(msg.content)
+        lines.push('')
+      }
+    }
+
+    const content = lines.join('\n')
+    const result = await window.sophia.dialog.saveFile({
+      defaultPath: `学习记录_${new Date().toISOString().slice(0, 10)}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }]
+    })
+    if (result.canceled || !result.filePath) return
+    await window.sophia.data.writeTextFile(result.filePath, content)
+  }
+
   return (
     <div className="p-8">
       <h2 className="mb-6 text-2xl font-bold">学习历史</h2>
@@ -244,17 +328,82 @@ export function HistoryView(): React.ReactElement {
         </div>
       )}
 
+      <div className="mb-8">
+        <h3 className="mb-3 text-lg font-semibold">学习日记</h3>
+        {diaryMonths.length === 0 ? (
+          <p className="text-sm text-text-muted">还没有日记。每次下课后会自动按月份归档到 diary/YYYY-MM.md。</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {diaryMonths.map((month) => (
+              <button
+                key={month}
+                onClick={() => handleToggleDiaryMonth(month)}
+                className={`rounded border px-3 py-1.5 text-xs transition-colors ${
+                  openDiaryMonth === month
+                    ? 'border-accent bg-accent-subtle text-accent-hover'
+                    : 'border-surface-border-strong text-text-secondary hover:bg-bg-elevated'
+                }`}
+              >
+                {month}
+              </button>
+            ))}
+          </div>
+        )}
+        {openDiaryMonth && (
+          <div className="mt-3 max-h-[420px] overflow-auto rounded-lg border border-surface-border bg-bg-surface p-4">
+            <h4 className="mb-3 text-sm font-medium text-text-secondary">{openDiaryMonth}</h4>
+            {loadingDiary ? (
+              <p className="text-xs text-text-muted">加载中...</p>
+            ) : diaryMonthContent ? (
+              <div className="markdown-body text-sm text-text-secondary">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{diaryMonthContent}</ReactMarkdown>
+              </div>
+            ) : (
+              <p className="text-xs text-text-muted">该月暂无日记。</p>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="space-y-3">
-        <h3 className="text-lg font-semibold">所有课程</h3>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold">所有课程</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleSelectAll}
+              disabled={conversations.length === 0}
+              className="rounded border border-surface-border-strong px-3 py-1 text-xs text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
+            >
+              {allSelected ? '取消全选' : '全选'}
+            </button>
+            <button
+              onClick={handleBatchExport}
+              disabled={selectedIds.size === 0}
+              className="rounded bg-accent px-3 py-1 text-xs text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              导出选中 ({selectedIds.size})
+            </button>
+          </div>
+        </div>
         {conversations.map((conv) => (
           <div
             key={conv.id}
             className="rounded-lg border border-surface-border bg-bg-surface"
           >
-            <button
-              onClick={() => handleToggleMessages(conv.id)}
-              className="w-full p-4 text-left"
-            >
+            <div className="flex items-stretch">
+              <div className="flex items-center pl-3" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(conv.id)}
+                  onChange={() => toggleSelect(conv.id)}
+                  className="h-3.5 w-3.5"
+                  title="选择以批量导出"
+                />
+              </div>
+              <button
+                onClick={() => handleToggleMessages(conv.id)}
+                className="flex-1 p-4 text-left"
+              >
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   {editingId === conv.id ? (
@@ -322,7 +471,8 @@ export function HistoryView(): React.ReactElement {
                   </span>
                 </div>
               </div>
-            </button>
+              </button>
+            </div>
 
             {expandedId === conv.id && (
               <div className="border-t border-surface-border px-4 py-3 space-y-3 max-h-96 overflow-auto">
@@ -340,7 +490,12 @@ export function HistoryView(): React.ReactElement {
                                art.type === 'flashcards' ? '🃏 记忆卡片' :
                                art.type === 'diary' ? '📝 学习日记' :
                                art.type === 'progress' ? '📈 学习进展' :
-                               art.type === 'handoff_tail' ? '🔗 接力尾巴' : art.type}
+                               art.type === 'handoff_tail' ? '🔗 接力尾巴' :
+                               art.type === 'farewell' ? '👋 告别语' :
+                               art.type === 'learner_profile' ? '👤 学习者画像' :
+                               art.type === 'pal_moments' ? '💭 互动备忘' :
+                               art.type === 'relation' ? '💞 关系状态' :
+                               art.type === 'companion_note' ? '🤔 伙伴独白' : art.type}
                             </p>
                             <div className="markdown-body text-xs text-text-secondary max-h-32 overflow-auto">
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>

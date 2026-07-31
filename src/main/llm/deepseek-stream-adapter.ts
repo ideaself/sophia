@@ -63,39 +63,72 @@ export function createDeepSeekStreamAdapter(options?: {
       // The override comes from user-configured providers — enforce the
       // same HTTPS rule before the API key leaves the machine.
       assertHttpsEndpoint(endpoint)
-      const response = await fetchImpl(endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${params.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: params.model,
-          messages: params.messages,
-          stream: true,
-          stream_options: { include_usage: true }
-        }),
-        signal: params.signal
-      })
 
-      // ---------------------------------------------------------
-      // Non-2xx → map to AppError
-      // ---------------------------------------------------------
-      if (!response.ok) {
+      // Retry the initial HTTP connection on transient errors (429/500/503)
+      // before any data is streamed. Once streaming begins, retries are
+      // not possible (partial output has already been consumed).
+      const MAX_RETRIES = 2
+      let response: Response | null = null
+
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (params.signal?.aborted) {
+          const err = new Error('The operation was aborted')
+          err.name = 'AbortError'
+          throw err
+        }
+
+        try {
+          response = await fetchImpl(endpoint, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${params.apiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: params.model,
+              messages: params.messages,
+              stream: true,
+              stream_options: { include_usage: true },
+              ...(params.thinking ? { thinking: { type: 'enabled' } } : {})
+            }),
+            signal: params.signal
+          })
+        } catch (err) {
+          if (params.signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
+            throw err
+          }
+          if (attempt < MAX_RETRIES) {
+            await sleepWithAbort(1000 * Math.pow(2, attempt), params.signal)
+            continue
+          }
+          throw err
+        }
+
+        if (response.ok) break
+
+        // Non-2xx -> map to AppError, retry if transient
         let body: Record<string, unknown> | undefined
         try {
           body = (await response.json()) as Record<string, unknown>
         } catch {
-          // Body is not valid JSON — leave body undefined so the
+          // Body is not valid JSON - leave body undefined so the
           // fallback message is used.
         }
-        throw mapDeepSeekError(response.status, body)
+
+        const error = mapDeepSeekError(response.status, body)
+
+        if (error.retryable && attempt < MAX_RETRIES) {
+          await sleepWithAbort(1000 * Math.pow(2, attempt), params.signal)
+          continue
+        }
+
+        throw error
       }
 
       // ---------------------------------------------------------
-      // 2xx but no readable body → error
+      // 2xx but no readable body -> error
       // ---------------------------------------------------------
-      if (!response.body) {
+      if (!response || !response.body) {
         throw new AppError(
           'STREAM_ERROR',
           0,
@@ -146,6 +179,32 @@ export function createDeepSeekStreamAdapter(options?: {
       }
     }
   }
+}
+
+// ---------------------------------------------------------------
+// Retry helpers
+// ---------------------------------------------------------------
+
+/**
+ * Sleep for `ms`, rejecting early with an AbortError if `signal` fires.
+ * Used for exponential backoff between retry attempts.
+ */
+function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms))
+  if (signal.aborted) {
+    const err = new Error('The operation was aborted')
+    err.name = 'AbortError'
+    return Promise.reject(err)
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms)
+    signal.addEventListener('abort', () => {
+      clearTimeout(timer)
+      const err = new Error('The operation was aborted')
+      err.name = 'AbortError'
+      reject(err)
+    }, { once: true })
+  })
 }
 
 // ---------------------------------------------------------------

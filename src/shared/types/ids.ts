@@ -49,7 +49,12 @@ export const ArtifactType = {
   Flashcards: 'flashcards',
   Diary: 'diary',
   Progress: 'progress',
-  HandoffTail: 'handoff_tail'
+  HandoffTail: 'handoff_tail',
+  Farewell: 'farewell',
+  LearnerProfile: 'learner_profile',
+  PalMoments: 'pal_moments',
+  Relation: 'relation',
+  CompanionNote: 'companion_note'
 } as const
 export type ArtifactType = (typeof ArtifactType)[keyof typeof ArtifactType]
 

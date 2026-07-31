@@ -128,7 +128,7 @@ export const IpcDeleteMessageInputSchema = z.object({
 // --- IPC: Artifact (additional) ---
 
 export const IpcArtifactTypeSchema = z.enum([
-  'lesson_summary', 'flashcards', 'diary', 'progress', 'handoff_tail'
+  'lesson_summary', 'flashcards', 'diary', 'progress', 'handoff_tail', 'farewell', 'learner_profile', 'pal_moments', 'relation', 'companion_note'
 ])
 
 export const IpcGenerateArtifactInputSchema = z.object({
@@ -269,6 +269,27 @@ export const IpcConfirmDialogInputSchema = z.object({
   message: z.string().min(1),
   confirmLabel: z.string().min(1).optional(),
   cancelLabel: z.string().min(1).optional()
+})
+
+// --- IPC: Chat Prompt ---
+
+export const IpcChatPromptMessagesInputSchema = z.object({
+  conversationId: z.string().min(1),
+  companionId: z.string().min(1),
+  textbookId: z.string().nullable().optional(),
+  userMessage: z.string().min(1),
+  worldId: z.string().default('world_default')
+})
+
+// --- IPC: Diary ---
+
+export const IpcDiaryListMonthsInputSchema = z.object({
+  worldId: z.string().default('world_default')
+})
+
+export const IpcDiaryGetMonthInputSchema = z.object({
+  worldId: z.string().default('world_default'),
+  month: z.string().regex(/^\d{4}-\d{2}$/, 'Month must be in YYYY-MM format')
 })
 
 // --- IPC: Settings / API Key ---

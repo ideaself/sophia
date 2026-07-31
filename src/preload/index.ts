@@ -78,7 +78,7 @@ export interface ReadingNoteDTO {
 export interface ArtifactDTO {
   id: string
   conversationId: string
-  type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail'
+  type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note'
   content: string
   createdAt: string
 }
@@ -105,10 +105,12 @@ export interface SettingsAPI {
 export interface ChatAPI {
   startStream: (
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-    model?: string
+    model?: string,
+    thinking?: boolean
   ) => Promise<string>
   cancelStream: (sessionId: string) => Promise<void>
   onToken: (sessionId: string, callback: (token: string) => void) => () => void
+  onThinking: (sessionId: string, callback: (text: string) => void) => () => void
   onError: (sessionId: string, callback: (error: StreamErrorData) => void) => () => void
   onEnd: (sessionId: string, callback: (finishReason: string) => void) => () => void
   onUsage: (sessionId: string, callback: (usage: StreamUsageData) => void) => () => void
@@ -147,7 +149,7 @@ export interface DataAPI {
   deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
   listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
   searchMessages: (worldId: string, query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
-  endConversation: (conversationId: string, worldId?: string) => Promise<{ success: boolean; artifacts: number }>
+  endConversation: (conversationId: string, worldId?: string) => Promise<{ success: boolean; artifacts: number; farewell?: string }>
   createTextbook: (input: {
     worldId: string
     title: string
@@ -168,7 +170,7 @@ export interface DataAPI {
   deleteTextbook: (textbookId: string, worldId?: string) => Promise<boolean>
   createArtifact: (input: {
     conversationId: string
-    type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail'
+    type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note'
     content: string
     worldId?: string
   }) => Promise<ArtifactDTO>
@@ -189,6 +191,12 @@ export interface DataAPI {
   listReadingNotes: (textbookId: string, worldId?: string) => Promise<ReadingNoteDTO[]>
   updateReadingNote: (noteId: string, textbookId: string, updates: Record<string, unknown>, worldId?: string) => Promise<ReadingNoteDTO | null>
   deleteReadingNote: (noteId: string, textbookId: string, worldId?: string) => Promise<boolean>
+  getFlashcardSrsState: () => Promise<Record<string, unknown>>
+  saveFlashcardSrsState: (state: Record<string, unknown>) => Promise<{ success: boolean }>
+  diary: {
+    listMonths: (worldId?: string) => Promise<string[]>
+    getMonth: (month: string, worldId?: string) => Promise<string | null>
+  }
 }
 
 // ---------------------------------------------------------------
@@ -382,8 +390,8 @@ const sophia: SophiaAPI = {
     deleteDeepSeekKey: () => ipcRenderer.invoke('settings:delete-deepseek-key')
   },
   chat: {
-    startStream: (messages, model) =>
-      ipcRenderer.invoke(CHAT_STREAM_START, { messages, model }),
+    startStream: (messages, model, thinking) =>
+      ipcRenderer.invoke(CHAT_STREAM_START, { messages, model, thinking }),
 
     cancelStream: (sessionId: string) =>
       ipcRenderer.invoke(CHAT_STREAM_CANCEL, { sessionId }),
@@ -393,6 +401,13 @@ const sophia: SophiaAPI = {
         CHAT_STREAM_EVENT.token,
         sessionId,
         (payload) => callback(payload.token)
+      ),
+
+    onThinking: (sessionId: string, callback: (text: string) => void) =>
+      createEventSubscriber<{ text: string }>(
+        CHAT_STREAM_EVENT.thinking,
+        sessionId,
+        (payload) => callback(payload.text)
       ),
 
     onError: (sessionId: string, callback: (error: StreamErrorData) => void) =>
@@ -476,7 +491,13 @@ const sophia: SophiaAPI = {
     updateReadingNote: (noteId, textbookId, updates, worldId = 'world_default') =>
       ipcRenderer.invoke('reading-note:update', { noteId, textbookId, ...updates, worldId }),
     deleteReadingNote: (noteId, textbookId, worldId = 'world_default') =>
-      ipcRenderer.invoke('reading-note:delete', { noteId, textbookId, worldId })
+      ipcRenderer.invoke('reading-note:delete', { noteId, textbookId, worldId }),
+    getFlashcardSrsState: () => ipcRenderer.invoke('flashcard:get-srs-state'),
+    saveFlashcardSrsState: (state) => ipcRenderer.invoke('flashcard:save-srs-state', state),
+    diary: {
+      listMonths: (worldId = 'world_default') => ipcRenderer.invoke('diary:list-months', { worldId }),
+      getMonth: (month, worldId = 'world_default') => ipcRenderer.invoke('diary:get-month', { worldId, month })
+    }
   },
   companions: {
     list: () => ipcRenderer.invoke('companion:list'),

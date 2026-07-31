@@ -64,6 +64,50 @@ export function learnerPath(
   return join(worldDir(dataRoot, worldId, profileId), 'learner.md')
 }
 
+export function palMomentsPath(
+  dataRoot: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(worldDir(dataRoot, worldId, profileId), 'pal_moments.md')
+}
+
+export function relationPath(
+  dataRoot: string,
+  companionId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(worldDir(dataRoot, worldId, profileId), `relation_${companionId}.md`)
+}
+
+export function handoffMetaPath(
+  dataRoot: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(worldDir(dataRoot, worldId, profileId), 'handoff_meta.json')
+}
+
+export function diaryDir(
+  dataRoot: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(worldDir(dataRoot, worldId, profileId), 'diary')
+}
+
+export function diaryPath(
+  dataRoot: string,
+  month: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  // month is expected as "YYYY-MM"; sanitize to prevent path traversal.
+  const safeMonth = /^\d{4}-\d{2}$/.test(month) ? month : 'unknown'
+  return join(diaryDir(dataRoot, worldId, profileId), `${safeMonth}.md`)
+}
+
 export function companionDir(
   dataRoot: string,
   worldId: string = DEFAULT_WORLD_ID,

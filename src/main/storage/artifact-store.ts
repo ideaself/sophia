@@ -7,7 +7,7 @@ import { ArtifactType } from '../../shared/types/ids'
 import { artifactsDir, artifactPath } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
 
-type ArtifactTypeValue = 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail'
+type ArtifactTypeValue = 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note'
 
 let idCounter = 0
 

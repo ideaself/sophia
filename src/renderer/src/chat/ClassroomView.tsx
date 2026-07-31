@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { useChatStream } from './useChatStream'
-import { ChatMessage } from './ChatMessage'
+import { ChatMessage, type MessageHighlight } from './ChatMessage'
+import { stopTTS } from '../hooks/useTTS'
 import { loadTabs, saveTabs, serializeTabs } from '../../../shared/tab-persistence'
 
 interface Companion {
@@ -35,8 +37,19 @@ interface TabState {
   messages: DisplayMessage[]
   input: string
   retryMessage: { input: string; convId: string } | null
-  endResult: { artifacts: number } | null
+  endResult: { artifacts: number; farewell?: string } | null
 }
+
+type MessageRow =
+  | {
+      kind: 'message'
+      key: string
+      msg: DisplayMessage
+      showThinking: boolean
+      highlight: MessageHighlight
+    }
+  | { kind: 'error'; key: string }
+  | { kind: 'end'; key: string }
 
 const WORLD_ID = 'world_default'
 
@@ -73,9 +86,16 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const [sendError, setSendError] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const loadedIdRef = useRef<string | null>(null)
+  // In-conversation search (Ctrl+F)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [matchIndex, setMatchIndex] = useState(0)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  // Scroll behavior: stick to the bottom unless the user scrolls up
+  const [stickToBottom, setStickToBottom] = useState(true)
   // Mirror of `tabs` for async callbacks — the render-closure `tabs` goes
   // stale inside .then() chains that run after later re-renders.
   const tabsRef = useRef(tabs)
@@ -195,15 +215,89 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     }
   }, [companion?.id, activeIdx])
 
-  // Auto-scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [activeTab.messages, chatStream.state.assistantContent])
+  // Stop any TTS playback when leaving the classroom view.
+  useEffect(() => stopTTS, [])
 
-  // Tab switching - update input/messages
+  // Track whether the user is pinned to the bottom of the message list.
+  // Stops auto-scrolling once the user scrolls up to read earlier content.
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+    setStickToBottom(nearBottom)
+  }, [])
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false)
+    setSearchQuery('')
+    setMatchIndex(0)
+    // Re-evaluate the scroll anchor based on the actual position, since
+    // match navigation may have scrolled away from the bottom.
+    const el = scrollRef.current
+    if (el) {
+      setStickToBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 48)
+    }
+  }, [])
+
+  // Tab switching - update input/messages and reset scroll anchor
   useEffect(() => {
     setSendError(null)
+    setStickToBottom(true)
   }, [activeIdx])
+
+  // Close the in-conversation search with Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeSearch()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [closeSearch])
+
+  // Keyboard shortcuts: Ctrl+T new tab, Ctrl+Shift+W close tab,
+  // Ctrl+Tab / Ctrl+Shift+Tab switch tabs
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!e.ctrlKey) return
+
+      if (e.key === 't' && !e.shiftKey) {
+        e.preventDefault()
+        setTabs((prev) => [...prev, makeTab()])
+        setActiveIdx(tabs.length)
+        return
+      }
+
+      if (e.key === 'w' && e.shiftKey) {
+        e.preventDefault()
+        if (tabs.length <= 1) return
+        const newIdx = activeIdx >= tabs.length - 1 ? activeIdx - 1 : activeIdx
+        setTabs((prev) => prev.filter((_, i) => i !== activeIdx))
+        setActiveIdx(Math.max(0, newIdx))
+        return
+      }
+
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        if (tabs.length <= 1) return
+        if (e.shiftKey) {
+          setActiveIdx(activeIdx === 0 ? tabs.length - 1 : activeIdx - 1)
+        } else {
+          setActiveIdx(activeIdx === tabs.length - 1 ? 0 : activeIdx + 1)
+        }
+      }
+
+      if (e.key === 'f' && !e.shiftKey) {
+        e.preventDefault()
+        setSearchOpen(true)
+        requestAnimationFrame(() => searchInputRef.current?.focus())
+        return
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [tabs, activeIdx])
 
   const handleSend = async (retryInput?: string) => {
     const tab = tabs[activeIdx]
@@ -269,6 +363,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         { id: `local-${Date.now()}`, role: 'user', content: userMessage }
       ]
       updateTab(activeIdx, { messages: updatedMessages, input: '', retryMessage: null })
+      setStickToBottom(true)
 
       let builtMessages
       try {
@@ -284,7 +379,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         return
       }
 
-      await chatStream.send(builtMessages)
+      const thinkingEnabled = localStorage.getItem('sophia.thinkingEnabled') === '1'
+      await chatStream.send(builtMessages, undefined, thinkingEnabled)
 
       const endPromise = chatStream.streamEnd
       if (endPromise) {
@@ -338,7 +434,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     try {
       const result = await window.sophia.data.endConversation(activeTab.conversationId, WORLD_ID)
       if (result.success) {
-        updateTab(activeIdx, { endResult: { artifacts: result.artifacts }, conversationId: null, messages: [] })
+        updateTab(activeIdx, { endResult: { artifacts: result.artifacts, farewell: result.farewell }, conversationId: null, messages: [] })
       }
     } finally {
       setIsLoading(false)
@@ -439,6 +535,107 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       content: chatStream.state.assistantContent
     })
   }
+
+  // ---- In-conversation search (Ctrl+F) ----
+  const searchMatches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return []
+    const matches: number[] = []
+    allMessages.forEach((m, i) => {
+      if (m.content.toLowerCase().includes(q)) matches.push(i)
+    })
+    return matches
+  }, [allMessages, searchQuery])
+
+  const goToMatch = useCallback((dir: 1 | -1) => {
+    if (searchMatches.length === 0) return
+    setMatchIndex((prev) => {
+      const clamped = Math.min(prev, searchMatches.length - 1)
+      return (clamped + dir + searchMatches.length) % searchMatches.length
+    })
+  }, [searchMatches.length])
+
+  // Reset the current match when the query changes
+  useEffect(() => {
+    setMatchIndex(0)
+  }, [searchQuery])
+
+  // ---- Virtualized message rows ----
+  const rows = useMemo<MessageRow[]>(() => {
+    const q = searchQuery.trim().toLowerCase()
+    const currentIdx = searchMatches.length > 0 ? Math.min(matchIndex, searchMatches.length - 1) : -1
+    const out: MessageRow[] = allMessages.map((msg, idx) => ({
+      kind: 'message',
+      key: msg.id,
+      msg,
+      showThinking:
+        idx === allMessages.length - 1 &&
+        msg.role === 'assistant' &&
+        chatStream.state.reasoningContent.length > 0,
+      highlight:
+        q.length > 0 && msg.content.toLowerCase().includes(q)
+          ? searchMatches[currentIdx] === idx
+            ? 'current'
+            : 'match'
+          : 'none'
+    }))
+    if (chatStream.state.error || sendError) {
+      out.push({ kind: 'error', key: 'row-error' })
+    }
+    if (activeTab.endResult) {
+      out.push({ kind: 'end', key: 'row-end' })
+    }
+    return out
+  }, [
+    allMessages,
+    searchQuery,
+    searchMatches,
+    matchIndex,
+    chatStream.state.reasoningContent,
+    chatStream.state.error,
+    sendError,
+    activeTab.endResult
+  ])
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 120,
+    overscan: 10,
+    getItemKey: (index) => rows[index].key
+  })
+
+  // Auto-scroll to the newest message while pinned to the bottom.
+  useEffect(() => {
+    if (!stickToBottom || rows.length === 0) return
+    const el = scrollRef.current
+    if (!el) return
+    virtualizer.scrollToOffset(virtualizer.getTotalSize(), { align: 'end' })
+    // Re-scroll once the newly mounted bottom rows have been measured —
+    // `getTotalSize()` is only an estimate until then.
+    const raf = requestAnimationFrame(() => {
+      virtualizer.measure()
+      virtualizer.scrollToOffset(virtualizer.getTotalSize(), { align: 'end' })
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [activeTab.messages, chatStream.state.assistantContent, stickToBottom, rows.length])
+
+  // Scroll the current search match into view.
+  useEffect(() => {
+    if (searchMatches.length === 0) return
+    const target = searchMatches[Math.min(matchIndex, searchMatches.length - 1)]
+    setStickToBottom(false)
+    virtualizer.scrollToIndex(target, { align: 'center' })
+  }, [matchIndex, searchMatches])
+
+  // Pin to the bottom when a new stream starts.
+  const prevStreamingRef = useRef(false)
+  useEffect(() => {
+    if (chatStream.state.isStreaming && !prevStreamingRef.current) {
+      setStickToBottom(true)
+    }
+    prevStreamingRef.current = chatStream.state.isStreaming
+  }, [chatStream.state.isStreaming])
 
   if (!companion) {
     return (
@@ -547,56 +744,144 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         </div>
       </div>
 
+      {/* In-conversation search (Ctrl+F) */}
+      {searchOpen && (
+        <div className="flex items-center gap-2 border-b border-surface-border bg-bg-surface px-4 py-1.5">
+          <span className="text-xs text-text-muted">🔍</span>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                goToMatch(e.shiftKey ? -1 : 1)
+              }
+              if (e.key === 'Escape') {
+                closeSearch()
+              }
+            }}
+            placeholder="搜索本对话..."
+            className="w-44 rounded border border-surface-border-strong bg-bg-deep px-2 py-1 text-xs text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
+          />
+          <span className="w-14 text-right text-xs tabular-nums text-text-muted">
+            {searchMatches.length > 0
+              ? `${Math.min(matchIndex, searchMatches.length - 1) + 1}/${searchMatches.length}`
+              : '0/0'}
+          </span>
+          <button
+            onClick={() => goToMatch(-1)}
+            disabled={searchMatches.length === 0}
+            className="rounded px-1.5 py-0.5 text-xs text-text-muted hover:bg-bg-elevated hover:text-text-secondary disabled:opacity-40"
+            title="上一个 (Shift+Enter)"
+          >
+            ↑
+          </button>
+          <button
+            onClick={() => goToMatch(1)}
+            disabled={searchMatches.length === 0}
+            className="rounded px-1.5 py-0.5 text-xs text-text-muted hover:bg-bg-elevated hover:text-text-secondary disabled:opacity-40"
+            title="下一个 (Enter)"
+          >
+            ↓
+          </button>
+          <button
+            onClick={closeSearch}
+            className="rounded px-1.5 py-0.5 text-xs text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
+            title="关闭搜索 (Esc)"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Messages */}
-      <div className="flex-1 overflow-auto p-6 space-y-4">
-        {allMessages.length === 0 && (
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto p-6">
+        {rows.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-center text-text-muted">
               开始和 <span className="text-text-secondary">{companion.name}</span> 对话吧。
-              <br />
+               <br />
               试着提出一个你想探讨的问题。
             </p>
           </div>
-        )}
-        {allMessages.map((msg) => (
-          <ChatMessage
-            key={msg.id}
-            id={msg.id}
-            role={msg.role}
-            content={msg.content}
-            showActions={!chatStream.state.isStreaming && msg.role !== 'system'}
-            onEdit={handleEditMessage}
-            onDelete={handleDeleteMessage}
-            onRegenerate={handleRegenerate}
-          />
-        ))}
-        {(chatStream.state.error || sendError) && (
-          <div className="rounded border border-red-800 bg-red-900/30 px-4 py-3 text-sm text-red-300">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">发送失败</p>
-                <p className="mt-1 text-xs text-red-400">{sendError ?? chatStream.state.error?.message}</p>
-              </div>
-              {activeTab.retryMessage && (
-                <button
-                  onClick={() => handleSend(activeTab.retryMessage!.input)}
-                  className="rounded bg-red-800 px-3 py-1 text-xs text-red-200 hover:bg-red-700"
+        ) : (
+          <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+            {virtualizer.getVirtualItems().map((vi) => {
+              const row = rows[vi.index]
+              return (
+                <div
+                  key={vi.key}
+                  data-index={vi.index}
+                  ref={virtualizer.measureElement}
+                  className="pb-4"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${vi.start}px)`
+                  }}
                 >
-                  重试
-                </button>
-              )}
-            </div>
+                  {row.kind === 'message' && (
+                    <>
+                      {row.showThinking && (
+                        <details className="mb-2 rounded border border-surface-border bg-bg-surface/60 px-3 py-2">
+                          <summary className="cursor-pointer select-none text-xs text-text-muted hover:text-text-secondary">
+                            🧠 思考过程 {chatStream.state.isStreaming && <span className="text-amber-400 animate-pulse">(进行中...)</span>}
+                          </summary>
+                          <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-text-secondary">
+                            {chatStream.state.reasoningContent}
+                          </p>
+                        </details>
+                      )}
+                      <ChatMessage
+                        id={row.msg.id}
+                        role={row.msg.role}
+                        content={row.msg.content}
+                        showActions={!chatStream.state.isStreaming && row.msg.role !== 'system'}
+                        highlight={row.highlight}
+                        onEdit={handleEditMessage}
+                        onDelete={handleDeleteMessage}
+                        onRegenerate={handleRegenerate}
+                      />
+                    </>
+                  )}
+                  {row.kind === 'error' && (
+                    <div className="rounded border border-red-800 bg-red-900/30 px-4 py-3 text-sm text-red-300">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">发送失败</p>
+                          <p className="mt-1 text-xs text-red-400">{sendError ?? chatStream.state.error?.message}</p>
+                        </div>
+                        {activeTab.retryMessage && (
+                          <button
+                            onClick={() => handleSend(activeTab.retryMessage!.input)}
+                            className="rounded bg-red-800 px-3 py-1 text-xs text-red-200 hover:bg-red-700"
+                          >
+                            重试
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {row.kind === 'end' && activeTab.endResult && (
+                    <div className="rounded border border-green-800 bg-green-900/30 px-4 py-3 text-sm text-green-300">
+                      <p className="font-medium">课程已结束</p>
+                      {activeTab.endResult.farewell && (
+                        <p className="mt-2 text-sm text-green-200 italic">{activeTab.endResult.farewell}</p>
+                      )}
+                      <p className="mt-1 text-xs text-green-400">
+                        已自动生成 {activeTab.endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
-        {activeTab.endResult && (
-          <div className="rounded border border-green-800 bg-green-900/30 px-4 py-3 text-sm text-green-300">
-            <p className="font-medium">课程已结束</p>
-            <p className="mt-1 text-xs text-green-400">
-              已自动生成 {activeTab.endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
-            </p>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}

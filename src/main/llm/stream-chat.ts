@@ -21,6 +21,7 @@ import type {
   DeepSeekStreamChunk,
   StreamEvent,
   StreamTokenEvent,
+  StreamThinkingEvent,
   StreamErrorEvent,
   StreamEndEvent,
   StreamUsageEvent,
@@ -131,6 +132,14 @@ export class StreamChatSession {
           this.emitToken(deltaContent)
         }
 
+        // Extract reasoning delta (DeepSeek thinking mode) — surfaced to
+        // the UI as a collapsible "thinking process" view, never shown as
+        // the final answer.
+        const reasoningContent = chunk.choices?.[0]?.delta?.reasoning_content
+        if (reasoningContent) {
+          this.emitThinking(reasoningContent)
+        }
+
         // Track finish reason (take first non-null)
         const chunkFinishReason = chunk.choices?.[0]?.finish_reason
         if (!this.finished && chunkFinishReason !== null && chunkFinishReason !== undefined) {
@@ -201,6 +210,11 @@ export class StreamChatSession {
 
   private emitToken(token: string): void {
     const event: StreamTokenEvent = { type: 'token', token }
+    this.emit(event)
+  }
+
+  private emitThinking(text: string): void {
+    const event: StreamThinkingEvent = { type: 'thinking', text }
     this.emit(event)
   }
 

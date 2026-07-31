@@ -37,8 +37,14 @@ export interface StreamUsageEvent {
   totalTokens: number
 }
 
+export interface StreamThinkingEvent {
+  type: 'thinking'
+  text: string
+}
+
 export type StreamEvent =
   | StreamTokenEvent
+  | StreamThinkingEvent
   | StreamErrorEvent
   | StreamEndEvent
   | StreamUsageEvent
@@ -55,7 +61,7 @@ export type StreamEvent =
  */
 export interface DeepSeekStreamChunk {
   choices?: Array<{
-    delta?: { content?: string }
+    delta?: { content?: string; reasoning_content?: string }
     finish_reason?: string | null
   }>
   usage?: {
@@ -77,6 +83,12 @@ export interface DeepSeekStreamParams {
   _endpoint?: string
   /** AbortSignal for true cancellation. The adapter MUST observe this. */
   signal?: AbortSignal
+  /**
+   * Enable DeepSeek thinking mode. When true the request body includes
+   * `{ "thinking": { "type": "enabled" } }` and the stream may carry
+   * `reasoning_content` deltas alongside `content`.
+   */
+  thinking?: boolean
 }
 
 /**

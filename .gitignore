@@ -17,3 +17,4 @@ Thumbs.db
 /*.pdf
 /diag-*.mjs
 /diag-*.js
+/.codex-write-test.tmp

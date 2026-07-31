@@ -5,6 +5,8 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
 import mermaid from 'mermaid'
+import { useTTS, stripMarkdown } from '../hooks/useTTS'
+import { TTSControlPanel } from '../components/TTSControlPanel'
 
 mermaid.initialize({
   startOnLoad: false,
@@ -12,11 +14,15 @@ mermaid.initialize({
   securityLevel: 'loose'
 })
 
+export type MessageHighlight = 'none' | 'match' | 'current'
+
 interface ChatMessageProps {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
   showActions?: boolean
+  /** In-conversation search highlight state. */
+  highlight?: MessageHighlight
   onEdit?: (id: string, content: string) => void
   onDelete?: (id: string) => void
   onRegenerate?: (id: string) => void
@@ -70,66 +76,70 @@ function CopyButton({ text }: { text: string }) {
 }
 
 function SpeakButton({ text }: { text: string }) {
-  const [speaking, setSpeaking] = useState(false)
+  const tts = useTTS('zh-CN')
+  const [open, setOpen] = useState(false)
 
+  // Close the control panel when the utterance finishes or is stopped.
   useEffect(() => {
-    return () => {
-      if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel()
-    }
-  }, [])
+    if (!tts.speaking) setOpen(false)
+  }, [tts.speaking])
 
-  const handleClick = useCallback(() => {
-    if (typeof speechSynthesis === 'undefined') return
-    if (speaking) {
-      speechSynthesis.cancel()
-      setSpeaking(false)
+  if (!tts.supported) return null
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (tts.speaking) {
+      tts.stop()
+      setOpen(false)
       return
     }
-    const plain = text
-      .replace(/^#{1,6}\s+/gm, '')
-      .replace(/\*\*(.+?)\*\*/g, '$1')
-      .replace(/\*(.+?)\*/g, '$1')
-      .replace(/`{1,3}(.+?)`{1,3}/g, '$1')
-      .replace(/\[(.+?)\]\(.+?\)/g, '$1')
-      .replace(/^\s*[-*+]\s+/gm, '')
-      .replace(/^\s*\d+\.\s+/gm, '')
-      .replace(/^\s*>\s+/gm, '')
-      .replace(/\|/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
-    if (!plain) return
-    const utter = new SpeechSynthesisUtterance(plain)
-    utter.lang = 'zh-CN'
-    utter.rate = 1.0
-    utter.onend = () => setSpeaking(false)
-    utter.onerror = () => setSpeaking(false)
-    speechSynthesis.cancel()
-    speechSynthesis.speak(utter)
-    setSpeaking(true)
-  }, [text, speaking])
-
-  if (typeof speechSynthesis === 'undefined') return null
+    tts.speak(stripMarkdown(text))
+    setOpen(true)
+  }
 
   return (
-    <button
-      onClick={(e) => { e.stopPropagation(); handleClick() }}
-      className={`text-xs px-1 transition-colors ${
-        speaking
-          ? 'text-accent'
-          : 'text-text-muted hover:text-text-secondary'
-      }`}
-      title={speaking ? '停止朗读' : '朗读'}
-    >
-      {speaking ? '⏹️' : '🔊'}
-    </button>
+    <div className="relative">
+      <button
+        onClick={handleClick}
+        className={`text-xs px-1 transition-colors ${
+          tts.speaking
+            ? 'text-accent'
+            : 'text-text-muted hover:text-text-secondary'
+        }`}
+        title={tts.speaking ? '停止朗读' : '朗读'}
+      >
+        {tts.speaking ? '⏹️' : '🔊'}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1">
+          <TTSControlPanel tts={tts} />
+        </div>
+      )}
+    </div>
   )
 }
 
-export function ChatMessage({ id, role, content, showActions, onEdit, onDelete, onRegenerate }: ChatMessageProps): React.ReactElement {
+export function ChatMessage({
+  id,
+  role,
+  content,
+  showActions,
+  highlight = 'none',
+  onEdit,
+  onDelete,
+  onRegenerate
+}: ChatMessageProps): React.ReactElement {
   const isUser = role === 'user'
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(content)
   const editRef = useRef<HTMLTextAreaElement>(null)
+
+  const highlightClasses =
+    highlight === 'current'
+      ? 'ring-2 ring-amber-400'
+      : highlight === 'match'
+        ? 'ring-1 ring-amber-400/50'
+        : ''
 
   useEffect(() => {
     if (editing && editRef.current) {
@@ -183,7 +193,7 @@ export function ChatMessage({ id, role, content, showActions, onEdit, onDelete, 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} group`}>
       <div
-        className={`max-w-[80%] rounded-lg px-4 py-3 ${
+        className={`max-w-[80%] rounded-lg px-4 py-3 ${highlightClasses} ${
           isUser
             ? 'bg-accent text-white'
             : 'bg-bg-elevated text-text-primary'

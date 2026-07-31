@@ -204,6 +204,30 @@ describe('DeepSeekStreamAdapter — request construction', () => {
     expect(body.stream_options).toEqual({ include_usage: true })
   })
 
+  it('adds thinking.enabled to the body when params.thinking is true', async () => {
+    const { fetchFn, calls } = mockFetch(200, [
+      sseLines([sseData({ choices: [{ delta: { content: 'Hi' } }] }), 'data: [DONE]'])
+    ])
+
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
+    await collectChunks(adapter, streamParams({ thinking: true }))
+
+    const body = JSON.parse(calls[0].init!.body as string) as Record<string, unknown>
+    expect(body.thinking).toEqual({ type: 'enabled' })
+  })
+
+  it('omits thinking from the body when params.thinking is false/undefined', async () => {
+    const { fetchFn, calls } = mockFetch(200, [
+      sseLines([sseData({ choices: [{ delta: { content: 'Hi' } }] }), 'data: [DONE]'])
+    ])
+
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
+    await collectChunks(adapter, streamParams())
+
+    const body = JSON.parse(calls[0].init!.body as string) as Record<string, unknown>
+    expect(body.thinking).toBeUndefined()
+  })
+
   it('passes params.signal to fetch when provided', async () => {
     const { fetchFn, calls } = mockFetch(200, [
       sseLines([sseData({ choices: [{ delta: { content: 'Hi' } }] }), 'data: [DONE]'])

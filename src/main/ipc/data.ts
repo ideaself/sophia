@@ -1,8 +1,13 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { join, dirname } from 'node:path'
+import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { CompanionSchema } from '../../shared/schemas/companion'
+import { readWorldData } from '../storage/world-store'
 import { ConversationStore } from '../storage/conversation-store'
 import { TextbookStore } from '../storage/textbook-store'
 import { ArtifactStore } from '../storage/artifact-store'
 import { ReadingNoteStore } from '../storage/reading-note-store'
+import { DiaryStore } from '../storage/diary-store'
 import type { ProviderStore } from '../storage/provider-store'
 import { generateArtifacts } from '../artifacts/generate'
 import { extractText, getEpubChapters } from '../parsers'
@@ -40,21 +45,33 @@ import {
   IpcWriteTextFileInputSchema,
   IpcOpenFileDialogInputSchema,
   IpcSaveFileDialogInputSchema,
-  IpcConfirmDialogInputSchema
+  IpcConfirmDialogInputSchema,
+  IpcDiaryListMonthsInputSchema,
+  IpcDiaryGetMonthInputSchema
 } from '../../shared/schemas/ipc'
 import { ArtifactType, type WorldId, type ConversationId } from '../../shared/types/ids'
 
 /** In-app reader loads the whole file into memory — cap it. */
 const MAX_ORIGINAL_SIZE = 512 * 1024 * 1024
 
+/** Structured handoff metadata persisted to handoff_meta.json. */
+interface HandoffMetaEntry {
+  savedAt: string
+  prevConvId: string
+  companionName: string
+  companionSlot: 'a' | 'b' | 'c' | null
+  endingPage: number | null
+}
+
 export function registerConversationIpc(
   dataRoot: string,
   providerStore?: ProviderStore
-): { conversationStore: ConversationStore; textbookStore: TextbookStore; artifactStore: ArtifactStore; readingNoteStore: ReadingNoteStore } {
+): { conversationStore: ConversationStore; textbookStore: TextbookStore; artifactStore: ArtifactStore; readingNoteStore: ReadingNoteStore; diaryStore: DiaryStore } {
   const conversationStore = new ConversationStore(dataRoot)
   const textbookStore = new TextbookStore(dataRoot)
   const artifactStore = new ArtifactStore(dataRoot)
   const readingNoteStore = new ReadingNoteStore(dataRoot)
+  const diaryStore = new DiaryStore(dataRoot)
   const pickedFiles = new PickedFileRegistry()
 
   // --- Conversation CRUD ---
@@ -121,27 +138,144 @@ export function registerConversationIpc(
         const messages = await conversationStore.getMessages(conversationId, worldId)
         const { results, failures } = await generateArtifacts(messages, { apiKey, model, baseUrl })
         let progressContent = ''
+        let farewellContent = ''
+        let learnerProfileContent = ''
+        let palMomentsContent = ''
+        let relationContent = ''
+        let handoffTailContent = ''
+        let diaryContent = ''
         for (const result of results) {
+          if (result.type === ArtifactType.Farewell) {
+            farewellContent = result.content
+            artifactCount++
+            continue
+          }
+          if (result.type === ArtifactType.LearnerProfile) {
+            learnerProfileContent = result.content
+            artifactCount++
+            continue
+          }
+          if (result.type === ArtifactType.PalMoments) {
+            palMomentsContent = result.content
+            artifactCount++
+            continue
+          }
+          if (result.type === ArtifactType.Relation) {
+            relationContent = result.content
+            artifactCount++
+            continue
+          }
           await artifactStore.create(conversationId as ConversationId, worldId as WorldId, result.type, result.content)
           artifactCount++
           if (result.type === ArtifactType.Progress) {
             progressContent = result.content
           }
+          if (result.type === ArtifactType.HandoffTail) {
+            handoffTailContent = result.content
+          }
+          if (result.type === ArtifactType.Diary) {
+            diaryContent = result.content
+          }
         }
 
+        // Load conversation to get companionId for relation file
+        const conv = await conversationStore.get(conversationId, worldId)
+
         // Writeback: save progress artifact content to textbook progress
-        if (progressContent) {
-          const conv = await conversationStore.get(conversationId, worldId)
-          if (conv?.textbookId) {
-            await textbookStore.updateProgress(conv.textbookId, worldId, {
-              lastPosition: progressContent
+        if (progressContent && conv?.textbookId) {
+          await textbookStore.updateProgress(conv.textbookId, worldId, {
+            lastPosition: progressContent
+          })
+        }
+
+        // Writeback: save learner profile to learner.md
+        if (learnerProfileContent) {
+          try {
+            const { writeFile: wf } = await import('node:fs/promises')
+            const { learnerPath: lp } = await import('../storage/app-data')
+            await wf(lp(dataRoot, worldId), learnerProfileContent, 'utf-8')
+          } catch (err) {
+            console.warn(`Failed to write learner profile for ${conversationId}:`, err)
+          }
+        }
+
+        // Writeback: prepend pal moments entry to pal_moments.md
+        if (palMomentsContent) {
+          try {
+            const { readFile: rf, writeFile: wf } = await import('node:fs/promises')
+            const { palMomentsPath: pmp } = await import('../storage/app-data')
+            const filePath = pmp(dataRoot, worldId)
+            let existing = ''
+            try { existing = await rf(filePath, 'utf-8') } catch { /* file doesn't exist yet */ }
+            const merged = palMomentsContent + (existing ? '\n\n---\n\n' + existing : '')
+            await wf(filePath, merged, 'utf-8')
+          } catch (err) {
+            console.warn(`Failed to write pal moments for ${conversationId}:`, err)
+          }
+        }
+
+        // Writeback: save relation state to relation_{companionId}.md
+        if (relationContent && conv?.companionId) {
+          try {
+            const { writeFile: wf } = await import('node:fs/promises')
+            const { relationPath: rp } = await import('../storage/app-data')
+            await wf(rp(dataRoot, conv.companionId, worldId), relationContent, 'utf-8')
+          } catch (err) {
+            console.warn(`Failed to write relation state for ${conversationId}:`, err)
+          }
+        }
+
+        // Writeback: save structured handoff metadata (handoff_meta.json)
+        // so the next session can locate the handoff tail precisely instead
+        // of guessing by companionId + endedAt sorting.
+        if (handoffTailContent && conv) {
+          try {
+            const { handoffMetaPath: hmp } = await import('../storage/app-data')
+            const filePath = hmp(dataRoot, worldId)
+            let meta: Record<string, HandoffMetaEntry> = {}
+            try { meta = JSON.parse(await readFile(filePath, 'utf-8')) } catch { /* no meta yet */ }
+            const worldData = await readWorldData(dataRoot, worldId)
+            const slots = worldData?.world.companionSlots ?? { a: null, b: null, c: null }
+            const slot = (Object.entries(slots).find(([, id]) => id === conv.companionId)?.[0] ?? null) as 'a' | 'b' | 'c' | null
+            const companionName = (await readCompanionName(dataRoot, conv.companionId)) ?? conv.companionId
+            let endingPage: number | null = null
+            if (conv.textbookId) {
+              const tb = await textbookStore.get(conv.textbookId, worldId)
+              endingPage = tb?.progress.currentPage ?? null
+            }
+            meta[conv.companionId] = {
+              savedAt: new Date().toISOString(),
+              prevConvId: conversationId,
+              companionName,
+              companionSlot: slot,
+              endingPage
+            }
+            await mkdir(dirname(filePath), { recursive: true })
+            await writeFile(filePath, JSON.stringify(meta, null, 2), 'utf-8')
+          } catch (err) {
+            console.warn(`Failed to write handoff meta for ${conversationId}:`, err)
+          }
+        }
+
+        // Writeback: append the diary to the monthly diary file (diary/YYYY-MM.md)
+        if (diaryContent && conv) {
+          try {
+            const companionName = (await readCompanionName(dataRoot, conv.companionId)) ?? conv.companionId
+            await diaryStore.append(worldId, {
+              date: new Date().toISOString(),
+              companionName,
+              content: diaryContent
             })
+          } catch (err) {
+            console.warn(`Failed to append diary for ${conversationId}:`, err)
           }
         }
 
         if (failures.length > 0) {
           console.warn(`Artifact generation failures for ${conversationId}:`, failures)
         }
+
+        return { success: true, artifacts: artifactCount, farewell: farewellContent }
       }
     } catch (err) {
       console.error(`Artifact generation error for ${conversationId}:`, err)
@@ -254,6 +388,11 @@ export function registerConversationIpc(
         { name: '文本', extensions: ['txt'] }
       ]
     })
+
+    if (!result.canceled && result.filePath) {
+      pickedFiles.add(result.filePath)
+    }
+
     return result
   })
 
@@ -421,10 +560,58 @@ export function registerConversationIpc(
 
   ipcMain.handle('file:writeText', async (_event, input: unknown) => {
     const parsed = IpcWriteTextFileInputSchema.parse(input)
+    if (!pickedFiles.has(parsed.filePath)) {
+      throw new Error('Target file must be selected through the save dialog')
+    }
     const { writeFile } = await import('node:fs/promises')
     await writeFile(parsed.filePath, parsed.content, 'utf-8')
     return { success: true }
   })
 
-  return { conversationStore, textbookStore, artifactStore, readingNoteStore }
+  // --- Flashcard SRS State (persisted for WebDAV sync) ---
+
+  const srsStatePath = join(dataRoot, 'flashcard-srs.json')
+
+  ipcMain.handle('flashcard:get-srs-state', async () => {
+    try {
+      const { readFile } = await import('node:fs/promises')
+      const raw = await readFile(srsStatePath, 'utf-8')
+      return JSON.parse(raw)
+    } catch {
+      return {}
+    }
+  })
+
+  ipcMain.handle('flashcard:save-srs-state', async (_event, input: unknown) => {
+    const { writeFile, mkdir } = await import('node:fs/promises')
+    await mkdir(dataRoot, { recursive: true })
+    await writeFile(srsStatePath, JSON.stringify(input), 'utf-8')
+    return { success: true }
+  })
+
+  // --- Diary (monthly files) ---
+
+  ipcMain.handle('diary:list-months', async (_event, input: unknown) => {
+    const parsed = IpcDiaryListMonthsInputSchema.parse(input)
+    return diaryStore.listMonths(parsed.worldId)
+  })
+
+  ipcMain.handle('diary:get-month', async (_event, input: unknown) => {
+    const parsed = IpcDiaryGetMonthInputSchema.parse(input)
+    return diaryStore.getMonth(parsed.worldId, parsed.month)
+  })
+
+  return { conversationStore, textbookStore, artifactStore, readingNoteStore, diaryStore }
+}
+
+async function readCompanionName(dataRoot: string, companionId: string): Promise<string | null> {
+  try {
+    const { companionDir } = await import('../storage/app-data')
+    const indexPath = join(companionDir(dataRoot), 'index.json')
+    const content = await readFile(indexPath, 'utf-8')
+    const companions = CompanionSchema.array().parse(JSON.parse(content)) as Array<{ id: string; name: string }>
+    return companions.find((c) => c.id === companionId)?.name ?? null
+  } catch {
+    return null
+  }
 }

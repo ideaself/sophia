@@ -13,6 +13,7 @@ export const CHAT_STREAM_CANCEL = 'chat:stream-cancel' as const
 
 export const CHAT_STREAM_EVENT = {
   token: 'chat:stream:token',
+  thinking: 'chat:stream:thinking',
   error: 'chat:stream:error',
   end: 'chat:stream:end',
   usage: 'chat:stream:usage'

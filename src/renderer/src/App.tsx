@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { ClassroomView } from './chat/ClassroomView'
 import { useChatStream } from './chat/useChatStream'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
@@ -75,13 +76,20 @@ function App(): React.ReactElement {
 
   useEffect(() => {
     if (!showClassroomDropdown) return
-    const handler = (e: MouseEvent) => {
+    const clickHandler = (e: MouseEvent) => {
       if (classroomDropdownRef.current && !classroomDropdownRef.current.contains(e.target as Node)) {
         setShowClassroomDropdown(false)
       }
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowClassroomDropdown(false)
+    }
+    document.addEventListener('mousedown', clickHandler)
+    document.addEventListener('keydown', keyHandler)
+    return () => {
+      document.removeEventListener('mousedown', clickHandler)
+      document.removeEventListener('keydown', keyHandler)
+    }
   }, [showClassroomDropdown])
 
   const handleResumeConversation = async (conv: ActiveConversation) => {
@@ -215,18 +223,20 @@ function App(): React.ReactElement {
       )}
 
       <main className="flex-1 overflow-auto">
-        {view === 'settings' && <SettingsView />}
-        {view === 'companions' && <CompanionsManageView />}
-        {view === 'textbooks' && <TextbooksView />}
-        {view === 'history' && <HistoryView />}
-        {view === 'flashcards' && <FlashcardReviewView />}
-        {view === 'stats' && <StatsView />}
-        {view === 'classroom' && (
-          <div key={classroomResetKey} className="h-full">
-            <ClassroomView companion={selectedCompanion} textbook={selectedTextbook} chatStream={chatStream}
-              loadConversationId={loadConversationId} onConversationLoaded={onConversationLoaded} />
-          </div>
-        )}
+        <ErrorBoundary>
+          {view === 'settings' && <SettingsView />}
+          {view === 'companions' && <CompanionsManageView />}
+          {view === 'textbooks' && <TextbooksView />}
+          {view === 'history' && <HistoryView />}
+          {view === 'flashcards' && <FlashcardReviewView />}
+          {view === 'stats' && <StatsView />}
+          {view === 'classroom' && (
+            <div key={classroomResetKey} className="h-full">
+              <ClassroomView companion={selectedCompanion} textbook={selectedTextbook} chatStream={chatStream}
+                loadConversationId={loadConversationId} onConversationLoaded={onConversationLoaded} />
+            </div>
+          )}
+        </ErrorBoundary>
       </main>
 
       {(editingCompanion || isCreatingCompanion) && (

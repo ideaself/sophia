@@ -4,10 +4,12 @@ declare global {
   interface ChatAPI {
     startStream: (
       messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-      model?: string
+      model?: string,
+      thinking?: boolean
     ) => Promise<string>
     cancelStream: (sessionId: string) => Promise<void>
     onToken: (sessionId: string, callback: (token: string) => void) => () => void
+    onThinking: (sessionId: string, callback: (text: string) => void) => () => void
     onError: (sessionId: string, callback: (error: { code: string; message: string }) => void) => () => void
     onEnd: (sessionId: string, callback: (finishReason: string) => void) => () => void
     onUsage: (sessionId: string, callback: (usage: { promptTokens: number; completionTokens: number; totalTokens: number }) => void) => () => void
@@ -80,7 +82,7 @@ declare global {
   interface ArtifactDTO {
     id: string
     conversationId: string
-    type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail'
+    type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note'
     content: string
     createdAt: string
   }
@@ -132,7 +134,7 @@ declare global {
     deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
     listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
     searchMessages: (worldId: string, query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
-    endConversation: (conversationId: string, worldId?: string) => Promise<{ success: boolean; artifacts: number }>
+    endConversation: (conversationId: string, worldId?: string) => Promise<{ success: boolean; artifacts: number; farewell?: string }>
     createTextbook: (input: {
       worldId: string
       title: string
@@ -149,7 +151,7 @@ declare global {
     deleteTextbook: (textbookId: string, worldId?: string) => Promise<boolean>
     createArtifact: (input: {
       conversationId: string
-      type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail'
+      type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note'
       content: string
       worldId?: string
     }) => Promise<ArtifactDTO>
@@ -170,6 +172,12 @@ declare global {
     listReadingNotes: (textbookId: string, worldId?: string) => Promise<ReadingNoteDTO[]>
     updateReadingNote: (noteId: string, textbookId: string, updates: Record<string, unknown>, worldId?: string) => Promise<ReadingNoteDTO | null>
     deleteReadingNote: (noteId: string, textbookId: string, worldId?: string) => Promise<boolean>
+    getFlashcardSrsState: () => Promise<Record<string, unknown>>
+    saveFlashcardSrsState: (state: Record<string, unknown>) => Promise<{ success: boolean }>
+    diary: {
+      listMonths: (worldId?: string) => Promise<string[]>
+      getMonth: (month: string, worldId?: string) => Promise<string | null>
+    }
   }
 
   interface CompanionAPI {

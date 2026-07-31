@@ -105,12 +105,12 @@ export function truncateToBudget(text: string, maxTokens: number): string {
 /**
  * Window conversation history to fit within a token budget.
  *
- * Keeps the most recent messages while respecting the budget.
- * System messages at the start are always preserved and their token
- * cost is excluded from the budget calculation (system prompt is
- * handled separately by the caller).
+ * Keeps the most recent messages while respecting the budget.  The caller
+ * (chat-prompt.ts) already filters out system messages before passing
+ * history to buildMessages, so this function operates on user/assistant
+ * messages only.
  *
- * @param messages   Full conversation history.
+ * @param messages   Conversation history (user + assistant only).
  * @param maxTokens  Maximum allowed tokens for windowed history.
  * @returns          Windowed messages (most recent fit within budget).
  */
@@ -120,17 +120,11 @@ export function windowMessages(
 ): DeepSeekChatMessage[] {
   if (messages.length === 0) return []
 
-  // Separate system messages — they are preserved
-  const systemMsgs = messages.filter(m => m.role === 'system')
-  const nonSystemMsgs = messages.filter(m => m.role !== 'system')
-
-  // Walk backwards from the most recent non-system message,
-  // accumulating until we hit the budget
   const windowed: DeepSeekChatMessage[] = []
   let budgetUsed = 0
 
-  for (let i = nonSystemMsgs.length - 1; i >= 0; i--) {
-    const msg = nonSystemMsgs[i]
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
     const msgTokens = estimateTokens(msg.content)
 
     if (budgetUsed + msgTokens > maxTokens && windowed.length > 0) {
@@ -143,6 +137,5 @@ export function windowMessages(
     if (budgetUsed >= maxTokens) break
   }
 
-  // Prepend system messages (they were at the start)
-  return [...systemMsgs, ...windowed]
+  return windowed
 }

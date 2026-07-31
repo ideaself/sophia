@@ -57,16 +57,21 @@ export function StatsView(): React.ReactElement {
 
           const date = new Date(conv.createdAt).toLocaleDateString('zh-CN')
           dailyMap[date] = (dailyMap[date] ?? 0) + 1
+        }
 
-          try {
-            const msgs = await window.sophia.data.listMessages(conv.id) as MessageDTO[]
-            msgCount += msgs.length
-          } catch { /* skip */ }
-
-          try {
-            const arts = await window.sophia.data.listArtifacts(conv.id) as ArtifactDTO[]
-            artCount += arts.length
-          } catch { /* skip */ }
+        // Parallel-load messages and artifacts for all conversations
+        const counts = await Promise.all(
+          convs.map(async (conv) => {
+            const [msgs, arts] = await Promise.all([
+              window.sophia.data.listMessages(conv.id).then((m) => (m as MessageDTO[]).length).catch(() => 0),
+              window.sophia.data.listArtifacts(conv.id).then((a) => (a as ArtifactDTO[]).length).catch(() => 0)
+            ])
+            return { msgs, arts }
+          })
+        )
+        for (const c of counts) {
+          msgCount += c.msgs
+          artCount += c.arts
         }
 
         setTotalMessages(msgCount)

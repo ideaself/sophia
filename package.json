@@ -2,6 +2,7 @@
   "name": "sophia",
   "version": "0.1.0",
   "description": "SophiaLocal: AI Socratic learning companion",
+  "author": "Sophia",
   "main": "./out/main/index.js",
   "build": {
     "appId": "com.sophia.sophialocal",
@@ -14,6 +15,7 @@
       "reference/**/*"
     ],
     "win": {
+      "icon": "build/icon.png",
       "target": [
         {
           "target": "nsis",
@@ -43,6 +45,7 @@
     "test": "npm run typecheck && npm run test:unit && npm run test:security"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.14.9",
     "dompurify": "^3.4.12",
     "epub": "^2.1.1",
     "katex": "^0.18.1",

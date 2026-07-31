@@ -35,6 +35,7 @@ interface FakeChatAPIOptions {
 
 interface CapturedCallbacks {
   tokenCallbacks: Map<string, (token: string) => void>
+  thinkingCallbacks: Map<string, (text: string) => void>
   errorCallbacks: Map<string, (error: StreamError) => void>
   endCallbacks: Map<string, (finishReason: string) => void>
   usageCallbacks: Map<string, (usage: StreamUsage) => void>
@@ -53,6 +54,7 @@ function createFakeChatAPI(
 
   const captured: CapturedCallbacks = {
     tokenCallbacks: new Map(),
+    thinkingCallbacks: new Map(),
     errorCallbacks: new Map(),
     endCallbacks: new Map(),
     usageCallbacks: new Map(),
@@ -103,6 +105,12 @@ function createFakeChatAPI(
       return makeUnsubscribe('token', sid)
     },
 
+    onThinking(sid: string, callback: (text: string) => void): () => void {
+      captured.thinkingCallbacks.set(`${sid}`, callback)
+      captured.activeSubscribers++
+      return makeUnsubscribe('thinking', sid)
+    },
+
     onError(sid: string, callback: (error: StreamError) => void): () => void {
       captured.errorCallbacks.set(`${sid}`, callback)
       captured.activeSubscribers++
@@ -147,6 +155,7 @@ describe('createChatStreamController', () => {
     expect(controller.state.isStreaming).toBe(false)
     expect(controller.state.error).toBeNull()
     expect(controller.state.assistantContent).toBe('')
+    expect(controller.state.reasoningContent).toBe('')
     expect(controller.state.usage).toBeNull()
   })
 
@@ -167,13 +176,14 @@ describe('createChatStreamController', () => {
     expect(fake.captured.startCallCount).toBe(1)
   })
 
-  it('send() subscribes to token, error, end, and usage events', async () => {
+  it('send() subscribes to token, thinking, error, end, and usage events', async () => {
     await controller.send(testMessages)
     expect(fake.captured.tokenCallbacks.size).toBe(1)
+    expect(fake.captured.thinkingCallbacks.size).toBe(1)
     expect(fake.captured.errorCallbacks.size).toBe(1)
     expect(fake.captured.endCallbacks.size).toBe(1)
     expect(fake.captured.usageCallbacks.size).toBe(1)
-    expect(fake.captured.activeSubscribers).toBe(4)
+    expect(fake.captured.activeSubscribers).toBe(5)
   })
 
   it('send() with startDelay keeps isStreaming true until resolved', async () => {
@@ -218,6 +228,21 @@ describe('createChatStreamController', () => {
 
     tokenCb!('!')
     expect(controller.state.assistantContent).toBe('Hello world!')
+  })
+
+  // --- Thinking events ---
+
+  it('thinking callback appends to reasoningContent', async () => {
+    await controller.send(testMessages)
+
+    const thinkingCb = fake.captured.thinkingCallbacks.get('fake-session-001')
+    expect(thinkingCb).toBeDefined()
+
+    thinkingCb!('Let me think')
+    expect(controller.state.reasoningContent).toBe('Let me think')
+
+    thinkingCb!(' step by step')
+    expect(controller.state.reasoningContent).toBe('Let me think step by step')
   })
 
   // --- Usage events ---

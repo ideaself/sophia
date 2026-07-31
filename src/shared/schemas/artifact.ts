@@ -15,7 +15,12 @@ const artifactTypeSchema = z.enum([
   ArtifactType.Flashcards,
   ArtifactType.Diary,
   ArtifactType.Progress,
-  ArtifactType.HandoffTail
+  ArtifactType.HandoffTail,
+  ArtifactType.Farewell,
+  ArtifactType.LearnerProfile,
+  ArtifactType.PalMoments,
+  ArtifactType.Relation,
+  ArtifactType.CompanionNote
 ])
 
 const isoDatetime = z.string().datetime({ offset: true })

@@ -27,9 +27,10 @@ export interface StreamUsage {
 }
 
 export interface ChatAPI {
-  startStream: (messages: ChatMessage[], model?: string) => Promise<string>
+  startStream: (messages: ChatMessage[], model?: string, thinking?: boolean) => Promise<string>
   cancelStream: (sessionId: string) => Promise<void>
   onToken: (sessionId: string, callback: (token: string) => void) => () => void
+  onThinking: (sessionId: string, callback: (text: string) => void) => () => void
   onError: (sessionId: string, callback: (error: StreamError) => void) => () => void
   onEnd: (sessionId: string, callback: (finishReason: string) => void) => () => void
   onUsage: (sessionId: string, callback: (usage: StreamUsage) => void) => () => void
@@ -40,12 +41,13 @@ export interface ChatStreamState {
   isStreaming: boolean
   error: StreamError | null
   assistantContent: string
+  reasoningContent: string
   usage: StreamUsage | null
 }
 
 export interface CreateChatStreamControllerResult {
   readonly state: ChatStreamState
-  send(messages: ChatMessage[], model?: string): Promise<void>
+  send(messages: ChatMessage[], model?: string, thinking?: boolean): Promise<void>
   cancel(): Promise<void>
   /** Promise that resolves when the current stream ends. null if not streaming. */
   readonly streamEnd: Promise<{ content: string; finishReason: string }> | null
@@ -62,6 +64,7 @@ export function createChatStreamController(
     isStreaming: false,
     error: null,
     assistantContent: '',
+    reasoningContent: '',
     usage: null
   }
 
@@ -78,6 +81,7 @@ export function createChatStreamController(
       isStreaming: state.isStreaming,
       error: state.error,
       assistantContent: state.assistantContent,
+      reasoningContent: state.reasoningContent,
       usage: state.usage
     })
   }
@@ -87,6 +91,7 @@ export function createChatStreamController(
     if ('isStreaming' in partial) state.isStreaming = partial.isStreaming ?? false
     if ('error' in partial) state.error = partial.error ?? null
     if ('assistantContent' in partial) state.assistantContent = partial.assistantContent ?? ''
+    if ('reasoningContent' in partial) state.reasoningContent = partial.reasoningContent ?? ''
     if ('usage' in partial) state.usage = partial.usage ?? null
     notify()
   }
@@ -105,6 +110,7 @@ export function createChatStreamController(
       isStreaming: true,
       error: null,
       assistantContent: '',
+      reasoningContent: '',
       usage: null
     })
   }
@@ -123,13 +129,15 @@ export function createChatStreamController(
       isStreaming: false,
       error: null,
       assistantContent: '',
+      reasoningContent: '',
       usage: null
     })
   }
 
   async function send(
     messages: ChatMessage[],
-    model?: string
+    model?: string,
+    thinking?: boolean
   ): Promise<void> {
     // Cancel any in-flight stream
     if (state.sessionId !== null) {
@@ -145,7 +153,7 @@ export function createChatStreamController(
 
     let sessionId: string
     try {
-      sessionId = await api.startStream(messages, model)
+      sessionId = await api.startStream(messages, model, thinking)
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Unknown stream start error'
@@ -167,6 +175,10 @@ export function createChatStreamController(
     // Subscribe to stream events
     const unsubToken = api.onToken(sessionId, (token: string) => {
       update({ assistantContent: state.assistantContent + token })
+    })
+
+    const unsubThinking = api.onThinking(sessionId, (text: string) => {
+      update({ reasoningContent: state.reasoningContent + text })
     })
 
     const unsubError = api.onError(sessionId, (err: StreamError) => {
@@ -191,7 +203,7 @@ export function createChatStreamController(
       update({ usage })
     })
 
-    unsubscribers = [unsubToken, unsubError, unsubEnd, unsubUsage]
+    unsubscribers = [unsubToken, unsubThinking, unsubError, unsubEnd, unsubUsage]
   }
 
   return {
@@ -201,6 +213,7 @@ export function createChatStreamController(
         isStreaming: state.isStreaming,
         error: state.error,
         assistantContent: state.assistantContent,
+        reasoningContent: state.reasoningContent,
         usage: state.usage
       }
     },

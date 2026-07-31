@@ -42,6 +42,10 @@ export interface BuildSystemPromptParams {
   textbookContent?: string
   /** Optional handoff tail from the previous session with this companion */
   handoffTail?: string
+  /** Optional pal moments (cross-session teaching interaction notes) */
+  palMoments?: string
+  /** Optional relationship state between this companion and the learner */
+  relationState?: string
   /** Optional teaching-coach assessment segment (pre-formatted string) */
   teachingCoachAssessment?: string
   /** Token budget for textbook content (default: 2000) */
@@ -141,6 +145,26 @@ function buildHandoffSegment(tail: string): string {
   ].join('\n')
 }
 
+function buildPalMomentsSegment(content: string): string {
+  return [
+    '## 教学互动备忘',
+    '',
+    '以下是以往课堂中记录的关键教学互动，帮助你了解学习者的历史表现：',
+    '',
+    wrapUserContent(content.trim())
+  ].join('\n')
+}
+
+function buildRelationSegment(content: string): string {
+  return [
+    '## 与学习者的关系',
+    '',
+    '以下是你与学习者当前的关系状态描述：',
+    '',
+    wrapUserContent(content.trim())
+  ].join('\n')
+}
+
 function buildFormatRulesSegment(language: string): string {
   return [
     getNarrationRules(),
@@ -168,7 +192,7 @@ function genderLabel(gender: string): string {
 /**
  * Build the full system prompt for a Socratic teaching session.
  *
- * The prompt is assembled from 6 segments joined by `\n\n---\n\n`.
+ * The prompt is assembled from up to 10 segments joined by `\n\n---\n\n`.
  * Textbook content is truncated to `maxTextbookTokens` if provided.
  */
 export function buildSystemPrompt(params: BuildSystemPromptParams): string {
@@ -178,6 +202,8 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
     learnerInfo,
     textbookContent,
     handoffTail,
+    palMoments,
+    relationState,
     maxTextbookTokens = 2000,
     language = 'zh'
   } = params
@@ -202,6 +228,16 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   // Optional handoff tail from previous session
   if (handoffTail) {
     segments.push(buildHandoffSegment(handoffTail))
+  }
+
+  // Optional pal moments (cross-session teaching notes)
+  if (palMoments) {
+    segments.push(buildPalMomentsSegment(palMoments))
+  }
+
+  // Optional relationship state
+  if (relationState) {
+    segments.push(buildRelationSegment(relationState))
   }
 
   // Optional teaching-coach assessment (pre-formatted by teaching-coach.ts)
