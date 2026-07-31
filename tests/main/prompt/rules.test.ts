@@ -4,7 +4,9 @@ import {
   getNarrationRules,
   getEndClassRule,
   getPageNavigationRule,
-  getTeachingLanguageRule
+  getTeachingLanguageRule,
+  getContextFirstRules,
+  getPlainDialogueRules
 } from '../../../src/main/prompt/rules'
 
 describe('getSocraticRules', () => {
@@ -74,8 +76,73 @@ describe('getNarrationRules', () => {
     expect(rules).toMatch(/✗.*我挑|绝不用.*我/)
   })
 
+  it('requires exactly one question per message', () => {
+    const rules = getNarrationRules()
+    expect(rules).toMatch(/只问一个问题/)
+  })
+
+  it('forbids forcing a false either-or when several answers coexist', () => {
+    const rules = getNarrationRules()
+    expect(rules).toMatch(/非此即彼|二选一/)
+  })
+
   it('matches snapshot', () => {
     expect(getNarrationRules()).toMatchSnapshot()
+  })
+})
+
+describe('getContextFirstRules', () => {
+  it('returns a non-empty string', () => {
+    const rules = getContextFirstRules()
+    expect(rules.length).toBeGreaterThan(0)
+  })
+
+  it('requires establishing context before asking', () => {
+    const rules = getContextFirstRules()
+    expect(rules).toMatch(/情境先行/)
+    expect(rules).toMatch(/背景|上下文/)
+  })
+
+  it('forbids assuming the learner has read the textbook', () => {
+    const rules = getContextFirstRules()
+    expect(rules).toMatch(/不要假设学习者已经读过教材|永远不要假设学习者已经读过教材/)
+  })
+
+  it('requires honest handling of passing mentions in the textbook', () => {
+    const rules = getContextFirstRules()
+    expect(rules).toMatch(/只是提及|并未展开/)
+  })
+
+  it('offers learner choices for passing mentions', () => {
+    const rules = getContextFirstRules()
+    expect(rules).toMatch(/概述/)
+    expect(rules).toMatch(/跳到教材真正展开/)
+  })
+
+  it('matches snapshot', () => {
+    expect(getContextFirstRules()).toMatchSnapshot()
+  })
+})
+
+describe('getPlainDialogueRules', () => {
+  it('returns a non-empty string', () => {
+    const rules = getPlainDialogueRules()
+    expect(rules.length).toBeGreaterThan(0)
+  })
+
+  it('forbids narration/action descriptions', () => {
+    const rules = getPlainDialogueRules()
+    expect(rules).toMatch(/不要输出任何旁白|不要使用单星号/)
+  })
+
+  it('keeps the single-question and length limits', () => {
+    const rules = getPlainDialogueRules()
+    expect(rules).toMatch(/只问一个问题/)
+    expect(rules).toMatch(/120/)
+  })
+
+  it('matches snapshot', () => {
+    expect(getPlainDialogueRules()).toMatchSnapshot()
   })
 })
 

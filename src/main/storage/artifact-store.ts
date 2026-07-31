@@ -7,7 +7,7 @@ import { ArtifactType } from '../../shared/types/ids'
 import { artifactsDir, artifactPath } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
 
-type ArtifactTypeValue = 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note'
+type ArtifactTypeValue = 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note'
 
 let idCounter = 0
 
@@ -81,5 +81,30 @@ export class ArtifactStore {
     }
 
     return artifacts.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  }
+
+  /**
+   * Replace an artifact's content in place (keeps id / createdAt).
+   * Returns the updated artifact, or null when it does not exist.
+   */
+  async update(
+    artifactId: string,
+    conversationId: string,
+    worldId: string,
+    content: string
+  ): Promise<Artifact | null> {
+    const filePath = artifactPath(this.dataRoot, conversationId, artifactId, worldId)
+    let existing: Artifact
+    try {
+      const raw = await readFile(filePath, 'utf-8')
+      existing = ArtifactSchema.parse(JSON.parse(raw)) as unknown as Artifact
+    } catch (err) {
+      if (!isNotFoundError(err)) warnReadFailure(`artifact ${artifactId}`, err)
+      return null
+    }
+
+    const updated: Artifact = { ...existing, content }
+    await writeFile(filePath, JSON.stringify(updated, null, 2), 'utf-8')
+    return updated
   }
 }

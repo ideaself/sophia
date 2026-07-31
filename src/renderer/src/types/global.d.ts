@@ -19,6 +19,8 @@ declare global {
       textbookId?: string | null
       userMessage: string
       worldId?: string
+      classMode?: 'standard' | 'feynman'
+      hideNarration?: boolean
     }) => Promise<Array<{ role: 'system' | 'user' | 'assistant'; content: string }>>
   }
 
@@ -82,7 +84,7 @@ declare global {
   interface ArtifactDTO {
     id: string
     conversationId: string
-    type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note'
+    type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note'
     content: string
     createdAt: string
   }
@@ -134,7 +136,8 @@ declare global {
     deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
     listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
     searchMessages: (worldId: string, query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
-    endConversation: (conversationId: string, worldId?: string) => Promise<{ success: boolean; artifacts: number; farewell?: string }>
+    endConversation: (conversationId: string, worldId?: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[] }>
+    redoArtifacts: (conversationId: string, types: string[], worldId?: string) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
     createTextbook: (input: {
       worldId: string
       title: string
@@ -151,11 +154,12 @@ declare global {
     deleteTextbook: (textbookId: string, worldId?: string) => Promise<boolean>
     createArtifact: (input: {
       conversationId: string
-      type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note'
+      type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note'
       content: string
       worldId?: string
     }) => Promise<ArtifactDTO>
     getArtifact: (artifactId: string, conversationId: string, worldId?: string) => Promise<ArtifactDTO | null>
+    updateArtifact: (artifactId: string, conversationId: string, content: string, worldId?: string) => Promise<ArtifactDTO | null>
     listArtifacts: (conversationId: string, worldId?: string) => Promise<ArtifactDTO[]>
     generateArtifacts: (conversationId: string, apiKey: string, worldId?: string) => Promise<{ count: number; types: string[] }>
     updateTextbookProgress: (textbookId: string, progress: { currentPage?: number; totalPages?: number | null; readingPercentage?: number; lastPosition?: string }, worldId?: string) => Promise<TextbookDTO | null>

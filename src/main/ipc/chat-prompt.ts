@@ -14,6 +14,7 @@ import type { WorldId } from '../../shared/types/ids'
 import { IpcChatPromptMessagesInputSchema } from '../../shared/schemas/ipc'
 import { compressMessages, shouldCompress, splitCompressionWindow } from '../prompt/message-compressor'
 import { analyzeTeaching, shouldAnalyze, formatAssessment, type TeachingCoachAssessment } from '../prompt/teaching-coach'
+import { retrievePassages, formatPassages } from '../prompt/textbook-retrieval'
 import type { ProviderStore } from '../storage/provider-store'
 
 // ---------------------------------------------------------------
@@ -62,9 +63,12 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
 
     // 3. Load textbook content
     let textbookContent: string | undefined
+    let textbookTitle: string | undefined
     if (params.textbookId) {
       textbookContent = await textbookStore.getContent(params.textbookId, params.worldId)
       textbookContent = textbookContent || undefined
+      const tb = await textbookStore.get(params.textbookId, params.worldId)
+      textbookTitle = tb?.title
     }
 
     // 4. Load handoff tail from the most recent ended conversation with the same companion
@@ -177,12 +181,33 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
     // token budget so the AI gets more context from later chapters.
     const isSecondHalf = coachEntry?.contentProgress === 'second_half'
 
+    // 7b. Cross-chapter retrieval — find relevant passages anywhere in the
+    // textbook from the recent conversation + current message. Deterministic,
+    // no extra LLM call.
+    let relatedTextbook: string | undefined
+    if (textbookContent) {
+      const recentTexts = [
+        ...history.slice(-6).map((m) => m.content),
+        params.userMessage
+      ]
+      const passages = retrievePassages(textbookContent, recentTexts, {
+        maxPassages: 3,
+        maxExcerptChars: 300
+      })
+      if (passages.length > 0) {
+        relatedTextbook = formatPassages(passages, textbookTitle)
+      }
+    }
+
     // 8. Build messages with system prompt
     const builtMessages = buildMessages({
       companion,
       worldContext,
       learnerInfo,
       textbookContent,
+      relatedTextbook,
+      classMode: params.classMode ?? 'standard',
+      hideNarration: params.hideNarration,
       handoffTail,
       palMoments,
       relationState,

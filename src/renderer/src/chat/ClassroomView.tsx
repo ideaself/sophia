@@ -34,10 +34,11 @@ interface TabState {
   id: string
   title: string
   conversationId: string | null
+  classMode: 'standard' | 'feynman'
   messages: DisplayMessage[]
   input: string
   retryMessage: { input: string; convId: string } | null
-  endResult: { artifacts: number; farewell?: string } | null
+  endResult: { artifacts: number; farewell?: string; failures?: string[]; conversationId?: string } | null
 }
 
 type MessageRow =
@@ -53,6 +54,29 @@ type MessageRow =
 
 const WORLD_ID = 'world_default'
 
+const MATH_SYMBOL_GROUPS: Array<{ id: string; label: string; items: string[] }> = [
+  {
+    id: 'greek',
+    label: '希腊字母',
+    items: ['α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'ο', 'π', 'ρ', 'σ', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω', 'Γ', 'Δ', 'Θ', 'Λ', 'Ξ', 'Π', 'Σ', 'Φ', 'Ψ', 'Ω']
+  },
+  {
+    id: 'ops',
+    label: '运算符号',
+    items: ['+', '−', '×', '÷', '±', '∓', '=', '≠', '≈', '<', '>', '≤', '≥', '∞', '∂', '∇', '∫', '∬', '∑', '∏', '√', '∛', '∜', '%', '‰']
+  },
+  {
+    id: 'sets',
+    label: '集合逻辑',
+    items: ['∈', '∉', '⊂', '⊃', '⊆', '⊇', '∪', '∩', '∅', '∧', '∨', '¬', '→', '⇒', '↔', '⇔', '∀', '∃', '∴', '∵', '∥', '⊥']
+  },
+  {
+    id: 'templates',
+    label: '公式模板',
+    items: ['\\frac{a}{b}', '\\sqrt{x}', 'x^{2}', 'x_{i}', '\\sum_{i=1}^{n}', '\\int_{a}^{b}', '\\lim_{x \\to 0}', '\\overrightarrow{AB}', '\\begin{cases} ... \\end{cases}']
+  }
+]
+
 let tabCounter = 0
 function newTabId(): string {
   tabCounter += 1
@@ -64,6 +88,7 @@ function makeTab(conversationId?: string, title?: string): TabState {
     id: newTabId(),
     title: title ?? '新对话',
     conversationId: conversationId ?? null,
+    classMode: 'standard',
     messages: [],
     input: '',
     retryMessage: null,
@@ -83,6 +108,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   )
   const [activeIdx, setActiveIdx] = useState(() => initialTabs?.activeIdx ?? 0)
   const [isLoading, setIsLoading] = useState(false)
+  const [redoing, setRedoing] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
@@ -94,6 +120,12 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const [searchQuery, setSearchQuery] = useState('')
   const [matchIndex, setMatchIndex] = useState(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  // Math symbol quick-insert panel
+  const [mathOpen, setMathOpen] = useState(false)
+  const [mathTab, setMathTab] = useState('greek')
+  const mathRef = useRef<HTMLDivElement>(null)
+  // Shortcut cheat sheet (Ctrl+/)
+  const [showShortcuts, setShowShortcuts] = useState(false)
   // Scroll behavior: stick to the bottom unless the user scrolls up
   const [stickToBottom, setStickToBottom] = useState(true)
   // Mirror of `tabs` for async callbacks — the render-closure `tabs` goes
@@ -161,6 +193,18 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const setActiveTabInput = useCallback((val: string) => {
     updateTab(activeIdx, { input: val })
   }, [activeIdx, updateTab])
+
+  const insertIntoInput = useCallback((text: string) => {
+    const el = inputRef.current
+    const start = el?.selectionStart ?? activeTab.input.length
+    const end = el?.selectionEnd ?? activeTab.input.length
+    setActiveTabInput(activeTab.input.slice(0, start) + text + activeTab.input.slice(end))
+    requestAnimationFrame(() => {
+      const pos = start + text.length
+      inputRef.current?.setSelectionRange(pos, pos)
+      inputRef.current?.focus()
+    })
+  }, [activeTab.input, setActiveTabInput])
 
   // Load conversation from history
   useEffect(() => {
@@ -250,17 +294,39 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         closeSearch()
+        setMathOpen(false)
+        setShowShortcuts(false)
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [closeSearch])
 
+  // Close the math panel when clicking outside it
+  useEffect(() => {
+    if (!mathOpen) return
+    const handler = (e: MouseEvent) => {
+      if (mathRef.current && !mathRef.current.contains(e.target as Node)) {
+        setMathOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [mathOpen])
+
   // Keyboard shortcuts: Ctrl+T new tab, Ctrl+Shift+W close tab,
   // Ctrl+Tab / Ctrl+Shift+Tab switch tabs
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!e.ctrlKey) return
+
+      // Shortcuts never fire while the user is typing in an input/textarea,
+      // so they can't interrupt a message in progress (Ctrl+F and Ctrl+/
+      // are still allowed — they are deliberate read-only actions).
+      const target = e.target as HTMLElement | null
+      const isTyping = !!target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      if (isTyping && e.key !== 'f' && e.key !== '/') return
 
       if (e.key === 't' && !e.shiftKey) {
         e.preventDefault()
@@ -292,6 +358,12 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         e.preventDefault()
         setSearchOpen(true)
         requestAnimationFrame(() => searchInputRef.current?.focus())
+        return
+      }
+
+      if (e.key === '/' && !e.shiftKey) {
+        e.preventDefault()
+        setShowShortcuts((v) => !v)
         return
       }
     }
@@ -367,12 +439,15 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
       let builtMessages
       try {
+        const hideNarration = localStorage.getItem('sophia.hideNarration') === '1'
         builtMessages = await window.sophia.chat.getPromptMessages({
           conversationId: convId,
           companionId: companion.id,
           textbookId: textbook?.id ?? null,
           userMessage,
-          worldId: WORLD_ID
+          worldId: WORLD_ID,
+          classMode: tab.classMode,
+          hideNarration
         })
       } catch {
         setSendError('无法加载角色数据，请重新选择学习伙伴')
@@ -432,12 +507,48 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     if (!activeTab.conversationId) return
     setIsLoading(true)
     try {
-      const result = await window.sophia.data.endConversation(activeTab.conversationId, WORLD_ID)
+      const result = await window.sophia.data.endConversation(
+        activeTab.conversationId,
+        WORLD_ID,
+        activeTab.classMode
+      )
       if (result.success) {
-        updateTab(activeIdx, { endResult: { artifacts: result.artifacts, farewell: result.farewell }, conversationId: null, messages: [] })
+        updateTab(activeIdx, {
+          endResult: {
+            artifacts: result.artifacts,
+            farewell: result.farewell,
+            failures: result.failures?.length ? result.failures : undefined,
+            conversationId: activeTab.conversationId ?? undefined
+          },
+          conversationId: null,
+          messages: []
+        })
       }
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleRedoArtifacts = async () => {
+    const convId = activeTab.endResult?.conversationId
+    const failures = activeTab.endResult?.failures
+    if (!convId || !failures || failures.length === 0 || redoing) return
+    setRedoing(true)
+    try {
+      const result = await window.sophia.data.redoArtifacts(convId, failures)
+      if (result.success) {
+        updateTab(activeIdx, {
+          endResult: {
+            ...activeTab.endResult!,
+            failures: result.failures.length > 0 ? result.failures : undefined,
+            artifacts: (activeTab.endResult?.artifacts ?? 0) + result.artifacts
+          }
+        })
+      }
+    } catch {
+      // keep the failure list so the user can retry
+    } finally {
+      setRedoing(false)
     }
   }
 
@@ -723,6 +834,19 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             )}
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
+            <button
+              onClick={() => updateTab(activeIdx, {
+                classMode: activeTab.classMode === 'feynman' ? 'standard' : 'feynman'
+              })}
+              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                activeTab.classMode === 'feynman'
+                  ? 'border-accent text-accent hover:bg-accent-subtle'
+                  : 'border-surface-border-strong text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
+              }`}
+              title="切换课堂模式：标准苏格拉底课堂 / 费曼回讲（学习者向学徒讲解，检验理解）"
+            >
+              {activeTab.classMode === 'feynman' ? '🗣 费曼回讲' : '🎓 标准课堂'}
+            </button>
             {textbook && (
               <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs">
                 📖 {textbook.title}
@@ -872,11 +996,25 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                       {activeTab.endResult.farewell && (
                         <p className="mt-2 text-sm text-green-200 italic">{activeTab.endResult.farewell}</p>
                       )}
-                      <p className="mt-1 text-xs text-green-400">
-                        已自动生成 {activeTab.endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
-                      </p>
-                    </div>
-                  )}
+            <p className="mt-1 text-xs text-green-400">
+              已自动生成 {activeTab.endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
+            </p>
+            {activeTab.endResult.failures && activeTab.endResult.failures.length > 0 && (
+              <div className="mt-3 flex items-center justify-between gap-3 rounded border border-amber-800 bg-amber-900/20 px-3 py-2">
+                <p className="text-xs text-amber-300">
+                  有 {activeTab.endResult.failures.length} 项学习摘要生成失败（可能是网络中断），可只补齐缺失项。
+                </p>
+                <button
+                  onClick={handleRedoArtifacts}
+                  disabled={redoing}
+                  className="flex-shrink-0 rounded bg-amber-700 px-3 py-1 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {redoing ? '补齐中...' : '补齐缺失产物'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
                 </div>
               )
             })}
@@ -886,7 +1024,52 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
       {/* Input */}
       <div className="border-t border-surface-border bg-bg-surface p-4">
-        <div className="flex gap-3">
+        <div ref={mathRef} className="relative flex gap-3">
+          {mathOpen && (
+            <div className="absolute bottom-full left-0 z-20 mb-2 w-80 rounded-lg border border-surface-border bg-bg-surface p-3 shadow-lg">
+              <div className="mb-2 flex flex-wrap gap-1">
+                {MATH_SYMBOL_GROUPS.map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => setMathTab(g.id)}
+                    className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                      mathTab === g.id
+                        ? 'bg-accent text-white'
+                        : 'text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
+                    }`}
+                  >
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-8 gap-1">
+                {(MATH_SYMBOL_GROUPS.find((g) => g.id === mathTab) ?? MATH_SYMBOL_GROUPS[0]).items.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => insertIntoInput(s)}
+                    className="overflow-hidden rounded border border-surface-border-strong px-1 py-1.5 text-xs text-text-secondary hover:bg-bg-elevated"
+                    title={s}
+                  >
+                    {s.length > 6 ? '模板' : s}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] text-text-muted">
+                点击插入到输入框；用 $...$ 包裹即可渲染为公式
+              </p>
+            </div>
+          )}
+          <button
+            onClick={() => { setMathOpen((v) => !v); setMathTab('greek') }}
+            className={`rounded border px-3 py-2 text-sm transition-colors ${
+              mathOpen
+                ? 'border-accent text-accent'
+                : 'border-surface-border-strong text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
+            }`}
+            title="插入数学符号 / 公式 (Σ)"
+          >
+            Σ
+          </button>
           <input
             ref={inputRef}
             type="text"
@@ -920,6 +1103,44 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           )}
         </div>
       </div>
+
+      {/* Shortcut cheat sheet */}
+      {showShortcuts && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setShowShortcuts(false)}
+        >
+          <div
+            className="w-80 rounded-xl border border-surface-border bg-bg-surface p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-4 text-base font-semibold">键盘快捷键</h3>
+            <div className="space-y-2.5 text-sm">
+              {[
+                ['Ctrl + T', '新建标签页'],
+                ['Ctrl + Shift + W', '关闭当前标签页'],
+                ['Ctrl + Tab', '下一个标签页'],
+                ['Ctrl + Shift + Tab', '上一个标签页'],
+                ['Ctrl + F', '在当前对话中搜索'],
+                ['Ctrl + /', '显示 / 隐藏快捷键']
+              ].map(([keys, desc]) => (
+                <div key={keys} className="flex items-center justify-between gap-3">
+                  <kbd className="rounded border border-surface-border-strong bg-bg-elevated px-2 py-0.5 font-mono text-xs text-text-secondary">
+                    {keys}
+                  </kbd>
+                  <span className="text-xs text-text-muted">{desc}</span>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowShortcuts(false)}
+              className="mt-5 w-full rounded bg-accent py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
+            >
+              关闭 (Esc)
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -7,7 +7,7 @@
 import { DeepSeekClient } from '../llm/deepseek-client'
 import { createDeepSeekHttpAdapter } from '../llm/deepseek-http-adapter'
 import type { Message } from '../../shared/schemas/message'
-import { ArtifactType } from '../../shared/types/ids'
+import { ArtifactType, type ClassMode } from '../../shared/types/ids'
 
 interface ArtifactResult {
   type: ArtifactType
@@ -25,6 +25,12 @@ export interface ArtifactGenerationResult {
   failures: Array<{ type: ArtifactType; error: string }>
 }
 
+export interface ArtifactGenerationOptions {
+  classMode?: ClassMode
+  /** Restrict generation to these artifact types (redo of missing items). */
+  types?: ArtifactType[]
+}
+
 /**
  * Generate all lesson artifacts for a completed conversation.
  *
@@ -34,7 +40,8 @@ export interface ArtifactGenerationResult {
  */
 export async function generateArtifacts(
   messages: Message[],
-  config: ArtifactProviderConfig
+  config: ArtifactProviderConfig,
+  options: ArtifactGenerationOptions = {}
 ): Promise<ArtifactGenerationResult> {
   const endpoint = config.baseUrl.replace(/\/$/, '') + '/chat/completions'
   const adapter = createDeepSeekHttpAdapter({ endpoint })
@@ -50,18 +57,26 @@ export async function generateArtifacts(
   // Generate each artifact type with limited concurrency to avoid
   // triggering rate limits (429).  Process in batches of 3.
   const CONCURRENCY = 3
-  const artifactTypes = [
-    ArtifactType.LessonSummary,
-    ArtifactType.Flashcards,
-    ArtifactType.Diary,
-    ArtifactType.Progress,
-    ArtifactType.HandoffTail,
-    ArtifactType.Farewell,
-    ArtifactType.LearnerProfile,
-    ArtifactType.PalMoments,
-    ArtifactType.Relation,
-    ArtifactType.CompanionNote
-  ]
+  let artifactTypes: ArtifactType[]
+  if (options.types && options.types.length > 0) {
+    artifactTypes = options.types
+  } else {
+    artifactTypes = [
+      ArtifactType.LessonSummary,
+      ArtifactType.Flashcards,
+      ArtifactType.Diary,
+      ArtifactType.Progress,
+      ArtifactType.HandoffTail,
+      ArtifactType.Farewell,
+      ArtifactType.LearnerProfile,
+      ArtifactType.PalMoments,
+      ArtifactType.Relation,
+      ArtifactType.CompanionNote
+    ]
+    if (options.classMode === 'feynman') {
+      artifactTypes.push(ArtifactType.FeynmanNote)
+    }
+  }
 
   const generators = artifactTypes.map((type) =>
     generateArtifact(client, type, transcript)
@@ -114,8 +129,18 @@ function buildArtifactPrompt(type: ArtifactType): string {
 1. 本节课探讨的核心主题
 2. 学习者展现出的理解亮点
 3. 仍需要进一步思考的问题
+4. 2-3 道自测题（供学习者课后自检，答案逐步揭晓）：
+   每道自测题格式：
+   **自测 N：<问题>**
+   - 提示 1：<第一个线索，只指向思考方向，不要直接给答案>
+   - 提示 2：<第二个线索，更接近答案>
+   - 答案：<完整答案，放在最后>
 
-用中文回答，控制在 200 字以内。`
+要求：
+- 自测题必须基于本节课真实讨论过的内容，不要出课堂之外的题；
+- 提示要循序渐进，让学习者先尝试作答再看提示；
+- 答案放在最后，并保持简洁。
+用中文回答，控制在 450 字以内。`
 
     case ArtifactType.Flashcards:
       return `你是一位教育助手。请根据以下苏格拉底式课堂对话，生成 3-5 张记忆卡片（flashcards）。
@@ -207,6 +232,25 @@ function buildArtifactPrompt(type: ArtifactType): string {
 - ≤ 80 字符
 - 纯文本，不要使用旁白星号格式
 用中文回答。只输出独白内容。`
+
+    case ArtifactType.FeynmanNote:
+      return `你是一位教育助手。这是费曼回讲课堂的对话记录——学习者向"好奇学徒"讲解了自己学到的内容，学徒进行了追问。
+请提炼一枚"知识蛋"，格式（Markdown）：
+## 学习者讲解了什么
+（2-3 句概括学习者用自己的话讲出的核心内容）
+
+## 讲得清楚的地方
+（列出学习者解释准确、举出好例子的点）
+
+## 暴露的误区或含糊处
+（列出学徒追问后发现的理解漏洞，逐一说明）
+
+## 下次追问方向
+（下次回讲或复习时应优先确认的 1-2 个问题）
+
+铁律：必须基于对话中的真实内容，绝不虚构学习者没有讲过的东西。
+如果对话很短或学习者几乎没讲，只写一句陈述事实即可。
+用中文回答，控制在 250 字以内。只输出知识蛋内容。`
 
     default: {
       const _exhaustive: never = type

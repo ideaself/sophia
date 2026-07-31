@@ -25,6 +25,8 @@
     "src/shared/channel-names.ts",
     "src/shared/chat-stream-controller.ts",
     "src/shared/tab-persistence.ts",
-    "src/shared/tts-utils.ts"
+    "src/shared/tts-utils.ts",
+    "src/shared/flashcard-utils.ts",
+    "src/shared/study-time.ts"
   ]
 }

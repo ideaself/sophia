@@ -2,6 +2,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { WORLD_ID } from '../types/models'
+import {
+  parseFlashcards,
+  rebuildArtifactContent,
+  buildAnkiImport
+} from '../../../shared/flashcard-utils'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -9,8 +14,11 @@ import { WORLD_ID } from '../types/models'
 
 interface Flashcard {
   id: string
+  artifactId: string
+  cardIndex: number
   conversationId: string
   conversationTitle: string
+  createdAt: string
   question: string
   answer: string
 }
@@ -137,44 +145,6 @@ function saveAllSrs(states: Record<string, SrsState>): void {
 }
 
 // ---------------------------------------------------------------------------
-// Flashcard parsing
-// ---------------------------------------------------------------------------
-
-function parseFlashcards(content: string): Array<{ question: string; answer: string }> {
-  const cards: Array<{ question: string; answer: string }> = []
-  const lines = content.split('\n')
-  let currentQ = ''
-  let currentA = ''
-  let inQ = false
-  let inA = false
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (trimmed.match(/^[-*]\s*问题[：:]\s*(.+)/)) {
-      if (currentQ && currentA) {
-        cards.push({ question: currentQ, answer: currentA })
-      }
-      currentQ = trimmed.replace(/^[-*]\s*问题[：:]\s*/, '')
-      currentA = ''
-      inQ = true
-      inA = false
-    } else if (trimmed.match(/^[-*]\s*答案[：:]\s*(.+)/)) {
-      currentA = trimmed.replace(/^[-*]\s*答案[：:]\s*/, '')
-      inQ = false
-      inA = true
-    } else if (inQ && trimmed) {
-      currentQ += '\n' + trimmed
-    } else if (inA && trimmed) {
-      currentA += '\n' + trimmed
-    }
-  }
-  if (currentQ && currentA) {
-    cards.push({ question: currentQ, answer: currentA })
-  }
-  return cards
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -185,6 +155,10 @@ export function FlashcardReviewView(): React.ReactElement {
   const [isFlipped, setIsFlipped] = useState(false)
   const [loading, setLoading] = useState(true)
   const [sessionReviewed, setSessionReviewed] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [editQuestion, setEditQuestion] = useState('')
+  const [editAnswer, setEditAnswer] = useState('')
+  const [editError, setEditError] = useState('')
 
   const loadFlashcards = useCallback(async () => {
     setLoading(true)
@@ -202,8 +176,11 @@ export function FlashcardReviewView(): React.ReactElement {
             for (let i = 0; i < parsed.length; i++) {
               allCards.push({
                 id: `${art.id}_${i}`,
+                artifactId: art.id,
+                cardIndex: i,
                 conversationId: conv.id,
                 conversationTitle: conv.title,
+                createdAt: art.createdAt,
                 question: parsed[i].question,
                 answer: parsed[i].answer
               })
@@ -285,6 +262,71 @@ export function FlashcardReviewView(): React.ReactElement {
     setIsFlipped(false)
   }
 
+  const handleStartEdit = () => {
+    const card = flashcards[currentIndex]
+    if (!card) return
+    setEditQuestion(card.question)
+    setEditAnswer(card.answer)
+    setEditError('')
+    setEditing(true)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editQuestion.trim()) {
+      setEditError('问题不能为空')
+      return
+    }
+    const card = flashcards[currentIndex]
+    if (!card) return
+    try {
+      const artifact = await window.sophia.data.getArtifact(card.artifactId, card.conversationId)
+      if (!artifact) {
+        setEditError('找不到原卡片数据')
+        return
+      }
+      const cards = parseFlashcards(artifact.content)
+      if (card.cardIndex >= cards.length) {
+        setEditError('原卡片内容已变化，请刷新后重试')
+        return
+      }
+      cards[card.cardIndex] = {
+        question: editQuestion.trim(),
+        answer: editAnswer.trim()
+      }
+      const newContent = rebuildArtifactContent(cards)
+      await window.sophia.data.updateArtifact(card.artifactId, card.conversationId, newContent)
+      setFlashcards((prev) =>
+        prev.map((c) =>
+          c.id === card.id
+            ? { ...c, question: editQuestion.trim(), answer: editAnswer.trim() }
+            : c
+        )
+      )
+      setEditing(false)
+      setEditError('')
+    } catch {
+      setEditError('保存失败，请重试')
+    }
+  }
+
+  const handleExportAnki = async () => {
+    if (flashcards.length === 0) return
+    const content = buildAnkiImport(
+      flashcards.map((c) => ({
+        question: c.question,
+        answer: c.answer,
+        conversationTitle: c.conversationTitle,
+        createdAt: c.createdAt
+      }))
+    )
+    const result = await window.sophia.dialog.saveFile({
+      defaultPath: `Sophia_闪卡_${new Date().toISOString().slice(0, 10)}.txt`,
+      filters: [{ name: 'Anki 导入文本', extensions: ['txt'] }]
+    })
+    if (result.canceled || !result.filePath) return
+    await window.sophia.data.writeTextFile(result.filePath, content)
+  }
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -323,6 +365,14 @@ export function FlashcardReviewView(): React.ReactElement {
             待复习 {dueCount} · 本次已复习 {sessionReviewed}
           </span>
           <button
+            onClick={handleExportAnki}
+            disabled={flashcards.length === 0}
+            className="rounded border border-surface-border-strong px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
+            title="导出全部卡片为 Anki 可导入的文本文件"
+          >
+            导出 Anki
+          </button>
+          <button
             onClick={handleShuffle}
             className="rounded border border-surface-border-strong px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-elevated"
           >
@@ -341,38 +391,77 @@ export function FlashcardReviewView(): React.ReactElement {
 
       {/* Card */}
       <div className="flex flex-1 items-center justify-center">
-        <div
-          onClick={() => setIsFlipped(!isFlipped)}
-          className="relative w-full max-w-2xl cursor-pointer"
-          style={{ minHeight: '300px' }}
-        >
-          <div
-            className={`absolute inset-0 rounded-2xl border-2 p-8 transition-all duration-300 ${
-              isFlipped
-                ? 'border-accent-border bg-bg-surface'
-                : 'border-surface-border-strong bg-bg-surface'
-            }`}
-          >
+        {editing ? (
+          <div className="w-full max-w-2xl rounded-2xl border-2 border-accent-border bg-bg-surface p-6">
             <div className="mb-4 flex items-center justify-between">
               <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs text-text-muted">
-                {isFlipped ? '答案' : '问题'} · 点击翻转
+                修正卡片
               </span>
-              <span className="text-xs text-text-muted">
-                {isNew ? '新' : `下次：${nextReviewLabel}`} · {currentIndex + 1}/{flashcards.length}
-              </span>
+              {editError && <span className="text-xs text-red-400">{editError}</span>}
             </div>
-            <div className="markdown-body text-text-primary">
-              {isFlipped ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{card.answer}</ReactMarkdown>
-              ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{card.question}</ReactMarkdown>
-              )}
+            <label className="mb-1 block text-xs font-medium text-text-muted">问题</label>
+            <textarea
+              value={editQuestion}
+              onChange={(e) => setEditQuestion(e.target.value)}
+              rows={4}
+              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none resize-none"
+            />
+            <label className="mb-1 mt-4 block text-xs font-medium text-text-muted">答案</label>
+            <textarea
+              value={editAnswer}
+              onChange={(e) => setEditAnswer(e.target.value)}
+              rows={7}
+              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none resize-none"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => { setEditing(false); setEditError('') }}
+                className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+              >
+                保存修正
+              </button>
             </div>
-            <p className="mt-6 text-xs text-text-muted">
-              来源：{card.conversationTitle}
-            </p>
           </div>
-        </div>
+        ) : (
+          <div
+            onClick={() => setIsFlipped(!isFlipped)}
+            className="relative w-full max-w-2xl cursor-pointer"
+            style={{ minHeight: '300px' }}
+          >
+            <div
+              className={`absolute inset-0 rounded-2xl border-2 p-8 transition-all duration-300 ${
+                isFlipped
+                  ? 'border-accent-border bg-bg-surface'
+                  : 'border-surface-border-strong bg-bg-surface'
+              }`}
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs text-text-muted">
+                  {isFlipped ? '答案' : '问题'} · 点击翻转
+                </span>
+                <span className="text-xs text-text-muted">
+                  {isNew ? '新' : `下次：${nextReviewLabel}`} · {currentIndex + 1}/{flashcards.length}
+                </span>
+              </div>
+              <div className="markdown-body text-text-primary">
+                {isFlipped ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{card.answer}</ReactMarkdown>
+                ) : (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{card.question}</ReactMarkdown>
+                )}
+              </div>
+              <p className="mt-6 text-xs text-text-muted">
+                来源：{card.conversationTitle}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
@@ -386,6 +475,13 @@ export function FlashcardReviewView(): React.ReactElement {
         </button>
         {isFlipped ? (
           <>
+            <button
+              onClick={handleStartEdit}
+              className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated"
+              title="改正答案或解释"
+            >
+              修正
+            </button>
             <button
               onClick={() => handleRate('again')}
               className="rounded bg-red-800 px-5 py-2 text-sm font-medium text-white hover:bg-red-700"

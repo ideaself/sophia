@@ -18,12 +18,15 @@
 
 import type { Companion } from '../../shared/schemas/companion'
 import type { DeepSeekChatMessage } from '../llm/types'
+import type { ClassMode } from '../../shared/types/ids'
 import {
   getSocraticRules,
   getNarrationRules,
   getEndClassRule,
   getPageNavigationRule,
-  getTeachingLanguageRule
+  getTeachingLanguageRule,
+  getContextFirstRules,
+  getPlainDialogueRules
 } from './rules'
 import { truncateToBudget, windowMessages } from './token-budget'
 
@@ -48,6 +51,12 @@ export interface BuildSystemPromptParams {
   relationState?: string
   /** Optional teaching-coach assessment segment (pre-formatted string) */
   teachingCoachAssessment?: string
+  /** Classroom mode: 'standard' Socratic dialogue or 'feynman' teach-back. */
+  classMode?: ClassMode
+  /** Hide narration/action descriptions — plain dialogue only. */
+  hideNarration?: boolean
+  /** Cross-chapter retrieved textbook passages (pre-formatted string). */
+  relatedTextbook?: string
   /** Token budget for textbook content (default: 2000) */
   maxTextbookTokens?: number
   /** Teaching language code (default: 'zh') */
@@ -135,6 +144,34 @@ function buildTextbookSegment(content: string): string {
   ].join('\n')
 }
 
+function buildRelatedTextbookSegment(content: string): string {
+  return [
+    '## 教材相关段落（跨章节检索）',
+    '',
+    '以下是针对当前讨论自动检索到的教材其他章节段落，供你在概念呼应、回顾前文或核对细节时使用。',
+    '',
+    wrapUserContent(content.trim())
+  ].join('\n')
+}
+
+function buildFeynmanSegment(): string {
+  return [
+    '## 费曼回讲模式',
+    '',
+    '现在是费曼回讲课堂：学习者刚刚学完一段内容，你要扮演一个**充满好奇、理解还不牢靠的学徒**，',
+    '帮助学习者通过"讲出来"检验自己的理解。',
+    '',
+    '规则：',
+    '1. 你不再主动讲解知识，而是请学习者用他自己的话讲解刚才学的内容，从他真正讲起的地方开始。',
+    '2. 你每次只追问一个问题，聚焦他讲解中含糊、跳跃或可能出错的地方',
+    '（例如："为什么这一步成立？""这里是怎么推出来的？""能举个具体例子吗？"）。',
+    '3. 当学习者的解释暴露出误区时，不要直接纠正——先用追问让他自己发现矛盾；',
+    '如果他确实卡住，再给一句最简短的提示，并请他重新讲一遍确认理解。',
+    '4. 保持真诚的学徒人设：不懂就问，不装懂，不奉承，不替学习者把话说完。',
+    '5. 仍然遵守旁白与格式规则，且每条消息依然只问一个问题。'
+  ].join('\n')
+}
+
 function buildHandoffSegment(tail: string): string {
   return [
     '## 上次课堂接力',
@@ -165,13 +202,16 @@ function buildRelationSegment(content: string): string {
   ].join('\n')
 }
 
-function buildFormatRulesSegment(language: string): string {
+function buildFormatRulesSegment(language: string, hideNarration?: boolean): string {
+  const narrationSegment = hideNarration ? getPlainDialogueRules() : getNarrationRules()
   return [
-    getNarrationRules(),
+    narrationSegment,
     '',
     getEndClassRule(),
     '',
     getPageNavigationRule(),
+    '',
+    getContextFirstRules(),
     '',
     getTeachingLanguageRule(language)
   ].join('\n\n')
@@ -204,6 +244,9 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
     handoffTail,
     palMoments,
     relationState,
+    classMode,
+    relatedTextbook,
+    hideNarration,
     maxTextbookTokens = 2000,
     language = 'zh'
   } = params
@@ -223,6 +266,17 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   if (textbookContent) {
     const truncated = truncateToBudget(textbookContent, maxTextbookTokens)
     segments.push(buildTextbookSegment(truncated))
+  }
+
+  // Cross-chapter retrieved passages (whole-book teaching)
+  if (relatedTextbook) {
+    const truncated = truncateToBudget(relatedTextbook, 1400)
+    segments.push(buildRelatedTextbookSegment(truncated))
+  }
+
+  // Feynman teach-back mode
+  if (classMode === 'feynman') {
+    segments.push(buildFeynmanSegment())
   }
 
   // Optional handoff tail from previous session
@@ -246,7 +300,7 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   }
 
   // Format and end-class rules (always last)
-  segments.push(buildFormatRulesSegment(language))
+  segments.push(buildFormatRulesSegment(language, hideNarration))
 
   return segments.join(SEP)
 }

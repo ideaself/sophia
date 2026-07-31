@@ -357,6 +357,92 @@ describe('buildMessages', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Feynman teach-back mode
+// ---------------------------------------------------------------------------
+
+describe('feynman mode', () => {
+  it('adds the teach-back segment when classMode is feynman', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext,
+      classMode: 'feynman'
+    })
+    expect(prompt).toContain('费曼回讲模式')
+    expect(prompt).toContain('学徒')
+    expect(prompt).toContain('讲出来')
+  })
+
+  it('omits the feynman segment by default', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext
+    })
+    expect(prompt).not.toContain('费曼回讲模式')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Cross-chapter retrieved textbook passages
+// ---------------------------------------------------------------------------
+
+describe('related textbook passages', () => {
+  it('includes the related-textbook segment when provided', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext,
+      relatedTextbook: '【相关教材段落 1 · 《量子力学入门》 · 第二章 不确定性原理】\n位置与动量无法同时精确测定。'
+    })
+    expect(prompt).toContain('教材相关段落')
+    expect(prompt).toContain('第二章 不确定性原理')
+    expect(prompt).toContain('位置与动量无法同时精确测定')
+  })
+
+  it('truncates an oversized related-textbook segment', () => {
+    const longSegment = 'A related passage '.repeat(2000)
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext,
+      relatedTextbook: longSegment
+    })
+    expect(prompt.length).toBeLessThan(longSegment.length)
+    expect(prompt).toMatch(/截断|truncat/)
+  })
+
+  it('omits the segment when not provided', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext
+    })
+    expect(prompt).not.toContain('教材相关段落')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Plain-dialogue mode (hide narration)
+// ---------------------------------------------------------------------------
+
+describe('hide narration', () => {
+  it('replaces narration rules with plain-dialogue rules when enabled', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext,
+      hideNarration: true
+    })
+    expect(prompt).toContain('纯净对话模式')
+    expect(prompt).not.toContain('旁白与强调格式规则')
+  })
+
+  it('keeps narration rules by default', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext
+    })
+    expect(prompt).toContain('旁白与强调格式规则')
+    expect(prompt).not.toContain('纯净对话模式')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Injection hardening tests
 // ---------------------------------------------------------------------------
 

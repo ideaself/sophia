@@ -32,10 +32,13 @@ import {
   IpcCreateConversationInputSchema,
   IpcSendMessageInputSchema,
   IpcEndClassInputSchema,
+  IpcRedoArtifactsInputSchema,
+  IpcChatPromptMessagesInputSchema,
   IpcGetConversationInputSchema,
   IpcListConversationsInputSchema,
   IpcGetMessagesInputSchema,
   IpcGetArtifactInputSchema,
+  IpcUpdateArtifactInputSchema,
   IpcListArtifactsInputSchema,
   IpcDeleteConversationInputSchema,
   IpcUpdateTextbookContentInputSchema,
@@ -401,6 +404,15 @@ describe('ArtifactSchema', () => {
     expect(result.success).toBe(true)
   })
 
+  it('accepts a feynman_note artifact', () => {
+    const result = ArtifactSchema.safeParse({
+      ...validArtifact(),
+      type: ArtifactType.FeynmanNote,
+      content: '## 学习者讲解了什么\n学习者解释了不确定性原理。'
+    })
+    expect(result.success).toBe(true)
+  })
+
   it('rejects an artifact with invalid type', () => {
     const result = ArtifactSchema.safeParse({ ...validArtifact(), type: 'unknown' })
     expect(result.success).toBe(false)
@@ -562,8 +574,63 @@ describe('IPC input schemas', () => {
       expect(result.success).toBe(true)
     })
 
+    it('accepts classMode', () => {
+      const result = IpcEndClassInputSchema.safeParse({
+        conversationId: 'conv_001',
+        classMode: 'feynman'
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects unknown classMode', () => {
+      const result = IpcEndClassInputSchema.safeParse({
+        conversationId: 'conv_001',
+        classMode: 'pet'
+      })
+      expect(result.success).toBe(false)
+    })
+
     it('rejects missing conversationId', () => {
       const result = IpcEndClassInputSchema.safeParse({})
+      expect(result.success).toBe(false)
+    })
+  })
+
+  describe('IpcChatPromptMessagesInputSchema', () => {
+    const base = {
+      conversationId: 'conv_001',
+      companionId: 'comp_001',
+      userMessage: '你好'
+    }
+
+    it('accepts classMode feynman', () => {
+      const result = IpcChatPromptMessagesInputSchema.safeParse({
+        ...base,
+        classMode: 'feynman'
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts input without classMode', () => {
+      const result = IpcChatPromptMessagesInputSchema.safeParse(base)
+      expect(result.success).toBe(true)
+    })
+  })
+
+  describe('IpcRedoArtifactsInputSchema', () => {
+    it('accepts valid input', () => {
+      const result = IpcRedoArtifactsInputSchema.safeParse({
+        conversationId: 'conv_001',
+        types: ['lesson_summary', 'diary']
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects an empty types list', () => {
+      const result = IpcRedoArtifactsInputSchema.safeParse({
+        conversationId: 'conv_001',
+        types: []
+      })
       expect(result.success).toBe(false)
     })
   })
@@ -598,6 +665,26 @@ describe('IPC input schemas', () => {
     it('accepts valid input', () => {
       const result = IpcGetArtifactInputSchema.safeParse({ artifactId: 'art_001', conversationId: 'conv_001' })
       expect(result.success).toBe(true)
+    })
+  })
+
+  describe('IpcUpdateArtifactInputSchema', () => {
+    it('accepts valid input', () => {
+      const result = IpcUpdateArtifactInputSchema.safeParse({
+        artifactId: 'art_001',
+        conversationId: 'conv_001',
+        content: '修正后的内容'
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects empty content', () => {
+      const result = IpcUpdateArtifactInputSchema.safeParse({
+        artifactId: 'art_001',
+        conversationId: 'conv_001',
+        content: ''
+      })
+      expect(result.success).toBe(false)
     })
   })
 

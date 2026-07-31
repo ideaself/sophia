@@ -54,9 +54,17 @@ export const ArtifactType = {
   LearnerProfile: 'learner_profile',
   PalMoments: 'pal_moments',
   Relation: 'relation',
-  CompanionNote: 'companion_note'
+  CompanionNote: 'companion_note',
+  FeynmanNote: 'feynman_note'
 } as const
 export type ArtifactType = (typeof ArtifactType)[keyof typeof ArtifactType]
+
+/** Teaching mode for a classroom session. */
+export const ClassMode = {
+  Standard: 'standard',
+  Feynman: 'feynman'
+} as const
+export type ClassMode = (typeof ClassMode)[keyof typeof ClassMode]
 
 /** Supported textbook source formats */
 export const TextbookFormat = {

@@ -25,10 +25,18 @@ export function SettingsView(): React.ReactElement {
   const [thinkingEnabled, setThinkingEnabled] = useState(
     () => localStorage.getItem('sophia.thinkingEnabled') === '1'
   )
+  const [hideNarration, setHideNarration] = useState(
+    () => localStorage.getItem('sophia.hideNarration') === '1'
+  )
 
   const handleToggleThinking = (enabled: boolean) => {
     setThinkingEnabled(enabled)
     localStorage.setItem('sophia.thinkingEnabled', enabled ? '1' : '0')
+  }
+
+  const handleToggleHideNarration = (enabled: boolean) => {
+    setHideNarration(enabled)
+    localStorage.setItem('sophia.hideNarration', enabled ? '1' : '0')
   }
 
   const loadProviders = useCallback(async () => {
@@ -176,6 +184,18 @@ export function SettingsView(): React.ReactElement {
             type="checkbox"
             checked={thinkingEnabled}
             onChange={(e) => handleToggleThinking(e.target.checked)}
+            className="h-4 w-4 flex-shrink-0"
+          />
+        </label>
+        <label className="mt-2 flex cursor-pointer items-center justify-between rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
+          <div className="pr-4">
+            <p className="text-sm font-medium">纯净对话（隐藏动作/表情旁白）</p>
+            <p className="mt-0.5 text-xs text-text-muted">只显示对话正文与提问，伙伴不再输出 `*动作/表情*` 舞台说明</p>
+          </div>
+          <input
+            type="checkbox"
+            checked={hideNarration}
+            onChange={(e) => handleToggleHideNarration(e.target.checked)}
             className="h-4 w-4 flex-shrink-0"
           />
         </label>

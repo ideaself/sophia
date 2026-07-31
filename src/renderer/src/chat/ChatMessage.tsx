@@ -156,9 +156,10 @@ export function ChatMessage({
   }
 
   const rendered = useMemo(() => {
-    if (isUser) return null
     return (
-      <div className="markdown-body text-sm leading-relaxed">
+      <div className={isUser
+        ? 'text-sm leading-relaxed whitespace-pre-wrap'
+        : 'markdown-body text-sm leading-relaxed'}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[rehypeKatex, rehypeHighlight]}
@@ -188,7 +189,7 @@ export function ChatMessage({
         </ReactMarkdown>
       </div>
     )
-  }, [content, id])
+  }, [content, id, isUser])
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} group`}>
@@ -235,8 +236,6 @@ export function ChatMessage({
                   </button>
                 </div>
               </div>
-            ) : isUser ? (
-              <p className="whitespace-pre-wrap text-sm">{content}</p>
             ) : (
               rendered
             )}

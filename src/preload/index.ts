@@ -120,6 +120,8 @@ export interface ChatAPI {
     textbookId?: string | null
     userMessage: string
     worldId?: string
+    classMode?: 'standard' | 'feynman'
+    hideNarration?: boolean
   }) => Promise<Array<{ role: 'system' | 'user' | 'assistant'; content: string }>>
 }
 
@@ -149,7 +151,8 @@ export interface DataAPI {
   deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
   listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
   searchMessages: (worldId: string, query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
-  endConversation: (conversationId: string, worldId?: string) => Promise<{ success: boolean; artifacts: number; farewell?: string }>
+    endConversation: (conversationId: string, worldId?: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[] }>
+    redoArtifacts: (conversationId: string, types: string[], worldId?: string) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
   createTextbook: (input: {
     worldId: string
     title: string
@@ -174,8 +177,9 @@ export interface DataAPI {
     content: string
     worldId?: string
   }) => Promise<ArtifactDTO>
-  getArtifact: (artifactId: string, conversationId: string, worldId?: string) => Promise<ArtifactDTO | null>
-  listArtifacts: (conversationId: string, worldId?: string) => Promise<ArtifactDTO[]>
+    getArtifact: (artifactId: string, conversationId: string, worldId?: string) => Promise<ArtifactDTO | null>
+    updateArtifact: (artifactId: string, conversationId: string, content: string, worldId?: string) => Promise<ArtifactDTO | null>
+    listArtifacts: (conversationId: string, worldId?: string) => Promise<ArtifactDTO[]>
   generateArtifacts: (conversationId: string, apiKey: string, worldId?: string) => Promise<{ count: number; types: string[] }>
   updateTextbookProgress: (textbookId: string, progress: { currentPage?: number; totalPages?: number | null; readingPercentage?: number; lastPosition?: string }, worldId?: string) => Promise<TextbookDTO | null>
   createReadingNote: (input: {
@@ -456,8 +460,10 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('message:list', { conversationId, worldId }),
     searchMessages: (worldId, query, limit, offset) =>
       ipcRenderer.invoke('message:search', { worldId, query, limit, offset }),
-    endConversation: (conversationId, worldId = 'world_default') =>
-      ipcRenderer.invoke('conversation:end', { conversationId, worldId }),
+    endConversation: (conversationId, worldId = 'world_default', classMode) =>
+      ipcRenderer.invoke('conversation:end', { conversationId, worldId, classMode }),
+    redoArtifacts: (conversationId, types, worldId = 'world_default') =>
+      ipcRenderer.invoke('conversation:redo-artifacts', { conversationId, types, worldId }),
     createTextbook: (input) =>
       ipcRenderer.invoke('textbook:create', input),
     getTextbook: (textbookId, worldId = 'world_default') =>
@@ -478,6 +484,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('artifact:create', input),
     getArtifact: (artifactId, conversationId, worldId = 'world_default') =>
       ipcRenderer.invoke('artifact:get', { artifactId, conversationId, worldId }),
+    updateArtifact: (artifactId, conversationId, content, worldId = 'world_default') =>
+      ipcRenderer.invoke('artifact:update', { artifactId, conversationId, content, worldId }),
     listArtifacts: (conversationId, worldId = 'world_default') =>
       ipcRenderer.invoke('artifact:list', { conversationId, worldId }),
     generateArtifacts: (conversationId, apiKey, worldId = 'world_default') =>

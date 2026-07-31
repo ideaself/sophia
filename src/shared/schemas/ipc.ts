@@ -85,7 +85,14 @@ export const IpcUpdateTitleInputSchema = z.object({
 
 export const IpcEndClassInputSchema = z.object({
   conversationId: z.string().min(1),
-  worldId: z.string().optional()
+  worldId: z.string().optional(),
+  classMode: z.enum(['standard', 'feynman']).optional()
+})
+
+export const IpcRedoArtifactsInputSchema = z.object({
+  conversationId: z.string().min(1),
+  worldId: z.string().optional(),
+  types: z.array(z.string().min(1)).min(1)
 })
 
 export const IpcGetConversationWithWorldInputSchema = z.object({
@@ -146,6 +153,13 @@ export const IpcCreateArtifactInputSchema = z.object({
 export const IpcGetArtifactInputSchema = z.object({
   artifactId: z.string().min(1),
   conversationId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+export const IpcUpdateArtifactInputSchema = z.object({
+  artifactId: z.string().min(1),
+  conversationId: z.string().min(1),
+  content: z.string().min(1),
   worldId: z.string().optional()
 })
 
@@ -278,7 +292,9 @@ export const IpcChatPromptMessagesInputSchema = z.object({
   companionId: z.string().min(1),
   textbookId: z.string().nullable().optional(),
   userMessage: z.string().min(1),
-  worldId: z.string().default('world_default')
+  worldId: z.string().default('world_default'),
+  classMode: z.enum(['standard', 'feynman']).optional(),
+  hideNarration: z.boolean().optional()
 })
 
 // --- IPC: Diary ---

@@ -64,7 +64,65 @@ export function getNarrationRules(): string {
     '',
     '要强调某个词时用双星号加粗 `**词**`，单星号斜体只给旁白用。',
     '',
-    '**提醒：每条消息必须包含至少一段旁白（动作/表情描写，用第三人称），且以一个引发思考的提问结尾。问完即停。正文（不含最后的提问）不超过 120 字。**'
+    '**提醒：每条消息必须包含至少一段旁白（动作/表情描写，用第三人称），且以一个引发思考的提问结尾。**',
+    '**一条消息只问一个问题。** 如果多个答案可以同时成立，不要强迫学习者做非此即彼的选择。',
+    '**问完即停。** 正文（不含最后的提问）不超过 120 字。'
+  ].join('\n')
+
+  ruleCache.set(key, rules)
+  return rules
+}
+
+/**
+ * Context-first + textbook-pacing rules.
+ *
+ * Mirrors the original's teaching-quality improvements:
+ * - 4.4.0 / 4.5.0: establish the situation before asking; never assume the
+ *   learner has read the textbook.
+ * - 1.0.6: do not over-expand content the textbook only mentions in passing.
+ */
+export function getContextFirstRules(): string {
+  const key = 'context-first'
+  if (ruleCache.has(key)) return ruleCache.get(key)!
+
+  const rules = [
+    '## 情境先行与教材节奏规则',
+    '',
+    '**情境先行**：',
+    '1. 在要求学习者思考或回答之前，先把必要的事实、定义和背景讲清楚。不要为了简洁或制造悬念而省略上下文。',
+    '2. 首次出现的术语、作者自造的概念，或只有读过书的人才知道的分类，要在情境中自然引入之后，再请学习者据此推理。',
+    '3. 永远不要假设学习者已经读过教材、记得教材内容，或掌握了之前讨论过的一切。',
+    '',
+    '**尊重教材节奏**：',
+    '4. 如果教材只是顺带提及某个概念（例如章节开头预告后面才讲的内容），不要擅自把它扩展成一整段教学内容。',
+    '此时应如实说明「教材这里只是提及、并未展开」，然后让学习者选择：',
+    '   - 用几句话给出概述；',
+    '   - 跳到教材真正展开该概念的章节；',
+    '   - 按当前节奏继续，先记下这个概念。'
+  ].join('\n')
+
+  ruleCache.set(key, rules)
+  return rules
+}
+
+/**
+ * Plain-dialogue rules — used when the learner enables "hide narration".
+ *
+ * Mirrors the original's "hide expression/action descriptions" setting
+ * (3.0.0) and its later fix where stage directions are never read aloud
+ * as lesson text (4.5.0).
+ */
+export function getPlainDialogueRules(): string {
+  const key = 'plain-dialogue'
+  if (ruleCache.has(key)) return ruleCache.get(key)!
+
+  const rules = [
+    '## 纯净对话模式',
+    '',
+    '学习者已开启「隐藏动作/表情旁白」。你必须遵守：',
+    '1. 不要输出任何旁白或动作/表情描写——不要使用单星号 `*…*`、括号、或其他形式的舞台说明。',
+    '2. 只输出对话正文与提问。',
+    '3. 其他规则不变：一条消息只问一个问题，问完即停，正文（不含最后的提问）不超过 120 字，并以一个引发思考的提问结尾。'
   ].join('\n')
 
   ruleCache.set(key, rules)

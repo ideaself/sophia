@@ -495,7 +495,8 @@ export function HistoryView(): React.ReactElement {
                                art.type === 'learner_profile' ? '👤 学习者画像' :
                                art.type === 'pal_moments' ? '💭 互动备忘' :
                                art.type === 'relation' ? '💞 关系状态' :
-                               art.type === 'companion_note' ? '🤔 伙伴独白' : art.type}
+                               art.type === 'companion_note' ? '🤔 伙伴独白' :
+                               art.type === 'feynman_note' ? '🥚 费曼知识蛋' : art.type}
                             </p>
                             <div className="markdown-body text-xs text-text-secondary max-h-32 overflow-auto">
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>

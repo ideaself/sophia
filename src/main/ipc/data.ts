@@ -13,6 +13,12 @@ import { generateArtifacts } from '../artifacts/generate'
 import { extractText, getEpubChapters } from '../parsers'
 import { PickedFileRegistry } from './picked-files'
 import {
+  learnerPath,
+  palMomentsPath,
+  relationPath,
+  handoffMetaPath
+} from '../storage/app-data'
+import {
   IpcCreateConversationInputSchema,
   IpcGetConversationInputSchema,
   IpcGetConversationWithWorldInputSchema,
@@ -26,9 +32,11 @@ import {
   IpcSearchMessagesInputSchema,
   IpcUpdateMessageInputSchema,
   IpcDeleteMessageInputSchema,
+  IpcRedoArtifactsInputSchema,
   IpcGenerateArtifactInputSchema,
   IpcCreateArtifactInputSchema,
   IpcGetArtifactInputSchema,
+  IpcUpdateArtifactInputSchema,
   IpcListArtifactsInputSchema,
   IpcCreateTextbookFullInputSchema,
   IpcGetTextbookInputSchema,
@@ -49,7 +57,12 @@ import {
   IpcDiaryListMonthsInputSchema,
   IpcDiaryGetMonthInputSchema
 } from '../../shared/schemas/ipc'
-import { ArtifactType, type WorldId, type ConversationId } from '../../shared/types/ids'
+import {
+  ArtifactType,
+  type ClassMode,
+  type WorldId,
+  type ConversationId
+} from '../../shared/types/ids'
 
 /** In-app reader loads the whole file into memory — cap it. */
 const MAX_ORIGINAL_SIZE = 512 * 1024 * 1024
@@ -112,176 +125,57 @@ export function registerConversationIpc(
 
   ipcMain.handle('conversation:end', async (_event, input: unknown) => {
     const parsed = IpcEndClassInputSchema.parse(input)
-    const { conversationId, worldId = 'world_default' } = parsed
+    const { conversationId, worldId = 'world_default', classMode } = parsed
     const success = await conversationStore.endConversation(conversationId, worldId)
     if (!success) return { success: false, artifacts: 0 }
 
-    let artifactCount = 0
     try {
-      let apiKey = ''
-      let model = 'deepseek-v4-flash'
-      let baseUrl = 'https://api.deepseek.com'
-
-      if (providerStore) {
-        const active = await providerStore.getActive()
-        if (active) {
-          const key = await providerStore.readApiKey(active.id)
-          if (key) {
-            apiKey = key
-            model = active.selectedModel || model
-            baseUrl = active.baseUrl || baseUrl
-          }
-        }
-      }
-
-      if (apiKey) {
-        const messages = await conversationStore.getMessages(conversationId, worldId)
-        const { results, failures } = await generateArtifacts(messages, { apiKey, model, baseUrl })
-        let progressContent = ''
-        let farewellContent = ''
-        let learnerProfileContent = ''
-        let palMomentsContent = ''
-        let relationContent = ''
-        let handoffTailContent = ''
-        let diaryContent = ''
-        for (const result of results) {
-          if (result.type === ArtifactType.Farewell) {
-            farewellContent = result.content
-            artifactCount++
-            continue
-          }
-          if (result.type === ArtifactType.LearnerProfile) {
-            learnerProfileContent = result.content
-            artifactCount++
-            continue
-          }
-          if (result.type === ArtifactType.PalMoments) {
-            palMomentsContent = result.content
-            artifactCount++
-            continue
-          }
-          if (result.type === ArtifactType.Relation) {
-            relationContent = result.content
-            artifactCount++
-            continue
-          }
-          await artifactStore.create(conversationId as ConversationId, worldId as WorldId, result.type, result.content)
-          artifactCount++
-          if (result.type === ArtifactType.Progress) {
-            progressContent = result.content
-          }
-          if (result.type === ArtifactType.HandoffTail) {
-            handoffTailContent = result.content
-          }
-          if (result.type === ArtifactType.Diary) {
-            diaryContent = result.content
-          }
-        }
-
-        // Load conversation to get companionId for relation file
-        const conv = await conversationStore.get(conversationId, worldId)
-
-        // Writeback: save progress artifact content to textbook progress
-        if (progressContent && conv?.textbookId) {
-          await textbookStore.updateProgress(conv.textbookId, worldId, {
-            lastPosition: progressContent
-          })
-        }
-
-        // Writeback: save learner profile to learner.md
-        if (learnerProfileContent) {
-          try {
-            const { writeFile: wf } = await import('node:fs/promises')
-            const { learnerPath: lp } = await import('../storage/app-data')
-            await wf(lp(dataRoot, worldId), learnerProfileContent, 'utf-8')
-          } catch (err) {
-            console.warn(`Failed to write learner profile for ${conversationId}:`, err)
-          }
-        }
-
-        // Writeback: prepend pal moments entry to pal_moments.md
-        if (palMomentsContent) {
-          try {
-            const { readFile: rf, writeFile: wf } = await import('node:fs/promises')
-            const { palMomentsPath: pmp } = await import('../storage/app-data')
-            const filePath = pmp(dataRoot, worldId)
-            let existing = ''
-            try { existing = await rf(filePath, 'utf-8') } catch { /* file doesn't exist yet */ }
-            const merged = palMomentsContent + (existing ? '\n\n---\n\n' + existing : '')
-            await wf(filePath, merged, 'utf-8')
-          } catch (err) {
-            console.warn(`Failed to write pal moments for ${conversationId}:`, err)
-          }
-        }
-
-        // Writeback: save relation state to relation_{companionId}.md
-        if (relationContent && conv?.companionId) {
-          try {
-            const { writeFile: wf } = await import('node:fs/promises')
-            const { relationPath: rp } = await import('../storage/app-data')
-            await wf(rp(dataRoot, conv.companionId, worldId), relationContent, 'utf-8')
-          } catch (err) {
-            console.warn(`Failed to write relation state for ${conversationId}:`, err)
-          }
-        }
-
-        // Writeback: save structured handoff metadata (handoff_meta.json)
-        // so the next session can locate the handoff tail precisely instead
-        // of guessing by companionId + endedAt sorting.
-        if (handoffTailContent && conv) {
-          try {
-            const { handoffMetaPath: hmp } = await import('../storage/app-data')
-            const filePath = hmp(dataRoot, worldId)
-            let meta: Record<string, HandoffMetaEntry> = {}
-            try { meta = JSON.parse(await readFile(filePath, 'utf-8')) } catch { /* no meta yet */ }
-            const worldData = await readWorldData(dataRoot, worldId)
-            const slots = worldData?.world.companionSlots ?? { a: null, b: null, c: null }
-            const slot = (Object.entries(slots).find(([, id]) => id === conv.companionId)?.[0] ?? null) as 'a' | 'b' | 'c' | null
-            const companionName = (await readCompanionName(dataRoot, conv.companionId)) ?? conv.companionId
-            let endingPage: number | null = null
-            if (conv.textbookId) {
-              const tb = await textbookStore.get(conv.textbookId, worldId)
-              endingPage = tb?.progress.currentPage ?? null
-            }
-            meta[conv.companionId] = {
-              savedAt: new Date().toISOString(),
-              prevConvId: conversationId,
-              companionName,
-              companionSlot: slot,
-              endingPage
-            }
-            await mkdir(dirname(filePath), { recursive: true })
-            await writeFile(filePath, JSON.stringify(meta, null, 2), 'utf-8')
-          } catch (err) {
-            console.warn(`Failed to write handoff meta for ${conversationId}:`, err)
-          }
-        }
-
-        // Writeback: append the diary to the monthly diary file (diary/YYYY-MM.md)
-        if (diaryContent && conv) {
-          try {
-            const companionName = (await readCompanionName(dataRoot, conv.companionId)) ?? conv.companionId
-            await diaryStore.append(worldId, {
-              date: new Date().toISOString(),
-              companionName,
-              content: diaryContent
-            })
-          } catch (err) {
-            console.warn(`Failed to append diary for ${conversationId}:`, err)
-          }
-        }
-
-        if (failures.length > 0) {
-          console.warn(`Artifact generation failures for ${conversationId}:`, failures)
-        }
-
-        return { success: true, artifacts: artifactCount, farewell: farewellContent }
+      const pipeline = await runArtifactPipeline(
+        { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, diaryStore },
+        conversationId,
+        worldId,
+        { classMode }
+      )
+      return {
+        success: true,
+        artifacts: pipeline.artifactCount,
+        farewell: pipeline.farewell,
+        failures: pipeline.failures
       }
     } catch (err) {
       console.error(`Artifact generation error for ${conversationId}:`, err)
     }
 
-    return { success: true, artifacts: artifactCount }
+    return { success: true, artifacts: 0, failures: [] }
+  })
+
+  // Re-run only the artifact types that failed or went missing earlier
+  // (4.0.0 "post-class updates can be run again — redo only the missing work").
+  ipcMain.handle('conversation:redo-artifacts', async (_event, input: unknown) => {
+    const parsed = IpcRedoArtifactsInputSchema.parse(input)
+    const { conversationId, worldId = 'world_default', types } = parsed
+
+    const knownTypes = new Set<string>(Object.values(ArtifactType))
+    const validTypes = types.filter((t): t is ArtifactType => knownTypes.has(t))
+    if (validTypes.length === 0) return { success: false, artifacts: 0, types: [] as string[] }
+
+    try {
+      const pipeline = await runArtifactPipeline(
+        { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, diaryStore },
+        conversationId,
+        worldId,
+        { types: validTypes }
+      )
+      return {
+        success: true,
+        artifacts: pipeline.artifactCount,
+        types: validTypes,
+        failures: pipeline.failures
+      }
+    } catch (err) {
+      console.error(`Artifact redo error for ${conversationId}:`, err)
+      return { success: false, artifacts: 0, types: validTypes }
+    }
   })
 
   ipcMain.handle('artifact:generate', async (_event, input: unknown) => {
@@ -550,6 +444,17 @@ export function registerConversationIpc(
     return artifactStore.get(parsed.artifactId, parsed.conversationId, worldId)
   })
 
+  ipcMain.handle('artifact:update', async (_event, input: unknown) => {
+    const parsed = IpcUpdateArtifactInputSchema.parse(input)
+    const worldId = parsed.worldId ?? 'world_default'
+    return artifactStore.update(
+      parsed.artifactId,
+      parsed.conversationId,
+      worldId,
+      parsed.content
+    )
+  })
+
   ipcMain.handle('artifact:list', async (_event, input: unknown) => {
     const parsed = IpcListArtifactsInputSchema.parse(input)
     const worldId = parsed.worldId ?? 'world_default'
@@ -602,6 +507,207 @@ export function registerConversationIpc(
   })
 
   return { conversationStore, textbookStore, artifactStore, readingNoteStore, diaryStore }
+}
+
+// ---------------------------------------------------------------
+// Artifact pipeline — generate + persist + writebacks (shared by
+// conversation:end and conversation:redo-artifacts)
+// ---------------------------------------------------------------
+
+interface ArtifactPipelineDeps {
+  dataRoot: string
+  providerStore?: ProviderStore
+  conversationStore: ConversationStore
+  textbookStore: TextbookStore
+  artifactStore: ArtifactStore
+  diaryStore: DiaryStore
+}
+
+interface ArtifactPipelineResult {
+  artifactCount: number
+  farewell: string
+  failures: string[]
+}
+
+async function runArtifactPipeline(
+  deps: ArtifactPipelineDeps,
+  conversationId: string,
+  worldId: string,
+  options: { classMode?: ClassMode; types?: ArtifactType[] } = {}
+): Promise<ArtifactPipelineResult> {
+  const { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, diaryStore } = deps
+  const { classMode, types } = options
+
+  let apiKey = ''
+  let model = 'deepseek-v4-flash'
+  let baseUrl = 'https://api.deepseek.com'
+  if (providerStore) {
+    const active = await providerStore.getActive()
+    if (active) {
+      const key = await providerStore.readApiKey(active.id)
+      if (key) {
+        apiKey = key
+        model = active.selectedModel || model
+        baseUrl = active.baseUrl || baseUrl
+      }
+    }
+  }
+  if (!apiKey) {
+    return { artifactCount: 0, farewell: '', failures: [] }
+  }
+
+  const messages = await conversationStore.getMessages(conversationId, worldId)
+  const { results, failures: genFailures } = await generateArtifacts(
+    messages,
+    { apiKey, model, baseUrl },
+    { classMode, types }
+  )
+
+  let artifactCount = 0
+  let farewellContent = ''
+  let progressContent = ''
+  let learnerProfileContent = ''
+  let palMomentsContent = ''
+  let relationContent = ''
+  let handoffTailContent = ''
+  let diaryContent = ''
+
+  for (const result of results) {
+    if (result.type === ArtifactType.Farewell) {
+      farewellContent = result.content
+      artifactCount++
+      continue
+    }
+    if (result.type === ArtifactType.LearnerProfile) {
+      learnerProfileContent = result.content
+      artifactCount++
+      continue
+    }
+    if (result.type === ArtifactType.PalMoments) {
+      palMomentsContent = result.content
+      artifactCount++
+      continue
+    }
+    if (result.type === ArtifactType.Relation) {
+      relationContent = result.content
+      artifactCount++
+      continue
+    }
+    await artifactStore.create(
+      conversationId as ConversationId,
+      worldId as WorldId,
+      result.type,
+      result.content
+    )
+    artifactCount++
+    if (result.type === ArtifactType.Progress) progressContent = result.content
+    if (result.type === ArtifactType.HandoffTail) handoffTailContent = result.content
+    if (result.type === ArtifactType.Diary) diaryContent = result.content
+  }
+
+  // Load conversation to get companionId / textbookId for writebacks
+  const conv = await conversationStore.get(conversationId, worldId)
+
+  // Writeback: save progress artifact content to textbook progress
+  if (progressContent && conv?.textbookId) {
+    try {
+      await textbookStore.updateProgress(conv.textbookId, worldId, {
+        lastPosition: progressContent
+      })
+    } catch (err) {
+      console.warn(`Failed to write textbook progress for ${conversationId}:`, err)
+    }
+  }
+
+  // Writeback: save learner profile to learner.md
+  if (learnerProfileContent) {
+    try {
+      await writeFile(learnerPath(dataRoot, worldId), learnerProfileContent, 'utf-8')
+    } catch (err) {
+      console.warn(`Failed to write learner profile for ${conversationId}:`, err)
+    }
+  }
+
+  // Writeback: prepend pal moments entry to pal_moments.md
+  if (palMomentsContent) {
+    try {
+      const filePath = palMomentsPath(dataRoot, worldId)
+      let existing = ''
+      try { existing = await readFile(filePath, 'utf-8') } catch { /* file doesn't exist yet */ }
+      const merged = palMomentsContent + (existing ? '\n\n---\n\n' + existing : '')
+      await writeFile(filePath, merged, 'utf-8')
+    } catch (err) {
+      console.warn(`Failed to write pal moments for ${conversationId}:`, err)
+    }
+  }
+
+  // Writeback: save relation state to relation_{companionId}.md
+  if (relationContent && conv?.companionId) {
+    try {
+      await writeFile(
+        relationPath(dataRoot, conv.companionId, worldId),
+        relationContent,
+        'utf-8'
+      )
+    } catch (err) {
+      console.warn(`Failed to write relation state for ${conversationId}:`, err)
+    }
+  }
+
+  // Writeback: save structured handoff metadata (handoff_meta.json) so the
+  // next session can locate the handoff tail precisely instead of guessing
+  // by companionId + endedAt sorting.
+  if (handoffTailContent && conv) {
+    try {
+      const filePath = handoffMetaPath(dataRoot, worldId)
+      let meta: Record<string, HandoffMetaEntry> = {}
+      try { meta = JSON.parse(await readFile(filePath, 'utf-8')) } catch { /* no meta yet */ }
+      const worldData = await readWorldData(dataRoot, worldId)
+      const slots = worldData?.world.companionSlots ?? { a: null, b: null, c: null }
+      const slot = (Object.entries(slots).find(([, id]) => id === conv.companionId)?.[0] ?? null) as 'a' | 'b' | 'c' | null
+      const companionName = (await readCompanionName(dataRoot, conv.companionId)) ?? conv.companionId
+      let endingPage: number | null = null
+      if (conv.textbookId) {
+        const tb = await textbookStore.get(conv.textbookId, worldId)
+        endingPage = tb?.progress.currentPage ?? null
+      }
+      meta[conv.companionId] = {
+        savedAt: new Date().toISOString(),
+        prevConvId: conversationId,
+        companionName,
+        companionSlot: slot,
+        endingPage
+      }
+      await mkdir(dirname(filePath), { recursive: true })
+      await writeFile(filePath, JSON.stringify(meta, null, 2), 'utf-8')
+    } catch (err) {
+      console.warn(`Failed to write handoff meta for ${conversationId}:`, err)
+    }
+  }
+
+  // Writeback: append the diary to the monthly diary file (diary/YYYY-MM.md)
+  if (diaryContent && conv) {
+    try {
+      const companionName = (await readCompanionName(dataRoot, conv.companionId)) ?? conv.companionId
+      await diaryStore.append(worldId, {
+        date: new Date().toISOString(),
+        companionName,
+        content: diaryContent
+      })
+    } catch (err) {
+      console.warn(`Failed to append diary for ${conversationId}:`, err)
+    }
+  }
+
+  if (genFailures.length > 0) {
+    console.warn(`Artifact generation failures for ${conversationId}:`, genFailures)
+  }
+
+  return {
+    artifactCount,
+    farewell: farewellContent,
+    failures: genFailures.map((f) => f.type)
+  }
 }
 
 async function readCompanionName(dataRoot: string, companionId: string): Promise<string | null> {
