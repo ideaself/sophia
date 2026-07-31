@@ -592,6 +592,29 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     })
   }
 
+  const handleRewind = async (messageId: string) => {
+    const conversationId = activeTab.conversationId
+    if (!conversationId) return
+    const ok = await window.sophia.dialog.confirm({
+      message: '将删除这条消息之后的所有对话并从这一点继续，确定吗？',
+      confirmLabel: '回退到这里'
+    })
+    if (!ok) return
+    const truncated = await window.sophia.data.truncateConversation(conversationId, messageId)
+    if (truncated) {
+      setTabs((prev) => {
+        const next = [...prev]
+        const t = next[activeIdx]
+        if (t) {
+          const idx = t.messages.findIndex((m) => m.id === messageId)
+          if (idx >= 0) t.messages = t.messages.slice(0, idx + 1)
+        }
+        return next
+      })
+      setStickToBottom(true)
+    }
+  }
+
   const handleRegenerate = async (messageId: string) => {
     const msgs = activeTab.messages
     const msgIdx = msgs.findIndex((m) => m.id === messageId)
@@ -966,6 +989,14 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                         content={row.msg.content}
                         showActions={!chatStream.state.isStreaming && row.msg.role !== 'system'}
                         highlight={row.highlight}
+                        textbookId={textbook?.id ?? null}
+                        onRewind={
+                          !chatStream.state.isStreaming &&
+                          row.msg.role !== 'system' &&
+                          vi.index < allMessages.length - 1
+                            ? handleRewind
+                            : undefined
+                        }
                         onEdit={handleEditMessage}
                         onDelete={handleDeleteMessage}
                         onRegenerate={handleRegenerate}

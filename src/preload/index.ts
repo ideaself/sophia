@@ -141,6 +141,7 @@ export interface DataAPI {
   listConversations: (worldId: string) => Promise<ConversationDTO[]>
   deleteConversation: (conversationId: string, worldId?: string) => Promise<boolean>
   updateTitle: (conversationId: string, title: string, worldId?: string) => Promise<ConversationDTO | null>
+  truncateConversation: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
   sendMessage: (input: {
     conversationId: string
     content: string
@@ -167,6 +168,7 @@ export interface DataAPI {
     title: string
     author: string
   }>
+  searchTextbookExcerpt: (textbookId: string, chapter: string, worldId?: string) => Promise<{ chapter: string; excerpt: string } | null>
   listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
   updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
   updateTextbook: (textbookId: string, updates: { title?: string; content?: string }, worldId?: string) => Promise<TextbookDTO | null>
@@ -450,6 +452,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('conversation:delete', { conversationId, worldId }),
     updateTitle: (conversationId, title, worldId = 'world_default') =>
       ipcRenderer.invoke('conversation:update-title', { conversationId, title, worldId }),
+    truncateConversation: (conversationId, messageId, worldId = 'world_default') =>
+      ipcRenderer.invoke('conversation:truncate', { conversationId, messageId, worldId }),
     sendMessage: (input) =>
       ipcRenderer.invoke('message:send', input),
     updateMessage: (conversationId, messageId, content, worldId = 'world_default') =>
@@ -472,6 +476,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('textbook:read-original', { textbookId, worldId }),
     readEpubChapters: (textbookId, worldId = 'world_default') =>
       ipcRenderer.invoke('epub:read-chapters', { textbookId, worldId }),
+    searchTextbookExcerpt: (textbookId, chapter, worldId = 'world_default') =>
+      ipcRenderer.invoke('textbook:search-excerpt', { textbookId, chapter, worldId }),
     listTextbooks: (worldId) =>
       ipcRenderer.invoke('textbook:list', { worldId }),
     updateTextbookContent: (textbookId, content, worldId = 'world_default') =>

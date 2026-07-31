@@ -417,6 +417,27 @@ describe('related textbook passages', () => {
   })
 })
 
+describe('textbook citation rules', () => {
+  it('adds the citation-format segment when a textbook title is provided', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext,
+      textbookContent: '第一章：量子力学基础',
+      textbookTitle: '量子力学入门'
+    })
+    expect(prompt).toContain('教材引用格式')
+    expect(prompt).toContain('【教材出处 · 《量子力学入门》 · 章节名】')
+  })
+
+  it('omits the citation segment when there is no textbook', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('爱丽丝'),
+      worldContext
+    })
+    expect(prompt).not.toContain('教材引用格式')
+  })
+})
+
 // ---------------------------------------------------------------------------
 // Plain-dialogue mode (hide narration)
 // ---------------------------------------------------------------------------

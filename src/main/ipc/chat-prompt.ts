@@ -206,6 +206,7 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
       learnerInfo,
       textbookContent,
       relatedTextbook,
+      textbookTitle,
       classMode: params.classMode ?? 'standard',
       hideNarration: params.hideNarration,
       handoffTail,

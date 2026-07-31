@@ -260,6 +260,35 @@ export class ConversationStore {
     return true
   }
 
+  /**
+   * Rewind a conversation to a given message: keep everything up to and
+   * including that message, drop the rest (3.0.0 "rewind the conversation").
+   */
+  async truncateAfter(
+    conversationId: string,
+    worldId: string,
+    messageId: string
+  ): Promise<boolean> {
+    const messages = await this.getMessages(conversationId, worldId)
+    const idx = messages.findIndex((m) => m.id === messageId)
+    if (idx === -1) return false
+    const kept = messages.slice(0, idx + 1)
+    if (kept.length === messages.length) return false
+    await this.writeMessages(conversationId, worldId, kept)
+    this.invalidateIndex(worldId)
+
+    const conv = await this.get(conversationId, worldId)
+    if (conv) {
+      conv.updatedAt = new Date().toISOString()
+      await writeFile(
+        conversationPath(this.dataRoot, conversationId, worldId),
+        JSON.stringify(conv, null, 2),
+        'utf-8'
+      )
+    }
+    return true
+  }
+
   async searchMessages(
     worldId: string,
     query: string,

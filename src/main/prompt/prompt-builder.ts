@@ -57,6 +57,8 @@ export interface BuildSystemPromptParams {
   hideNarration?: boolean
   /** Cross-chapter retrieved textbook passages (pre-formatted string). */
   relatedTextbook?: string
+  /** Textbook title for citation attribution. */
+  textbookTitle?: string
   /** Token budget for textbook content (default: 2000) */
   maxTextbookTokens?: number
   /** Teaching language code (default: 'zh') */
@@ -154,6 +156,18 @@ function buildRelatedTextbookSegment(content: string): string {
   ].join('\n')
 }
 
+function buildCitationRulesSegment(textbookTitle: string): string {
+  return [
+    '## 教材引用格式',
+    '',
+    `引用《${textbookTitle}》的内容时，必须使用引用块（>）引用原文，并在引用前标注出处，格式：`,
+    '',
+    `【教材出处 · 《${textbookTitle}》 · 章节名】`,
+    '',
+    '只引用教材中真实存在的内容，绝不编造；找不到对应内容时如实说明教材没有涉及。'
+  ].join('\n')
+}
+
 function buildFeynmanSegment(): string {
   return [
     '## 费曼回讲模式',
@@ -246,6 +260,7 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
     relationState,
     classMode,
     relatedTextbook,
+    textbookTitle,
     hideNarration,
     maxTextbookTokens = 2000,
     language = 'zh'
@@ -266,6 +281,9 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   if (textbookContent) {
     const truncated = truncateToBudget(textbookContent, maxTextbookTokens)
     segments.push(buildTextbookSegment(truncated))
+    if (textbookTitle) {
+      segments.push(buildCitationRulesSegment(textbookTitle))
+    }
   }
 
   // Cross-chapter retrieved passages (whole-book teaching)

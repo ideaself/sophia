@@ -126,6 +126,7 @@ declare global {
     listConversations: (worldId: string) => Promise<ConversationDTO[]>
     deleteConversation: (conversationId: string, worldId?: string) => Promise<boolean>
     updateTitle: (conversationId: string, title: string, worldId?: string) => Promise<ConversationDTO | null>
+    truncateConversation: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
     sendMessage: (input: {
       conversationId: string
       content: string
@@ -148,6 +149,7 @@ declare global {
     getTextbook: (textbookId: string, worldId?: string) => Promise<TextbookDTO | null>
     readTextbookOriginal: (textbookId: string, worldId?: string) => Promise<{ data: Uint8Array; fileName: string } | null>
     readEpubChapters: (textbookId: string, worldId?: string) => Promise<EpubChaptersResult>
+    searchTextbookExcerpt: (textbookId: string, chapter: string, worldId?: string) => Promise<{ chapter: string; excerpt: string } | null>
     listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
     updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
     updateTextbook: (textbookId: string, updates: { title?: string; content?: string }, worldId?: string) => Promise<TextbookDTO | null>

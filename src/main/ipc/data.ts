@@ -11,6 +11,7 @@ import { DiaryStore } from '../storage/diary-store'
 import type { ProviderStore } from '../storage/provider-store'
 import { generateArtifacts } from '../artifacts/generate'
 import { extractText, getEpubChapters } from '../parsers'
+import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
 import { PickedFileRegistry } from './picked-files'
 import {
   learnerPath,
@@ -33,6 +34,7 @@ import {
   IpcUpdateMessageInputSchema,
   IpcDeleteMessageInputSchema,
   IpcRedoArtifactsInputSchema,
+  IpcTruncateConversationInputSchema,
   IpcGenerateArtifactInputSchema,
   IpcCreateArtifactInputSchema,
   IpcGetArtifactInputSchema,
@@ -46,6 +48,7 @@ import {
   IpcDeleteTextbookInputSchema,
   IpcReadOriginalInputSchema,
   IpcReadEpubChaptersInputSchema,
+  IpcTextbookSearchExcerptInputSchema,
   IpcCreateReadingNoteInputSchema,
   IpcListReadingNotesInputSchema,
   IpcUpdateReadingNoteInputSchema,
@@ -121,6 +124,17 @@ export function registerConversationIpc(
     const parsed = IpcUpdateTitleInputSchema.parse(input)
     const worldId = parsed.worldId ?? 'world_default'
     return conversationStore.updateTitle(parsed.conversationId, worldId, parsed.title)
+  })
+
+  // Rewind a conversation to a message: drop everything after it
+  ipcMain.handle('conversation:truncate', async (_event, input: unknown) => {
+    const parsed = IpcTruncateConversationInputSchema.parse(input)
+    const worldId = parsed.worldId ?? 'world_default'
+    return conversationStore.truncateAfter(
+      parsed.conversationId,
+      worldId,
+      parsed.messageId
+    )
   })
 
   ipcMain.handle('conversation:end', async (_event, input: unknown) => {
@@ -375,6 +389,25 @@ export function registerConversationIpc(
     }
     const fullPath = join(textbookDir(dataRoot, parsed.textbookId, worldId), textbook.originalFile)
     return getEpubChapters(fullPath)
+  })
+
+  // Look up the real textbook passage for a chat citation chip
+  ipcMain.handle('textbook:search-excerpt', async (_event, input: unknown) => {
+    const parsed = IpcTextbookSearchExcerptInputSchema.parse(input)
+    const worldId = parsed.worldId ?? 'world_default'
+    const content = await textbookStore.getContent(parsed.textbookId, worldId)
+    if (!content) return null
+
+    const sections = splitSections(content)
+    const target = parsed.chapter.trim()
+    const exact = sections.find((s) => s.heading.includes(target) || target.includes(s.heading))
+    const matched = exact ?? sections.find((s) => headingMatches(target, s.heading))
+    if (!matched) return null
+
+    return {
+      chapter: matched.heading,
+      excerpt: matched.text.slice(0, 500).trim()
+    }
   })
 
   ipcMain.handle('textbook:list', async (_event, input: unknown) => {

@@ -89,3 +89,26 @@ describe('ConversationStore read-path failure handling', () => {
     expect(warnSpy).toHaveBeenCalledOnce()
   })
 })
+
+describe('ConversationStore truncateAfter', () => {
+  it('keeps messages up to and including the target, drops the rest', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ worldId: WORLD_ID, companionId: 'c1', textbookId: null, title: 't' })
+    const m1 = await store.addMessage(conv.id, WORLD_ID, 'user', 'q1')
+    const m2 = await store.addMessage(conv.id, WORLD_ID, 'assistant', 'a1')
+    await store.addMessage(conv.id, WORLD_ID, 'user', 'q2')
+
+    const ok = await store.truncateAfter(conv.id, WORLD_ID, m2.id)
+    expect(ok).toBe(true)
+    const msgs = await store.getMessages(conv.id, WORLD_ID)
+    expect(msgs.map((m) => m.id)).toEqual([m1.id, m2.id])
+  })
+
+  it('returns false for a missing message or when nothing would change', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ worldId: WORLD_ID, companionId: 'c1', textbookId: null, title: 't' })
+    const m1 = await store.addMessage(conv.id, WORLD_ID, 'user', 'q1')
+    expect(await store.truncateAfter(conv.id, WORLD_ID, 'missing')).toBe(false)
+    expect(await store.truncateAfter(conv.id, WORLD_ID, m1.id)).toBe(false)
+  })
+})

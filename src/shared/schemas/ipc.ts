@@ -95,6 +95,18 @@ export const IpcRedoArtifactsInputSchema = z.object({
   types: z.array(z.string().min(1)).min(1)
 })
 
+export const IpcTruncateConversationInputSchema = z.object({
+  conversationId: z.string().min(1),
+  messageId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
+export const IpcTextbookSearchExcerptInputSchema = z.object({
+  textbookId: z.string().min(1),
+  chapter: z.string().min(1),
+  worldId: z.string().optional()
+})
+
 export const IpcGetConversationWithWorldInputSchema = z.object({
   conversationId: z.string().min(1),
   worldId: z.string().optional()

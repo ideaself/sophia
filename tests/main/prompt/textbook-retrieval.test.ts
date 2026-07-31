@@ -3,7 +3,8 @@ import {
   splitSections,
   extractTerms,
   retrievePassages,
-  formatPassages
+  formatPassages,
+  headingMatches
 } from '../../../src/main/prompt/textbook-retrieval'
 
 const TEXTBOOK = `# 前言
@@ -102,5 +103,22 @@ describe('formatPassages', () => {
     expect(out).toContain('第二章 不确定性原理')
     expect(out).toContain('位置与动量无法同时被精确测定')
     expect(out).toContain('绝不编造教材没有的内容')
+  })
+})
+
+describe('headingMatches', () => {
+  it('matches identical headings', () => {
+    expect(headingMatches('第二章 不确定性原理', '第二章 不确定性原理')).toBe(true)
+  })
+
+  it('ignores chapter numbering and punctuation', () => {
+    expect(headingMatches('第二章：不确定性原理', '第二章 不确定性原理')).toBe(true)
+    expect(headingMatches('不确定性原理', '第二章 不确定性原理')).toBe(true)
+    expect(headingMatches('不确定性原理', '第二章 不确定性原理。')).toBe(true)
+  })
+
+  it('rejects unrelated headings', () => {
+    expect(headingMatches('不确定性原理', '第一章 波粒二象性')).toBe(false)
+    expect(headingMatches('', '第一章 波粒二象性')).toBe(false)
   })
 })

@@ -33,7 +33,9 @@ import {
   IpcSendMessageInputSchema,
   IpcEndClassInputSchema,
   IpcRedoArtifactsInputSchema,
+  IpcTruncateConversationInputSchema,
   IpcChatPromptMessagesInputSchema,
+  IpcTextbookSearchExcerptInputSchema,
   IpcGetConversationInputSchema,
   IpcListConversationsInputSchema,
   IpcGetMessagesInputSchema,
@@ -630,6 +632,41 @@ describe('IPC input schemas', () => {
       const result = IpcRedoArtifactsInputSchema.safeParse({
         conversationId: 'conv_001',
         types: []
+      })
+      expect(result.success).toBe(false)
+    })
+  })
+
+  describe('IpcTruncateConversationInputSchema', () => {
+    it('accepts valid input', () => {
+      const result = IpcTruncateConversationInputSchema.safeParse({
+        conversationId: 'conv_001',
+        messageId: 'msg_001'
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects a missing messageId', () => {
+      const result = IpcTruncateConversationInputSchema.safeParse({
+        conversationId: 'conv_001'
+      })
+      expect(result.success).toBe(false)
+    })
+  })
+
+  describe('IpcTextbookSearchExcerptInputSchema', () => {
+    it('accepts valid input', () => {
+      const result = IpcTextbookSearchExcerptInputSchema.safeParse({
+        textbookId: 'tb_001',
+        chapter: '第二章 不确定性原理'
+      })
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects an empty chapter', () => {
+      const result = IpcTextbookSearchExcerptInputSchema.safeParse({
+        textbookId: 'tb_001',
+        chapter: ''
       })
       expect(result.success).toBe(false)
     })

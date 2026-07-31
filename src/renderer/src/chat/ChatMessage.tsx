@@ -23,9 +23,13 @@ interface ChatMessageProps {
   showActions?: boolean
   /** In-conversation search highlight state. */
   highlight?: MessageHighlight
+  /** Textbook id used by the in-message citation chip (「查看教材原文」). */
+  textbookId?: string | null
   onEdit?: (id: string, content: string) => void
   onDelete?: (id: string) => void
   onRegenerate?: (id: string) => void
+  /** Rewind the conversation to this message (drop everything after it). */
+  onRewind?: (id: string) => void
 }
 
 function MermaidBlock({ code }: { code: string }) {
@@ -72,6 +76,57 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied ? '已复制' : '📋'}
     </button>
+  )
+}
+
+function CitationChip({ textbookId, chapter }: { textbookId?: string | null; chapter: string }) {
+  const [state, setState] = useState<'idle' | 'loading' | 'open' | 'error'>('idle')
+  const [excerpt, setExcerpt] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
+
+  const handleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!textbookId) return
+    if (state === 'open') {
+      setState('idle')
+      return
+    }
+    setState('loading')
+    try {
+      const result = await window.sophia.data.searchTextbookExcerpt(textbookId, chapter)
+      if (!result) {
+        setErrorMsg('未在教材中找到对应章节')
+        setState('error')
+        return
+      }
+      setExcerpt(result.excerpt)
+      setState('open')
+    } catch {
+      setErrorMsg('教材原文读取失败')
+      setState('error')
+    }
+  }
+
+  return (
+    <span className="relative inline-block align-middle">
+      <button
+        onClick={handleClick}
+        disabled={!textbookId}
+        className="mb-1 rounded border border-accent-border bg-accent-subtle px-2 py-0.5 text-xs text-accent-hover hover:bg-accent-subtle/70 disabled:opacity-50"
+        title={textbookId ? '查看教材原文' : '当前课堂未绑定教材'}
+      >
+        📖 教材原文 · {chapter}
+      </button>
+      {(state === 'loading' || state === 'open' || state === 'error') && (
+        <span className="absolute left-0 top-full z-30 mt-1 block w-80 whitespace-pre-wrap rounded-lg border border-surface-border bg-bg-surface p-3 text-xs leading-relaxed text-text-secondary shadow-lg">
+          {state === 'loading'
+            ? '加载中...'
+            : state === 'error'
+              ? errorMsg
+              : excerpt}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -125,9 +180,11 @@ export function ChatMessage({
   content,
   showActions,
   highlight = 'none',
+  textbookId,
   onEdit,
   onDelete,
-  onRegenerate
+  onRegenerate,
+  onRewind
 }: ChatMessageProps): React.ReactElement {
   const isUser = role === 'user'
   const [editing, setEditing] = useState(false)
@@ -181,6 +238,17 @@ export function ChatMessage({
                   </div>
                   <pre>{children}</pre>
                 </div>
+              )
+            },
+            blockquote({ children }) {
+              const text = extractText(children)
+              const m = /【教材出处 · 《([^】]+)》 · ([^】]+)】/.exec(text)
+              if (!m) return <blockquote>{children}</blockquote>
+              return (
+                <blockquote>
+                  <CitationChip textbookId={textbookId} chapter={m[2].trim()} />
+                  {children}
+                </blockquote>
               )
             }
           }}
@@ -240,10 +308,19 @@ export function ChatMessage({
               rendered
             )}
           </div>
-          {showActions && !editing && (
+              {showActions && !editing && (
             <div className="flex-shrink-0 flex items-start gap-1 opacity-0 group-hover:opacity-100 transition-opacity pt-0.5">
               <CopyButton text={content} />
               {role === 'assistant' && <SpeakButton text={content} />}
+              {onRewind && (
+                <button
+                  onClick={() => onRewind(id)}
+                  className="text-xs text-text-muted hover:text-text-secondary px-1"
+                  title="从这里重新开始（删除其后所有消息）"
+                >
+                  ↩️
+                </button>
+              )}
               {onEdit && (
                 <button
                   onClick={() => { setEditText(content); setEditing(true) }}

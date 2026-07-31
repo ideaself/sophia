@@ -24,6 +24,31 @@ export interface RetrievedPassage {
   excerpt: string
 }
 
+/** Normalize a heading for fuzzy matching (strip chapter numbering, punctuation). */
+export function normalizeHeading(s: string): string {
+  return s
+    .replace(/第[一二三四五六七八九十百千万零0-9]+[章节部分课篇卷]/g, '')
+    .replace(/[：:\s、·—-]/g, '')
+    .toLowerCase()
+}
+
+/**
+ * Fuzzy heading match: exact substring either way, or a shared 4-char n-gram.
+ * Used to map AI-cited chapter names back to real textbook sections.
+ */
+export function headingMatches(target: string, heading: string): boolean {
+  const a = normalizeHeading(target)
+  const b = normalizeHeading(heading)
+  if (!a || !b) return false
+  if (a.includes(b) || b.includes(a)) return true
+  const grams = new Set<string>()
+  for (let i = 0; i <= a.length - 4; i++) grams.add(a.slice(i, i + 4))
+  for (let i = 0; i <= b.length - 4; i++) {
+    if (grams.has(b.slice(i, i + 4))) return true
+  }
+  return false
+}
+
 export interface RetrievalOptions {
   /** Maximum number of passages to return (default: 3). */
   maxPassages?: number
