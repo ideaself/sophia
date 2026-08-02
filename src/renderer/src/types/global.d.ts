@@ -331,6 +331,7 @@ declare global {
 
   interface AppAPI {
     minimizeToTray: () => Promise<void>
+    openExternal: (url: string) => Promise<{ success: boolean }>
   }
 
   interface SophiaAPI {

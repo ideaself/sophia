@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
 import { useTTS, stopTTS } from '../hooks/useTTS'
 import { TTSControlPanel } from '../components/TTSControlPanel'
+import { DictionaryPopup } from '../components/DictionaryPopup'
 import { applyNotesToHtml } from '../../../shared/reading-notes-utils'
+import { isEnglishWord, loadDictConfig } from '../../../shared/dict'
 
 interface EpubChapterData {
   id: string
@@ -78,6 +80,8 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
   const [noteDraftOpen, setNoteDraftOpen] = useState(false)
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editingNoteText, setEditingNoteText] = useState('')
+  // 在线词典浮层（选中英文单词自动弹出，或选区菜单手动查词）
+  const [dictPopup, setDictPopup] = useState<{ word: string; x: number; y: number } | null>(null)
   // ---- In-book search (Ctrl+F) ----
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -175,6 +179,7 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
     setTtsOpen(false)
     setSelMenu(null)
     setNoteDraftOpen(false)
+    setDictPopup(null)
   }, [chapterIndex])
 
   // ---- Stop TTS when leaving the reader ----
@@ -326,7 +331,17 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
       return
     }
     const rect = range.getBoundingClientRect()
-    setSelMenu({ x: rect.left + rect.width / 2, y: rect.top, text })
+    const x = rect.left + rect.width / 2
+    const y = rect.top + rect.height / 2
+    // 选中单个英文单词：启用词典时自动弹出查词，否则照常显示选区菜单。
+    if (isEnglishWord(text) && loadDictConfig().enabled) {
+      setSelMenu(null)
+      setNoteDraftOpen(false)
+      setDictPopup({ word: text, x, y })
+      return
+    }
+    setDictPopup(null)
+    setSelMenu({ x, y: rect.top, text })
   }
 
   const createNote = async (type: 'highlight' | 'underline' | 'note', readerNote = '') => {
@@ -695,6 +710,19 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
           >
             📝 笔记
           </button>
+          {isEnglishWord(selMenu.text) && (
+            <button
+              onClick={() => {
+                setDictPopup({ word: selMenu.text, x: selMenu.x, y: selMenu.y })
+                setSelMenu(null)
+              }}
+              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
+              title="在线词典查词"
+              aria-label="在线词典查词"
+            >
+              📖 查词
+            </button>
+          )}
         </div>
       )}
       {noteDraftOpen && selMenu && (
@@ -750,6 +778,15 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
             下一章 ▶
           </button>
         </div>
+      )}
+
+      {/* 在线词典浮层 */}
+      {dictPopup && (
+        <DictionaryPopup
+          word={dictPopup.word}
+          anchor={{ x: dictPopup.x, y: dictPopup.y }}
+          onClose={() => setDictPopup(null)}
+        />
       )}
     </div>
   )

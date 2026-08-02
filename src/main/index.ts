@@ -161,6 +161,7 @@ if (!app.requestSingleInstanceLock()) {
             "img-src 'self' data: blob:; " +
             "font-src 'self' data:; " +
             "connect-src 'self' https: http://localhost:* http://127.0.0.1:*; " +
+            "frame-src https:; " +
             "object-src 'none'; " +
             "base-uri 'self'"
           ]
@@ -190,6 +191,15 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle('app:minimize-to-tray', () => {
       const win = BrowserWindow.getAllWindows()[0]
       if (win) win.hide()
+    })
+    // Open external URLs in the system browser. Only http(s) is allowed.
+    ipcMain.handle('app:open-external', async (_event, input: unknown) => {
+      const url = typeof input === 'string' ? input : ''
+      if (!/^https?:\/\//i.test(url)) {
+        throw new Error('Only http(s) URLs can be opened')
+      }
+      await shell.openExternal(url)
+      return { success: true }
     })
     const keyStore = registerSettingsIpc(dataRoot, safeStorage)
     const providerStore = registerProviderIpc(dataRoot, safeStorage)

@@ -382,6 +382,7 @@ export interface SyncAPI {
 
 export interface AppAPI {
   minimizeToTray: () => Promise<void>
+  openExternal: (url: string) => Promise<{ success: boolean }>
 }
 
 export interface SophiaAPI {
@@ -441,7 +442,8 @@ const sophia: SophiaAPI = {
   getVersion: () => ipcRenderer.invoke('app:get-version'),
   getPlatform: () => ipcRenderer.invoke('app:get-platform'),
   app: {
-    minimizeToTray: () => ipcRenderer.invoke('app:minimize-to-tray')
+    minimizeToTray: () => ipcRenderer.invoke('app:minimize-to-tray'),
+    openExternal: (url) => ipcRenderer.invoke('app:open-external', url)
   },
   settings: {
     hasDeepSeekKey: () => ipcRenderer.invoke('settings:has-deepseek-key'),
