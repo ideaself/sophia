@@ -8,8 +8,6 @@ import {
 
 interface DictionaryPopupProps {
   word: string
-  /** Anchor position for the popup (center of the selection). */
-  anchor: { x: number; y: number }
   onClose: () => void
 }
 
@@ -35,7 +33,7 @@ const INITIAL_H = 480
  * 页面适配：词典页用 CSS zoom（executeJavaScript 注入）缩放；浮层右下角
  * 可拖拽调整大小。
  */
-export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps): React.ReactElement {
+export function DictionaryPopup({ word, onClose }: DictionaryPopupProps): React.ReactElement {
   const [url, setUrl] = useState(() => buildDictUrl(loadDictConfig().template, word))
   const [status, setStatus] = useState<LoadState>('loading')
   const [zoom, setZoom] = useState(() => loadDictPopupPrefs().zoom)
@@ -43,6 +41,11 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
     const p = loadDictPopupPrefs()
     return { w: p.width, h: p.height }
   })
+  // 居中定位（按初始尺寸计算一次，拖拽调整大小时位置保持不动）。
+  const [pos] = useState(() => ({
+    left: Math.max(8, Math.round((window.innerWidth - INITIAL_W) / 2)),
+    top: Math.max(8, Math.round((window.innerHeight - INITIAL_H) / 2))
+  }))
   const sizeRef = useRef(size)
   const rootRef = useRef<HTMLDivElement>(null)
   const webviewRef = useRef<HTMLElement | null>(null)
@@ -157,8 +160,8 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
       style={{
         width: size.w,
         height: size.h,
-        left: Math.max(8, Math.min(anchor.x - INITIAL_W / 2, window.innerWidth - INITIAL_W - 8)),
-        top: Math.max(8, Math.min(anchor.y + 16, window.innerHeight - INITIAL_H - 8))
+        left: pos.left,
+        top: pos.top
       }}
     >
       {/* Header */}

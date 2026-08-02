@@ -81,7 +81,7 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editingNoteText, setEditingNoteText] = useState('')
   // 在线词典浮层（选中英文单词自动弹出，或选区菜单手动查词）
-  const [dictPopup, setDictPopup] = useState<{ word: string; x: number; y: number } | null>(null)
+  const [dictPopup, setDictPopup] = useState<{ word: string } | null>(null)
   // ---- In-book search (Ctrl+F) ----
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -337,7 +337,7 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
     if (isEnglishWord(text) && loadDictConfig().enabled) {
       setSelMenu(null)
       setNoteDraftOpen(false)
-      setDictPopup({ word: text, x, y })
+      setDictPopup({ word: text })
       return
     }
     setDictPopup(null)
@@ -713,7 +713,7 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
           {isEnglishWord(selMenu.text) && (
             <button
               onClick={() => {
-                setDictPopup({ word: selMenu.text, x: selMenu.x, y: selMenu.y })
+                setDictPopup({ word: selMenu.text })
                 setSelMenu(null)
               }}
               className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
@@ -784,7 +784,6 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
       {dictPopup && (
         <DictionaryPopup
           word={dictPopup.word}
-          anchor={{ x: dictPopup.x, y: dictPopup.y }}
           onClose={() => setDictPopup(null)}
         />
       )}
