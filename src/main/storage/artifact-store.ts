@@ -6,6 +6,7 @@ import type { ArtifactId, ConversationId, WorldId } from '../../shared/types/ids
 import { ArtifactType } from '../../shared/types/ids'
 import { artifactsDir, artifactPath } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
+import { atomicWriteFile } from './atomic-write'
 
 type ArtifactTypeValue = 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note'
 
@@ -38,7 +39,7 @@ export class ArtifactStore {
     const artifact = raw as unknown as Artifact
 
     await mkdir(artifactsDir(this.dataRoot, conversationId, worldId), { recursive: true })
-    await writeFile(
+    await atomicWriteFile(
       artifactPath(this.dataRoot, conversationId, id, worldId),
       JSON.stringify(artifact, null, 2),
       'utf-8'
@@ -104,7 +105,7 @@ export class ArtifactStore {
     }
 
     const updated: Artifact = { ...existing, content }
-    await writeFile(filePath, JSON.stringify(updated, null, 2), 'utf-8')
+    await atomicWriteFile(filePath, JSON.stringify(updated, null, 2), 'utf-8')
     return updated
   }
 }

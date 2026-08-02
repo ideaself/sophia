@@ -11,6 +11,7 @@ import {
 import { companionDir } from '../storage/app-data'
 import { CompanionSchema } from '../../shared/schemas/companion'
 import { IpcArchiveEntryIdInputSchema } from '../../shared/schemas/ipc'
+import { atomicWriteFile } from '../storage/atomic-write'
 
 /**
  * Restore a companion from its archived snapshot: re-insert it into
@@ -38,7 +39,7 @@ async function restoreCompanion(dataRoot: string, entry: ArchiveEntry): Promise<
 
   existing.push(companion as unknown as { id: string })
   await mkdir(companionDir(dataRoot), { recursive: true })
-  await writeFile(indexPath, JSON.stringify(existing, null, 2), 'utf-8')
+  await atomicWriteFile(indexPath, JSON.stringify(existing, null, 2), 'utf-8')
   await rm(join(archiveDir(dataRoot), entry.id), { recursive: true, force: true })
   await purgeArchiveItem(dataRoot, entry.id)
   return true

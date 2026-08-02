@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { configDir } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
+import { atomicWriteFile } from './atomic-write'
 import type { SafeStorageAdapter } from '../security/secure-key-store'
 
 const PROVIDERS_FILE = 'providers.json'
@@ -136,7 +137,7 @@ export class ProviderStore {
     const dir = configDir(this.dataRoot)
     await mkdir(dir, { recursive: true })
     const encrypted = this.safeStorage.encryptString(apiKey)
-    await writeFile(join(dir, `${providerId}.key.enc`), encrypted)
+    await atomicWriteFile(join(dir, `${providerId}.key.enc`), encrypted)
   }
 
   async readApiKey(providerId: string): Promise<string | null> {
@@ -172,6 +173,6 @@ export class ProviderStore {
   private async save(providers: ApiProvider[]): Promise<void> {
     const dir = configDir(this.dataRoot)
     await mkdir(dir, { recursive: true })
-    await writeFile(this.providersPath, JSON.stringify(providers, null, 2), 'utf-8')
+    await atomicWriteFile(this.providersPath, JSON.stringify(providers, null, 2), 'utf-8')
   }
 }

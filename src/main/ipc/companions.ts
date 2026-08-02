@@ -5,6 +5,7 @@ import { CompanionSchema } from '../../shared/schemas/companion'
 import type { z } from 'zod'
 import { companionDir } from '../storage/app-data'
 import { archiveCompanion } from '../storage/archive-store'
+import { atomicWriteFile } from '../storage/atomic-write'
 
 type CompanionData = z.infer<typeof CompanionSchema>
 
@@ -22,7 +23,7 @@ async function readIndex(dataRoot: string): Promise<CompanionData[]> {
 async function writeIndex(dataRoot: string, companions: CompanionData[]) {
   const dir = companionDir(dataRoot)
   await mkdir(dir, { recursive: true })
-  await writeFile(join(dir, 'index.json'), JSON.stringify(companions, null, 2), 'utf-8')
+  await atomicWriteFile(join(dir, 'index.json'), JSON.stringify(companions, null, 2), 'utf-8')
 }
 
 export function registerCompanionIpc(dataRoot: string): void {

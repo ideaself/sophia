@@ -9,6 +9,7 @@
 
 import { join, dirname, relative } from 'node:path'
 import { readFile, writeFile, mkdir, rm, rename, access } from 'node:fs/promises'
+import { atomicWriteFile } from './atomic-write'
 
 export type ArchiveKind = 'conversation' | 'textbook' | 'companion' | 'other'
 
@@ -44,7 +45,7 @@ async function readManifest(dataRoot: string): Promise<Record<string, ArchiveEnt
 
 async function writeManifest(dataRoot: string, manifest: Record<string, ArchiveEntry>): Promise<void> {
   await mkdir(archiveDir(dataRoot), { recursive: true })
-  await writeFile(archiveManifestPath(dataRoot), JSON.stringify(manifest, null, 2), 'utf-8')
+  await atomicWriteFile(archiveManifestPath(dataRoot), JSON.stringify(manifest, null, 2), 'utf-8')
 }
 
 function newEntryId(kind: ArchiveKind, id: string): string {
@@ -100,7 +101,7 @@ export async function archiveCompanion(
   const entryId = newEntryId('companion', companionId)
   const target = join(archiveDir(dataRoot), entryId, 'companion.json')
   await mkdir(dirname(target), { recursive: true })
-  await writeFile(target, JSON.stringify(snapshot, null, 2), 'utf-8')
+  await atomicWriteFile(target, JSON.stringify(snapshot, null, 2), 'utf-8')
 
   const manifest = await readManifest(dataRoot)
   manifest[entryId] = {

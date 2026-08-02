@@ -13,6 +13,7 @@ import {
   conversationMessagesPath
 } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
+import { atomicWriteFile } from './atomic-write'
 
 const MessageRoleSchema = z.enum(['user', 'assistant', 'system'])
 
@@ -73,12 +74,12 @@ export class ConversationStore {
     const conversation = buildConversation(id, input, now)
 
     await mkdir(conversationDir(this.dataRoot, id, input.worldId), { recursive: true })
-    await writeFile(
+    await atomicWriteFile(
       conversationPath(this.dataRoot, id, input.worldId),
       JSON.stringify(conversation, null, 2),
       'utf-8'
     )
-    await writeFile(
+    await atomicWriteFile(
       conversationMessagesPath(this.dataRoot, id, input.worldId),
       '',
       'utf-8'
@@ -155,7 +156,7 @@ export class ConversationStore {
     const conv = await this.get(conversationId, worldId)
     if (conv) {
       conv.updatedAt = now
-      await writeFile(
+      await atomicWriteFile(
         conversationPath(this.dataRoot, conversationId, worldId),
         JSON.stringify(conv, null, 2),
         'utf-8'
@@ -218,7 +219,7 @@ export class ConversationStore {
     conv.endedAt = now
     conv.updatedAt = now
 
-    await writeFile(
+    await atomicWriteFile(
       conversationPath(this.dataRoot, conversationId, worldId),
       JSON.stringify(conv, null, 2),
       'utf-8'
@@ -233,7 +234,7 @@ export class ConversationStore {
     conv.title = title
     conv.updatedAt = new Date().toISOString()
 
-    await writeFile(
+    await atomicWriteFile(
       conversationPath(this.dataRoot, conversationId, worldId),
       JSON.stringify(conv, null, 2),
       'utf-8'
@@ -280,7 +281,7 @@ export class ConversationStore {
     const conv = await this.get(conversationId, worldId)
     if (conv) {
       conv.updatedAt = new Date().toISOString()
-      await writeFile(
+      await atomicWriteFile(
         conversationPath(this.dataRoot, conversationId, worldId),
         JSON.stringify(conv, null, 2),
         'utf-8'
@@ -341,7 +342,7 @@ export class ConversationStore {
 
   private async writeMessages(conversationId: string, worldId: string, messages: Message[]): Promise<void> {
     const jsonl = messages.map((m) => JSON.stringify(m)).join('\n') + (messages.length > 0 ? '\n' : '')
-    await writeFile(
+    await atomicWriteFile(
       conversationMessagesPath(this.dataRoot, conversationId, worldId),
       jsonl,
       'utf-8'

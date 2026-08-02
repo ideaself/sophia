@@ -2,6 +2,7 @@ import { readFile, writeFile, unlink, access, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { configDir } from '../storage/app-data'
 import { isNotFoundError, warnReadFailure } from '../storage/fs-errors'
+import { atomicWriteFile } from '../storage/atomic-write'
 
 /**
  * Dependency-injected abstraction over platform-specific encryption.
@@ -69,7 +70,7 @@ export class SecureKeyStore {
     await mkdir(configDir(this.dataRoot), { recursive: true })
 
     const encrypted = this.safeStorage.encryptString(apiKey)
-    await writeFile(this.keyFilePath, encrypted)
+    await atomicWriteFile(this.keyFilePath, encrypted)
   }
 
   /**

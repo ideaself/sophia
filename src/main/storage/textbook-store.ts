@@ -12,6 +12,7 @@ import {
   textbookOriginalPath
 } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
+import { atomicWriteFile } from './atomic-write'
 
 export interface CreateTextbookInput {
   worldId: WorldId
@@ -98,14 +99,14 @@ export class TextbookStore {
       )
     }
 
-    await writeFile(
+    await atomicWriteFile(
       textbookPath(this.dataRoot, id, input.worldId),
       JSON.stringify(textbook, null, 2),
       'utf-8'
     )
 
     if (input.content) {
-      await writeFile(
+      await atomicWriteFile(
         textbookContentPath(this.dataRoot, id, input.worldId),
         input.content,
         'utf-8'
@@ -160,12 +161,12 @@ export class TextbookStore {
     tb.content = content
     tb.updatedAt = new Date().toISOString()
 
-    await writeFile(
+    await atomicWriteFile(
       textbookPath(this.dataRoot, textbookId, worldId),
       JSON.stringify(tb, null, 2),
       'utf-8'
     )
-    await writeFile(
+    await atomicWriteFile(
       textbookContentPath(this.dataRoot, textbookId, worldId),
       content,
       'utf-8'
@@ -185,13 +186,13 @@ export class TextbookStore {
     if (updates.rating !== undefined) tb.rating = updates.rating
     tb.updatedAt = new Date().toISOString()
 
-    await writeFile(
+    await atomicWriteFile(
       textbookPath(this.dataRoot, textbookId, worldId),
       JSON.stringify(tb, null, 2),
       'utf-8'
     )
     if (updates.content !== undefined) {
-      await writeFile(
+      await atomicWriteFile(
         textbookContentPath(this.dataRoot, textbookId, worldId),
         updates.content,
         'utf-8'
@@ -215,7 +216,7 @@ export class TextbookStore {
     if (progress.lastPosition !== undefined) tb.progress.lastPosition = progress.lastPosition
     tb.updatedAt = new Date().toISOString()
 
-    await writeFile(
+    await atomicWriteFile(
       textbookPath(this.dataRoot, textbookId, worldId),
       JSON.stringify(tb, null, 2),
       'utf-8'
@@ -239,7 +240,7 @@ export class TextbookStore {
     if (!tb) return false
     tb.isDeleted = true
     tb.updatedAt = new Date().toISOString()
-    await writeFile(
+    await atomicWriteFile(
       textbookPath(this.dataRoot, textbookId, worldId),
       JSON.stringify(tb, null, 2),
       'utf-8'

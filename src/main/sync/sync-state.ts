@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isNotFoundError, warnReadFailure } from '../storage/fs-errors'
+import { atomicWriteFile } from '../storage/atomic-write'
 
 /**
  * Per-device record of what was synced and when. This is what lets mirror
@@ -44,7 +45,7 @@ export async function loadSyncState(dataRoot: string): Promise<SyncState | null>
 }
 
 export async function saveSyncState(dataRoot: string, state: SyncState): Promise<void> {
-  await writeFile(join(dataRoot, SYNC_STATE_FILE), JSON.stringify(state, null, 2), 'utf-8')
+  await atomicWriteFile(join(dataRoot, SYNC_STATE_FILE), JSON.stringify(state, null, 2), 'utf-8')
 }
 
 export function emptySyncState(): SyncState {

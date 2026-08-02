@@ -80,6 +80,7 @@ import {
   type ConversationId
 } from '../../shared/types/ids'
 import { ARTIFACTS_GENERATED } from '../../shared/channel-names'
+import { atomicWriteFile } from '../storage/atomic-write'
 
 /** In-app reader loads the whole file into memory — cap it. */
 const MAX_ORIGINAL_SIZE = 512 * 1024 * 1024
@@ -609,7 +610,7 @@ export function registerConversationIpc(
     if (!pickedFiles.has(parsed.filePath)) {
       throw new Error('Target file must be selected through the save dialog')
     }
-    await writeFile(parsed.filePath, parsed.content, 'utf-8')
+    await atomicWriteFile(parsed.filePath, parsed.content, 'utf-8')
     return { success: true }
   })
 
@@ -652,7 +653,7 @@ export function registerConversationIpc(
         pageSize: 'A4',
         margins: { top: 0.7, bottom: 0.7, left: 0.6, right: 0.6 }
       })
-      await writeFile(parsed.filePath, pdf)
+      await atomicWriteFile(parsed.filePath, pdf)
       return { success: true }
     } finally {
       win.destroy()
@@ -668,7 +669,7 @@ export function registerConversationIpc(
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
     if (!win) throw new Error('No window available')
     const image = await win.webContents.capturePage()
-    await writeFile(parsed.filePath, image.toPNG())
+    await atomicWriteFile(parsed.filePath, image.toPNG())
     return { success: true }
   })
 
@@ -697,7 +698,7 @@ export function registerConversationIpc(
 
   ipcMain.handle('flashcard:save-srs-state', async (_event, input: unknown) => {
     await mkdir(dataRoot, { recursive: true })
-    await writeFile(srsStatePath, JSON.stringify(input), 'utf-8')
+    await atomicWriteFile(srsStatePath, JSON.stringify(input), 'utf-8')
     return { success: true }
   })
 
@@ -714,7 +715,7 @@ export function registerConversationIpc(
 
   ipcMain.handle('flashcard:save-favorites', async (_event, input: unknown) => {
     await mkdir(dataRoot, { recursive: true })
-    await writeFile(favoritesPath, JSON.stringify(Array.isArray(input) ? input : []), 'utf-8')
+    await atomicWriteFile(favoritesPath, JSON.stringify(Array.isArray(input) ? input : []), 'utf-8')
     return { success: true }
   })
 
@@ -880,7 +881,7 @@ async function runArtifactPipeline(
   // Writeback: save learner profile to learner.md
   if (learnerProfileContent) {
     try {
-      await writeFile(learnerPath(dataRoot, worldId), learnerProfileContent, 'utf-8')
+      await atomicWriteFile(learnerPath(dataRoot, worldId), learnerProfileContent, 'utf-8')
     } catch (err) {
       console.warn(`Failed to write learner profile for ${conversationId}:`, err)
     }
@@ -893,7 +894,7 @@ async function runArtifactPipeline(
       let existing = ''
       try { existing = await readFile(filePath, 'utf-8') } catch { /* file doesn't exist yet */ }
       const merged = palMomentsContent + (existing ? '\n\n---\n\n' + existing : '')
-      await writeFile(filePath, merged, 'utf-8')
+      await atomicWriteFile(filePath, merged, 'utf-8')
     } catch (err) {
       console.warn(`Failed to write pal moments for ${conversationId}:`, err)
     }
@@ -902,7 +903,7 @@ async function runArtifactPipeline(
   // Writeback: save relation state to relation_{companionId}.md
   if (relationContent && conv?.companionId) {
     try {
-      await writeFile(
+      await atomicWriteFile(
         relationPath(dataRoot, conv.companionId, worldId),
         relationContent,
         'utf-8'
@@ -937,7 +938,7 @@ async function runArtifactPipeline(
         endingPage
       }
       await mkdir(dirname(filePath), { recursive: true })
-      await writeFile(filePath, JSON.stringify(meta, null, 2), 'utf-8')
+      await atomicWriteFile(filePath, JSON.stringify(meta, null, 2), 'utf-8')
     } catch (err) {
       console.warn(`Failed to write handoff meta for ${conversationId}:`, err)
     }

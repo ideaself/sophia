@@ -4,6 +4,7 @@ import type { Companion } from '../../shared/schemas/companion'
 import { CompanionSchema } from '../../shared/schemas/companion'
 import type { CompanionId } from '../../shared/types/ids'
 import { CompanionSource, CompanionGender } from '../../shared/types/ids'
+import { atomicWriteFile } from '../storage/atomic-write'
 
 export interface LoadCompanionsOptions {
   /** Directory containing candidate .md files */
@@ -217,7 +218,7 @@ export async function loadReferenceCompanions(
   const merged = [...companions, ...customOnes]
 
   // Write merged index.json
-  await writeFile(indexPath, JSON.stringify(merged, null, 2), 'utf-8')
+  await atomicWriteFile(indexPath, JSON.stringify(merged, null, 2), 'utf-8')
 
   return {
     companions,

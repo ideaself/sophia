@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { ReadingNoteId } from '../../shared/types/ids'
 import { textbookNotesDir } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
+import { atomicWriteFile } from './atomic-write'
 
 export const ReadingNoteSchema = z.object({
   id: z.string().min(1),
@@ -65,7 +66,7 @@ export class ReadingNoteStore {
     }
 
     await mkdir(textbookNotesDir(this.dataRoot, input.textbookId, input.worldId), { recursive: true })
-    await writeFile(this.notePath(input.textbookId, id, input.worldId), JSON.stringify(note, null, 2), 'utf-8')
+    await atomicWriteFile(this.notePath(input.textbookId, id, input.worldId), JSON.stringify(note, null, 2), 'utf-8')
     return note
   }
 
@@ -101,7 +102,7 @@ export class ReadingNoteStore {
       if (updates.color !== undefined) note.color = updates.color
       if (updates.readerNote !== undefined) note.readerNote = updates.readerNote
       note.updatedAt = new Date().toISOString()
-      await writeFile(this.notePath(textbookId, noteId, worldId), JSON.stringify(note, null, 2), 'utf-8')
+      await atomicWriteFile(this.notePath(textbookId, noteId, worldId), JSON.stringify(note, null, 2), 'utf-8')
       return note
     } catch (err) {
       if (!isNotFoundError(err)) warnReadFailure(`reading note ${noteId}`, err)
