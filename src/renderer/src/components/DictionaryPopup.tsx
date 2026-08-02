@@ -8,20 +8,26 @@ interface DictionaryPopupProps {
   onClose: () => void
 }
 
+type LoadState = 'loading' | 'ready' | 'error'
+
 /**
- * 在线词典浮层 — 内嵌词典站点 iframe 查询选中单词，
- * 附带「在新窗口打开」（部分站点禁止 iframe 嵌入时兜底）。
+ * 在线词典浮层 — 用 Electron <webview> 加载词典站点。
+ *
+ * 之所以不用 iframe：多数词典站（如有道）通过 X-Frame-Options / CSP
+ * frame-ancestors 禁止被嵌入，iframe 会显示空白且 Chromium 不触发任何
+ * 事件。webview 是独立的 guest 页面，不受该限制。
+ * 安全（node 关闭、sandbox、仅 https）由主进程 will-attach-webview 强制。
  */
 export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps): React.ReactElement {
   const [url, setUrl] = useState(() => buildDictUrl(loadDictConfig().template, word))
-  const [loadFailed, setLoadFailed] = useState(false)
+  const [status, setStatus] = useState<LoadState>('loading')
   const rootRef = useRef<HTMLDivElement>(null)
-  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const webviewRef = useRef<HTMLElement | null>(null)
 
   // Rebuild the URL if the word changes (e.g. a new selection while open).
   useEffect(() => {
     setUrl(buildDictUrl(loadDictConfig().template, word))
-    setLoadFailed(false)
+    setStatus('loading')
   }, [word])
 
   // Close on outside click / Escape.
@@ -40,14 +46,21 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
     }
   }, [onClose])
 
-  // Chromium fires no error event when a site refuses embedding via
-  // X-Frame-Options / CSP frame-ancestors — the main process detects that on
-  // the response headers and notifies us here.
+  // Track the webview's load state.
   useEffect(() => {
-    const unsubscribe = window.sophia.app.onDictFrameBlocked(() => {
-      setLoadFailed(true)
-    })
-    return unsubscribe
+    const wv = webviewRef.current as (HTMLElement & {
+      addEventListener: (t: string, fn: () => void) => void
+      removeEventListener: (t: string, fn: () => void) => void
+    }) | null
+    if (!wv) return
+    const onReady = () => setStatus('ready')
+    const onFail = () => setStatus('error')
+    wv.addEventListener('dom-ready', onReady)
+    wv.addEventListener('did-fail-load', onFail)
+    return () => {
+      wv.removeEventListener('dom-ready', onReady)
+      wv.removeEventListener('did-fail-load', onFail)
+    }
   }, [url])
 
   const openInBrowser = () => {
@@ -93,26 +106,31 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
       </div>
 
       {/* Body */}
-      <div className="relative flex-1 bg-white">
-        {loadFailed ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 bg-bg-surface p-6 text-center">
-            <p className="text-sm text-text-secondary">该词典站点不允许在应用内嵌入显示。</p>
-            <button
-              onClick={openInBrowser}
-              className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
-            >
-              在新窗口打开词典
-            </button>
+      <div className="relative flex-1">
+        {status !== 'ready' && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-bg-surface">
+            {status === 'loading' ? (
+              <p className="text-sm text-text-muted">词典加载中...</p>
+            ) : (
+              <>
+                <p className="text-sm text-text-secondary">词典页面加载失败。</p>
+                <button
+                  onClick={openInBrowser}
+                  className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
+                >
+                  在新窗口打开词典
+                </button>
+              </>
+            )}
           </div>
-        ) : (
-          <iframe
-            ref={iframeRef}
-            key={url}
-            src={url}
-            title={`在线词典：${word}`}
-            className="h-full w-full border-0"
-          />
         )}
+        <webview
+          ref={webviewRef}
+          src={url}
+          webpreferences="contextIsolation=yes, sandbox=yes, nodeIntegration=no"
+          className="h-full w-full"
+          style={{ visibility: status === 'ready' ? 'visible' : 'hidden' }}
+        />
       </div>
     </div>
   )

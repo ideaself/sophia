@@ -1,6 +1,19 @@
 export {}
 
 declare global {
+  // Electron <webview> custom element (dictionary popup). Not part of the
+  // standard DOM/JSX intrinsic elements.
+  namespace JSX {
+    interface IntrinsicElements {
+      webview: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+        src?: string
+        webpreferences?: string
+        partition?: string
+        allowpopups?: string
+      }
+    }
+  }
+
   interface ChatAPI {
     startStream: (
       messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,

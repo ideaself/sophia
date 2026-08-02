@@ -39,7 +39,10 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      // 在线词典浮层使用 <webview> 加载词典站点（不受 X-Frame-Options 限制）。
+      // 安全由 will-attach-webview 强制约束，见下方 web-contents-created。
+      webviewTag: true
     }
   })
 
@@ -267,11 +270,26 @@ if (!app.requestSingleInstanceLock()) {
       }
     )
 
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow()
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow()
+    }
+  })
+
+  // Harden every attached <webview> (used by the dictionary popup): no node,
+  // no preload, sandboxed, and only https pages may attach.
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('will-attach-webview', (event, webPreferences, params) => {
+      delete webPreferences.preload
+      webPreferences.nodeIntegration = false
+      webPreferences.contextIsolation = true
+      webPreferences.sandbox = true
+      webPreferences.webSecurity = true
+      if (!/^https:\/\//i.test(params.src || '')) {
+        event.preventDefault()
       }
     })
+  })
   })
 
   app.on('before-quit', () => {
