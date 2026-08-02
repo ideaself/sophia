@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { buildDictUrl, loadDictConfig } from '../../../shared/dict'
+import {
+  buildDictUrl,
+  loadDictConfig,
+  loadDictPopupPrefs,
+  saveDictPopupPrefs
+} from '../../../shared/dict'
 
 interface DictionaryPopupProps {
   word: string
@@ -13,8 +18,11 @@ type LoadState = 'loading' | 'ready' | 'error'
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 1.5
 const ZOOM_STEP = 0.1
-/** 默认缩放 — 词典桌面页在小浮层里太大，先整体缩小。 */
-const DEFAULT_ZOOM = 0.85
+
+const MIN_W = 420
+const MIN_H = 320
+const INITIAL_W = 640
+const INITIAL_H = 480
 
 /**
  * 在线词典浮层 — 用 Electron <webview> 加载词典站点。
@@ -24,15 +32,22 @@ const DEFAULT_ZOOM = 0.85
  * 事件。webview 是独立的 guest 页面，不受该限制。
  * 安全（node 关闭、sandbox、仅 https）由主进程 will-attach-webview 强制。
  *
- * 页面适配：浮层可拖动调整大小（右下角），词典页可用 − / + 缩放。
+ * 页面适配：词典页用 CSS zoom（executeJavaScript 注入）缩放；浮层右下角
+ * 可拖拽调整大小。
  */
 export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps): React.ReactElement {
   const [url, setUrl] = useState(() => buildDictUrl(loadDictConfig().template, word))
   const [status, setStatus] = useState<LoadState>('loading')
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM)
+  const [zoom, setZoom] = useState(() => loadDictPopupPrefs().zoom)
+  const [size, setSize] = useState(() => {
+    const p = loadDictPopupPrefs()
+    return { w: p.width, h: p.height }
+  })
+  const sizeRef = useRef(size)
   const rootRef = useRef<HTMLDivElement>(null)
   const webviewRef = useRef<HTMLElement | null>(null)
   const userAdjustedZoom = useRef(false)
+  const resizeStart = useRef<{ x: number; y: number; w: number; h: number } | null>(null)
 
   // Rebuild the URL if the word changes (e.g. a new selection while open).
   useEffect(() => {
@@ -57,14 +72,18 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
     }
   }, [onClose])
 
+  /**
+   * Scale the dictionary page via CSS zoom injected into the guest page.
+   * Deterministic and immediate — unlike webContents.setZoomFactor it does
+   * not depend on webview API availability/timing.
+   */
   const applyZoom = (z: number) => {
-    const wv = webviewRef.current as (HTMLElement & { getWebContents?: () => { setZoomFactor: (z: number) => void } }) | null
-    const wc = wv?.getWebContents?.()
-    if (!wc) return
+    const wv = webviewRef.current as (HTMLElement & { executeJavaScript?: (code: string) => Promise<unknown> }) | null
+    if (!wv?.executeJavaScript) return
     try {
-      wc.setZoomFactor(z)
+      void wv.executeJavaScript(`document.documentElement.style.zoom = ${z.toFixed(2)}`)
     } catch {
-      // webview not ready yet — zoom applies on next dom-ready
+      // webview not ready — the next dom-ready applies the default zoom
     }
   }
 
@@ -77,7 +96,7 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
     if (!wv) return
     const onReady = () => {
       setStatus('ready')
-      if (!userAdjustedZoom.current) applyZoom(DEFAULT_ZOOM)
+      if (!userAdjustedZoom.current) applyZoom(loadDictPopupPrefs().zoom)
     }
     const onFail = () => setStatus('error')
     wv.addEventListener('dom-ready', onReady)
@@ -90,10 +109,40 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
   }, [url])
 
   const changeZoom = (delta: number) => {
+    if (status !== 'ready') return
     const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((zoom + delta) * 10) / 10))
     setZoom(next)
     userAdjustedZoom.current = true
     applyZoom(next)
+    const p = loadDictPopupPrefs()
+    saveDictPopupPrefs({ ...p, zoom: next })
+  }
+
+  // Resize by dragging the bottom-right handle.
+  const onResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    resizeStart.current = { x: e.clientX, y: e.clientY, w: size.w, h: size.h }
+    const onMove = (ev: MouseEvent) => {
+      const s = resizeStart.current
+      if (!s) return
+      const next = {
+        w: Math.max(MIN_W, s.w + (ev.clientX - s.x)),
+        h: Math.max(MIN_H, s.h + (ev.clientY - s.y))
+      }
+      sizeRef.current = next
+      setSize(next)
+    }
+    const onUp = () => {
+      resizeStart.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      // Persist the resized dimensions for next time.
+      const p = loadDictPopupPrefs()
+      saveDictPopupPrefs({ ...p, width: sizeRef.current.w, height: sizeRef.current.h })
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
   }
 
   const openInBrowser = () => {
@@ -101,22 +150,15 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
     onClose()
   }
 
-  const POPUP_W = 640
-  const POPUP_H = 480
-
   return (
     <div
       ref={rootRef}
       className="fixed z-40 flex flex-col overflow-hidden rounded-xl border border-surface-border-strong bg-bg-surface shadow-2xl"
       style={{
-        width: POPUP_W,
-        height: POPUP_H,
-        minWidth: 420,
-        minHeight: 320,
-        resize: 'both',
-        overflow: 'hidden',
-        left: Math.max(8, Math.min(anchor.x - POPUP_W / 2, window.innerWidth - POPUP_W - 8)),
-        top: Math.max(8, Math.min(anchor.y + 16, window.innerHeight - POPUP_H - 8))
+        width: size.w,
+        height: size.h,
+        left: Math.max(8, Math.min(anchor.x - INITIAL_W / 2, window.innerWidth - INITIAL_W - 8)),
+        top: Math.max(8, Math.min(anchor.y + 16, window.innerHeight - INITIAL_H - 8))
       }}
     >
       {/* Header */}
@@ -129,7 +171,8 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
           <div className="mr-1 flex items-center gap-0.5 rounded border border-surface-border-strong px-1 py-0.5 text-xs text-text-secondary" title="词典页面缩放">
             <button
               onClick={() => changeZoom(-ZOOM_STEP)}
-              className="rounded px-1 hover:bg-bg-elevated"
+              disabled={status !== 'ready'}
+              className="rounded px-1 hover:bg-bg-elevated disabled:opacity-40"
               title="缩小"
             >
               −
@@ -139,7 +182,8 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
             </span>
             <button
               onClick={() => changeZoom(ZOOM_STEP)}
-              className="rounded px-1 hover:bg-bg-elevated"
+              disabled={status !== 'ready'}
+              className="rounded px-1 hover:bg-bg-elevated disabled:opacity-40"
               title="放大"
             >
               +
@@ -188,6 +232,17 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
           className="h-full w-full"
           style={{ visibility: status === 'ready' ? 'visible' : 'hidden' }}
         />
+      </div>
+
+      {/* Resize handle (bottom-right) */}
+      <div
+        onMouseDown={onResizeStart}
+        className="absolute bottom-0 right-0 z-20 h-4 w-4 cursor-nwse-resize"
+        title="拖动调整大小"
+      >
+        <svg viewBox="0 0 16 16" className="h-full w-full text-text-muted">
+          <path d="M12 4 L12 12 L4 12 Z" fill="currentColor" opacity="0.6" />
+        </svg>
       </div>
     </div>
   )

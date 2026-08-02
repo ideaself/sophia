@@ -14,8 +14,22 @@ export interface DictConfig {
   template: string
 }
 
+/** 词典浮层偏好（尺寸 / 缩放），跨会话记住。 */
+export interface DictPopupPrefs {
+  width: number
+  height: number
+  zoom: number
+}
+
+export const DEFAULT_DICT_POPUP_PREFS: DictPopupPrefs = {
+  width: 640,
+  height: 480,
+  zoom: 0.85
+}
+
 const ENABLED_KEY = 'sophia.dictEnabled'
 const TEMPLATE_KEY = 'sophia.dictTemplate'
+const POPUP_PREFS_KEY = 'sophia.dictPopupPrefs'
 
 export function loadDictConfig(): DictConfig {
   let enabled = true
@@ -35,6 +49,35 @@ export function saveDictConfig(config: DictConfig): void {
   try {
     localStorage.setItem(ENABLED_KEY, config.enabled ? '1' : '0')
     localStorage.setItem(TEMPLATE_KEY, config.template.trim())
+  } catch {
+    // best-effort
+  }
+}
+
+export function loadDictPopupPrefs(): DictPopupPrefs {
+  try {
+    const raw = localStorage.getItem(POPUP_PREFS_KEY)
+    if (!raw) return { ...DEFAULT_DICT_POPUP_PREFS }
+    const parsed = JSON.parse(raw) as Partial<DictPopupPrefs>
+    return {
+      width: typeof parsed.width === 'number' && parsed.width >= 420 && parsed.width <= 1600
+        ? Math.round(parsed.width)
+        : DEFAULT_DICT_POPUP_PREFS.width,
+      height: typeof parsed.height === 'number' && parsed.height >= 320 && parsed.height <= 2000
+        ? Math.round(parsed.height)
+        : DEFAULT_DICT_POPUP_PREFS.height,
+      zoom: typeof parsed.zoom === 'number' && parsed.zoom >= 0.5 && parsed.zoom <= 1.5
+        ? parsed.zoom
+        : DEFAULT_DICT_POPUP_PREFS.zoom
+    }
+  } catch {
+    return { ...DEFAULT_DICT_POPUP_PREFS }
+  }
+}
+
+export function saveDictPopupPrefs(prefs: DictPopupPrefs): void {
+  try {
+    localStorage.setItem(POPUP_PREFS_KEY, JSON.stringify(prefs))
   } catch {
     // best-effort
   }

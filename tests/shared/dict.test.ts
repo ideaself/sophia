@@ -1,5 +1,27 @@
-import { describe, it, expect } from 'vitest'
-import { buildDictUrl, isEnglishWord, DEFAULT_DICT_TEMPLATE } from '../../src/shared/dict'
+import { describe, it, expect, beforeEach } from 'vitest'
+import {
+  buildDictUrl,
+  isEnglishWord,
+  DEFAULT_DICT_TEMPLATE,
+  loadDictPopupPrefs,
+  saveDictPopupPrefs,
+  DEFAULT_DICT_POPUP_PREFS
+} from '../../src/shared/dict'
+
+// Node test env has no localStorage — provide a minimal in-memory stub.
+const storage = new Map<string, string>()
+if (typeof globalThis.localStorage === 'undefined') {
+  ;(globalThis as unknown as { localStorage: unknown }).localStorage = {
+    getItem: (k: string) => storage.get(k) ?? null,
+    setItem: (k: string, v: string) => { storage.set(k, v) },
+    removeItem: (k: string) => { storage.delete(k) },
+    clear: () => { storage.clear() }
+  }
+}
+
+beforeEach(() => {
+  localStorage.clear()
+})
 
 describe('buildDictUrl', () => {
   it('replaces the {word} placeholder with a URL-encoded word', () => {
@@ -33,5 +55,21 @@ describe('isEnglishWord', () => {
     expect(isEnglishWord('123abc')).toBe(false)
     // > 64 chars
     expect(isEnglishWord('a'.repeat(65))).toBe(false)
+  })
+})
+
+describe('dict popup prefs', () => {
+  it('returns defaults when nothing is stored', () => {
+    expect(loadDictPopupPrefs()).toEqual(DEFAULT_DICT_POPUP_PREFS)
+  })
+
+  it('persists and restores size + zoom', () => {
+    saveDictPopupPrefs({ width: 760, height: 560, zoom: 0.7 })
+    expect(loadDictPopupPrefs()).toEqual({ width: 760, height: 560, zoom: 0.7 })
+  })
+
+  it('clamps invalid stored values back to defaults', () => {
+    saveDictPopupPrefs({ width: 100, height: 9999, zoom: 3 } as never)
+    expect(loadDictPopupPrefs()).toEqual(DEFAULT_DICT_POPUP_PREFS)
   })
 })
