@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { CompanionSchema } from '../../shared/schemas/companion'
 import type { z } from 'zod'
 import { companionDir } from '../storage/app-data'
+import { archiveCompanion } from '../storage/archive-store'
 
 type CompanionData = z.infer<typeof CompanionSchema>
 
@@ -83,8 +84,17 @@ export function registerCompanionIpc(dataRoot: string): void {
   ipcMain.handle('companion:delete', async (_event, input: unknown) => {
     const { companionId } = input as { companionId: string }
     const companions = await readIndex(dataRoot)
+    const target = companions.find((c) => c.id === companionId)
     const filtered = companions.filter((c) => c.id !== companionId)
     if (filtered.length === companions.length) return false
+    // Archive the companion record before removing it (4.0.1).
+    if (target) {
+      try {
+        await archiveCompanion(dataRoot, companionId, target.name || companionId, target)
+      } catch (err) {
+        console.warn(`Archive companion ${companionId} failed:`, err)
+      }
+    }
     await writeIndex(dataRoot, filtered)
     return true
   })

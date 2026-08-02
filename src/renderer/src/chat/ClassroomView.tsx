@@ -4,6 +4,8 @@ import { useChatStream } from './useChatStream'
 import { ChatMessage, type MessageHighlight } from './ChatMessage'
 import { stopTTS } from '../hooks/useTTS'
 import { loadTabs, saveTabs, serializeTabs } from '../../../shared/tab-persistence'
+import { useAppStore } from '../stores/useAppStore'
+import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-templates'
 
 interface Companion {
   id: string
@@ -130,6 +132,9 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const [searchQuery, setSearchQuery] = useState('')
   const [matchIndex, setMatchIndex] = useState(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  // Quick text templates (1.0.7): Alt+1..9 inserts a saved snippet.
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const templateRef = useRef<HTMLDivElement>(null)
   // Math symbol quick-insert panel
   const [mathOpen, setMathOpen] = useState(false)
   const [mathTab, setMathTab] = useState('greek')
@@ -389,6 +394,35 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     return () => window.removeEventListener('keydown', handler)
   }, [tabs, activeIdx])
 
+  // Quick text templates: Alt+1..9 inserts a saved snippet at the caret
+  // (1.0.7). Works while typing, unlike the Ctrl-based shortcuts above.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return
+      const n = parseInt(e.key, 10)
+      if (n < 1 || n > MAX_TEXT_TEMPLATES) return
+      const templates = loadTextTemplates()
+      const snippet = templates[n - 1]
+      if (!snippet) return
+      e.preventDefault()
+      insertIntoInput(snippet)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [insertIntoInput])
+
+  // Close the template popover on outside click
+  useEffect(() => {
+    if (!templateOpen) return
+    const handler = (e: MouseEvent) => {
+      if (templateRef.current && !templateRef.current.contains(e.target as Node)) {
+        setTemplateOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [templateOpen])
+
   const handleSend = async (retryInput?: string) => {
     const tab = tabs[activeIdx]
     if (!tab) return
@@ -580,6 +614,23 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     if (!activeTab.conversationId) return
     setEditingTitle(true)
     setTitleInput(activeTab.title)
+  }
+
+  const handleContinueLearning = () => {
+    const newTab = makeTab()
+    setTabs((prev) => [...prev, newTab])
+    setActiveIdx(tabsRef.current.length)
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
+  const handleReviewNewCards = () => {
+    const convId = activeTab.endResult?.conversationId
+    if (!convId) return
+    useAppStore.getState().setFlashcardScope({
+      conversationId: convId,
+      title: activeTab.title
+    })
+    useAppStore.getState().setView('flashcards')
   }
 
   const handleSaveTitle = async () => {
@@ -1103,9 +1154,27 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                         <p className="mt-2 text-sm text-green-200 italic">{activeTab.endResult.farewell}</p>
                       )}
                       {!activeTab.endResult.pending && (
-                        <p className="mt-1 text-xs text-green-400">
-                          已自动生成 {activeTab.endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
-                        </p>
+                        <>
+                          <p className="mt-1 text-xs text-green-400">
+                            已自动生成 {activeTab.endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
+                          </p>
+                          <div className="mt-3 flex items-center gap-2">
+                            <button
+                              onClick={handleReviewNewCards}
+                              className="rounded bg-green-800 px-3 py-1 text-xs font-medium text-white hover:bg-green-700"
+                              title="复习本节课新生成的记忆卡片，不足时自动补充以前的到期卡片"
+                            >
+                              复习本节新卡
+                            </button>
+                            <button
+                              onClick={handleContinueLearning}
+                              className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover"
+                              title="同一本教材、同一位伙伴开一节新课堂"
+                            >
+                              继续学习
+                            </button>
+                          </div>
+                        </>
                       )}
             {activeTab.endResult.failures && activeTab.endResult.failures.length > 0 && (
               <div className="mt-3 flex items-center justify-between gap-3 rounded border border-amber-800 bg-amber-900/20 px-3 py-2">
@@ -1178,6 +1247,54 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           >
             Σ
           </button>
+          <div ref={templateRef} className="relative">
+            {templateOpen && (
+              <div className="absolute bottom-full left-0 z-20 mb-2 w-80 rounded-lg border border-surface-border bg-bg-surface p-3 shadow-lg">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-medium text-text-muted">常用文本模板（Alt+1..9 插入）</span>
+                  <button
+                    onClick={() => setTemplateOpen(false)}
+                    className="rounded p-1 text-xs text-text-muted hover:bg-bg-elevated"
+                  >
+                    x
+                  </button>
+                </div>
+                {loadTextTemplates().length === 0 ? (
+                  <p className="text-xs text-text-muted">
+                    还没有模板。在「设置 → 常用文本模板」中添加，最多 {MAX_TEXT_TEMPLATES} 条。
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {loadTextTemplates().map((t, i) => (
+                      <li key={i}>
+                        <button
+                          onClick={() => { insertIntoInput(t); setTemplateOpen(false) }}
+                          className="w-full truncate rounded px-2 py-1 text-left text-xs text-text-secondary hover:bg-bg-elevated"
+                          title={t}
+                        >
+                          <kbd className="mr-1.5 rounded border border-surface-border-strong bg-bg-elevated px-1 py-0.5 font-mono text-[10px] text-text-muted">
+                            Alt+{i + 1}
+                          </kbd>
+                          {t}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => { setTemplateOpen((v) => !v); setMathOpen(false) }}
+              className={`rounded border px-3 py-2 text-sm transition-colors ${
+                templateOpen
+                  ? 'border-accent text-accent'
+                  : 'border-surface-border-strong text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
+              }`}
+              title="插入常用文本模板"
+            >
+              ☰
+            </button>
+          </div>
           <textarea
             ref={inputRef}
             value={activeTab.input}
@@ -1230,7 +1347,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                 ['Ctrl + Tab', '下一个标签页'],
                 ['Ctrl + Shift + Tab', '上一个标签页'],
                 ['Ctrl + F', '在当前对话中搜索'],
-                ['Ctrl + /', '显示 / 隐藏快捷键']
+                ['Ctrl + /', '显示 / 隐藏快捷键'],
+                ['Alt + 1..9', '插入常用文本模板']
               ].map(([keys, desc]) => (
                 <div key={keys} className="flex items-center justify-between gap-3">
                   <kbd className="rounded border border-surface-border-strong bg-bg-elevated px-2 py-0.5 font-mono text-xs text-text-secondary">

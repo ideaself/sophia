@@ -10,6 +10,7 @@ import { ReadingNoteStore } from '../storage/reading-note-store'
 import { DiaryStore } from '../storage/diary-store'
 import type { ProviderStore } from '../storage/provider-store'
 import { generateArtifacts } from '../artifacts/generate'
+import { parseFlashcards, rebuildArtifactContent } from '../../shared/flashcard-utils'
 import { extractText, getEpubChapters } from '../parsers'
 import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
 import { DeepSeekClient } from '../llm/deepseek-client'
@@ -22,8 +23,10 @@ import {
   relationPath,
   handoffMetaPath,
   textbookDir,
-  companionDir
+  companionDir,
+  conversationDir
 } from '../storage/app-data'
+import { archiveItem } from '../storage/archive-store'
 import {
   IpcCreateConversationInputSchema,
   IpcGetConversationInputSchema,
@@ -64,7 +67,8 @@ import {
   IpcSaveFileDialogInputSchema,
   IpcConfirmDialogInputSchema,
   IpcDiaryListMonthsInputSchema,
-  IpcDiaryGetMonthInputSchema
+  IpcDiaryGetMonthInputSchema,
+  IpcFlashcardDeleteCardsInputSchema
 } from '../../shared/schemas/ipc'
 import {
   ArtifactType,
@@ -168,6 +172,19 @@ export function registerConversationIpc(
   ipcMain.handle('conversation:delete', async (_event, input: unknown) => {
     const parsed = IpcDeleteConversationWithWorldInputSchema.parse(input)
     const worldId = parsed.worldId ?? 'world_default'
+    // Archive before deleting so the class can be restored (4.0.1).
+    try {
+      const conv = await conversationStore.get(parsed.conversationId, worldId)
+      await archiveItem(
+        dataRoot,
+        'conversation',
+        parsed.conversationId,
+        conversationDir(dataRoot, parsed.conversationId, worldId),
+        conv?.title ?? parsed.conversationId
+      )
+    } catch (err) {
+      console.warn(`Archive conversation ${parsed.conversationId} failed:`, err)
+    }
     return conversationStore.delete(parsed.conversationId, worldId)
   })
 
@@ -484,6 +501,19 @@ export function registerConversationIpc(
   ipcMain.handle('textbook:delete', async (_event, input: unknown) => {
     const parsed = IpcDeleteTextbookInputSchema.parse(input)
     const worldId = parsed.worldId ?? 'world_default'
+    // Archive the textbook (source + notes + reading progress) before deleting (4.0.1).
+    try {
+      const tb = await textbookStore.get(parsed.textbookId, worldId)
+      await archiveItem(
+        dataRoot,
+        'textbook',
+        parsed.textbookId,
+        textbookDir(dataRoot, parsed.textbookId, worldId),
+        tb?.title ?? parsed.textbookId
+      )
+    } catch (err) {
+      console.warn(`Archive textbook ${parsed.textbookId} failed:`, err)
+    }
     return textbookStore.delete(parsed.textbookId, worldId)
   })
 
@@ -571,6 +601,7 @@ export function registerConversationIpc(
   // --- Flashcard SRS State (persisted for WebDAV sync) ---
 
   const srsStatePath = join(dataRoot, 'flashcard-srs.json')
+  const favoritesPath = join(dataRoot, 'flashcard-favorites.json')
 
   ipcMain.handle('flashcard:get-srs-state', async () => {
     try {
@@ -585,6 +616,57 @@ export function registerConversationIpc(
     await mkdir(dataRoot, { recursive: true })
     await writeFile(srsStatePath, JSON.stringify(input), 'utf-8')
     return { success: true }
+  })
+
+  // Favorite card ids (flashcard-favorites.json, synced like SRS state).
+  ipcMain.handle('flashcard:get-favorites', async () => {
+    try {
+      const raw = await readFile(favoritesPath, 'utf-8')
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('flashcard:save-favorites', async (_event, input: unknown) => {
+    await mkdir(dataRoot, { recursive: true })
+    await writeFile(favoritesPath, JSON.stringify(Array.isArray(input) ? input : []), 'utf-8')
+    return { success: true }
+  })
+
+  // Batch-delete specific cards across flashcards artifacts (2.0.0).
+  ipcMain.handle('flashcard:delete-cards', async (_event, input: unknown) => {
+    const parsed = IpcFlashcardDeleteCardsInputSchema.parse(input)
+    const worldId = parsed.worldId ?? 'world_default'
+    const byArtifact = new Map<string, { conversationId: string; artifactId: string; indexes: number[] }>()
+    for (const card of parsed.cards) {
+      const key = `${card.conversationId}::${card.artifactId}`
+      const entry = byArtifact.get(key) ?? {
+        conversationId: card.conversationId,
+        artifactId: card.artifactId,
+        indexes: []
+      }
+      entry.indexes.push(card.cardIndex)
+      byArtifact.set(key, entry)
+    }
+
+    let deleted = 0
+    for (const entry of byArtifact.values()) {
+      const artifact = await artifactStore.get(entry.artifactId, entry.conversationId, worldId)
+      if (!artifact) continue
+      const cards = parseFlashcards(artifact.content)
+      const remove = new Set(entry.indexes)
+      const kept = cards.filter((_, i) => !remove.has(i))
+      if (kept.length === cards.length) continue
+      if (kept.length === 0) {
+        await artifactStore.update(entry.artifactId, entry.conversationId, worldId, '')
+      } else {
+        await artifactStore.update(entry.artifactId, entry.conversationId, worldId, rebuildArtifactContent(kept))
+      }
+      deleted += cards.length - kept.length
+    }
+    return { success: true, deleted }
   })
 
   // --- Diary (monthly files) ---

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ClassroomView } from './chat/ClassroomView'
 import { useChatStream } from './chat/useChatStream'
@@ -16,6 +16,7 @@ import { useCompanionStore } from './stores/useCompanionStore'
 import { useTextbookStore } from './stores/useTextbookStore'
 import { useConversationStore } from './stores/useConversationStore'
 import { WORLD_ID, type ActiveConversation, type Companion, type Textbook } from './types/models'
+import { applyFontScale } from '../../shared/font-scale'
 
 function App(): React.ReactElement {
   const view = useAppStore((s) => s.view)
@@ -26,6 +27,23 @@ function App(): React.ReactElement {
   const setLoadConversationId = useAppStore((s) => s.setLoadConversationId)
   const classroomResetKey = useAppStore((s) => s.classroomResetKey)
   const incrementResetKey = useAppStore((s) => s.incrementResetKey)
+  const flashcardScope = useAppStore((s) => s.flashcardScope)
+  const setFlashcardScope = useAppStore((s) => s.setFlashcardScope)
+
+  // Profile lock (3.0.0) — startup gate + re-lock via window event.
+  const [lockState, setLockState] = useState<'checking' | 'locked' | 'unlocked'>('checking')
+
+  useEffect(() => {
+    window.sophia.data.lock.has().then((has) => {
+      setLockState(has ? 'locked' : 'unlocked')
+    }).catch(() => setLockState('unlocked'))
+  }, [])
+
+  useEffect(() => {
+    const onRelock = () => setLockState('locked')
+    window.addEventListener('sophia:relock', onRelock)
+    return () => window.removeEventListener('sophia:relock', onRelock)
+  }, [])
 
   const selectedCompanion = useCompanionStore((s) => s.selectedCompanion)
   const setSelectedCompanion = useCompanionStore((s) => s.select)
@@ -69,6 +87,11 @@ function App(): React.ReactElement {
   useEffect(() => {
     const saved = localStorage.getItem('sophia-theme') || 'dark'
     document.documentElement.setAttribute('data-theme', saved)
+  }, [])
+
+  // Global UI font scale (1.0.7 / 3.2.0)
+  useEffect(() => {
+    applyFontScale()
   }, [])
 
   useEffect(() => {
@@ -148,6 +171,11 @@ function App(): React.ReactElement {
 
   return (
     <div className="flex h-screen flex-col bg-bg-deep text-text-primary">
+      {lockState !== 'unlocked' && (
+        lockState === 'checking'
+          ? <div className="fixed inset-0 z-[100] flex items-center justify-center bg-bg-deep text-text-muted">加载中…</div>
+          : <LockScreen onUnlock={() => setLockState('unlocked')} />
+      )}
       <header className="flex items-center border-b border-surface-border bg-bg-surface px-4">
         <nav className="flex items-center gap-1">
           <div className="relative" ref={classroomDropdownRef}>
@@ -201,7 +229,7 @@ function App(): React.ReactElement {
             角色
           </button>
 
-          <button onClick={() => { setView('flashcards'); setShowClassroomDropdown(false) }}
+          <button onClick={() => { setView('flashcards'); setFlashcardScope(null); setShowClassroomDropdown(false) }}
             className={`rounded px-3 py-2 text-sm transition-colors ${view === 'flashcards' ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-elevated'}`}>
             复习
             {dueFlashcardCount > 0 && (
@@ -238,7 +266,9 @@ function App(): React.ReactElement {
           {view === 'companions' && <CompanionsManageView />}
           {view === 'textbooks' && <TextbooksView />}
           {view === 'history' && <HistoryView />}
-          {view === 'flashcards' && <FlashcardReviewView />}
+          {view === 'flashcards' && (
+            <FlashcardReviewView scope={flashcardScope} onClearScope={() => setFlashcardScope(null)} />
+          )}
           {view === 'stats' && <StatsView />}
           {view === 'classroom' && (
             <div key={classroomResetKey} className="h-full">
@@ -259,3 +289,55 @@ function App(): React.ReactElement {
 }
 
 export default App
+
+function LockScreen({ onUnlock }: { onUnlock: () => void }): React.ReactElement {
+  const [pin, setPin] = useState('')
+  const [error, setError] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (busy || !pin) return
+    setBusy(true)
+    setError(false)
+    try {
+      const ok = await window.sophia.data.lock.verify(pin)
+      if (ok) {
+        onUnlock()
+      } else {
+        setError(true)
+        setPin('')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-bg-deep">
+      <form
+        onSubmit={submit}
+        className="w-72 rounded-xl border border-surface-border bg-bg-surface p-6 shadow-xl"
+      >
+        <h2 className="mb-1 text-lg font-semibold">学习档案已锁定</h2>
+        <p className="mb-4 text-xs text-text-muted">请输入解锁密码继续使用</p>
+        <input
+          type="password"
+          value={pin}
+          onChange={(e) => setPin(e.target.value)}
+          autoFocus
+          placeholder="解锁密码"
+          className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
+        />
+        {error && <p className="mt-2 text-xs text-red-400">密码错误，请重试</p>}
+        <button
+          type="submit"
+          disabled={busy || !pin}
+          className="mt-4 w-full rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+        >
+          {busy ? '验证中...' : '解锁'}
+        </button>
+      </form>
+    </div>
+  )
+}

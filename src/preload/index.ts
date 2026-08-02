@@ -211,6 +211,20 @@ export interface DataAPI {
   deleteReadingNote: (noteId: string, textbookId: string, worldId?: string) => Promise<boolean>
   getFlashcardSrsState: () => Promise<Record<string, unknown>>
   saveFlashcardSrsState: (state: Record<string, unknown>) => Promise<{ success: boolean }>
+  getFlashcardFavorites: () => Promise<string[]>
+  saveFlashcardFavorites: (ids: string[]) => Promise<{ success: boolean }>
+  deleteFlashcardCards: (cards: Array<{ conversationId: string; artifactId: string; cardIndex: number }>, worldId?: string) => Promise<{ success: boolean; deleted: number }>
+  archive: {
+    list: () => Promise<Array<{ id: string; kind: string; label: string; movedAt: string }>>
+    restore: (entryId: string) => Promise<{ success: boolean }>
+    purge: (entryId: string) => Promise<{ success: boolean }>
+  }
+  lock: {
+    has: () => Promise<boolean>
+    set: (pin: string) => Promise<{ success: boolean }>
+    verify: (pin: string) => Promise<boolean>
+    clear: () => Promise<{ success: boolean }>
+  }
   diary: {
     listMonths: (worldId?: string) => Promise<string[]>
     getMonth: (month: string, worldId?: string) => Promise<string | null>
@@ -536,6 +550,21 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('reading-note:delete', { noteId, textbookId, worldId }),
     getFlashcardSrsState: () => ipcRenderer.invoke('flashcard:get-srs-state'),
     saveFlashcardSrsState: (state) => ipcRenderer.invoke('flashcard:save-srs-state', state),
+    getFlashcardFavorites: () => ipcRenderer.invoke('flashcard:get-favorites'),
+    saveFlashcardFavorites: (ids) => ipcRenderer.invoke('flashcard:save-favorites', ids),
+    deleteFlashcardCards: (cards, worldId = 'world_default') =>
+      ipcRenderer.invoke('flashcard:delete-cards', { cards, worldId }),
+    archive: {
+      list: () => ipcRenderer.invoke('archive:list'),
+      restore: (entryId) => ipcRenderer.invoke('archive:restore', { entryId }),
+      purge: (entryId) => ipcRenderer.invoke('archive:purge', { entryId })
+    },
+    lock: {
+      has: () => ipcRenderer.invoke('lock:has'),
+      set: (pin) => ipcRenderer.invoke('lock:set', { pin }),
+      verify: (pin) => ipcRenderer.invoke('lock:verify', { pin }),
+      clear: () => ipcRenderer.invoke('lock:clear')
+    },
     diary: {
       listMonths: (worldId = 'world_default') => ipcRenderer.invoke('diary:list-months', { worldId }),
       getMonth: (month, worldId = 'world_default') => ipcRenderer.invoke('diary:get-month', { worldId, month })

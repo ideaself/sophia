@@ -55,6 +55,34 @@ function MermaidBlock({ code }: { code: string }) {
   return <div ref={ref} className="my-2 flex justify-center" />
 }
 
+/**
+ * rehype plugin — remember the raw TeX source of each math element so that
+ * selecting + copying a rendered formula can restore the `$...$` source
+ * (mirrors the original 1.0.9 "划取复制公式").
+ * Must run before rehype-katex (which replaces the raw text with KaTeX HTML).
+ */
+function rehypeTexSource() {
+  return (tree: unknown): void => {
+    const walk = (node: unknown): void => {
+      if (!node || typeof node !== 'object') return
+      const el = node as { type?: string; tagName?: string; properties?: Record<string, unknown>; children?: unknown[] }
+      if (el.type === 'element' && el.properties) {
+        const cls = Array.isArray(el.properties.className)
+          ? (el.properties.className as string[])
+          : []
+        if (cls.includes('math')) {
+          const raw = (el.children ?? [])
+            .map((c) => (c && typeof c === 'object' && 'value' in c ? String((c as { value: unknown }).value) : ''))
+            .join('')
+          el.properties.dataTex = raw
+        }
+      }
+      if (el.children) el.children.forEach(walk)
+    }
+    walk(tree)
+  }
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
   const handleCopy = useCallback(async () => {
@@ -246,14 +274,38 @@ export function ChatMessage({
     setEditing(false)
   }
 
+  /**
+   * When the user copies a selection that contains rendered math, restore the
+   * `$...$` / `$$...$$` source instead of the flattened text (1.0.9).
+   */
+  const handleCopyMathSource = (e: React.ClipboardEvent) => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return
+    const fragment = sel.getRangeAt(0).cloneContents()
+    const mathEls = fragment.querySelectorAll('[data-tex]')
+    if (mathEls.length === 0) return
+
+    mathEls.forEach((el) => {
+      const tex = el.getAttribute('data-tex') ?? ''
+      const isDisplay = el.classList.contains('math-display')
+      const source = isDisplay ? `$$\n${tex}\n$$` : `$${tex}$`
+      el.replaceWith(document.createTextNode(source))
+    })
+
+    e.preventDefault()
+    void navigator.clipboard.writeText(fragment.textContent ?? '')
+  }
+
   const rendered = useMemo(() => {
     return (
-      <div className={isUser
-        ? 'text-sm leading-relaxed whitespace-pre-wrap'
-        : 'markdown-body text-sm leading-relaxed'}>
+      <div
+        onCopy={handleCopyMathSource}
+        className={isUser
+          ? 'text-sm leading-relaxed whitespace-pre-wrap'
+          : 'markdown-body text-sm leading-relaxed'}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeKatex, rehypeHighlight]}
+          rehypePlugins={[rehypeTexSource, rehypeKatex, rehypeHighlight]}
           components={{
             code({ className, children, ...props }) {
               const match = /language-(\w+)/.exec(className ?? '')

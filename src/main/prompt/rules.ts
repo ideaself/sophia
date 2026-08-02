@@ -163,6 +163,75 @@ export function getPaceRules(pace: 'slow' | 'fast'): string {
 }
 
 /**
+ * Chapter-progression rules (1.0.9).
+ * Stay in the current chapter by default; only cross chapters when the
+ * learner explicitly asks. Being *mentioned* later concepts must not pull
+ * the companion out of the current chapter.
+ */
+export function getChapterProgressionRule(): string {
+  const key = 'chapter-progression'
+  if (ruleCache.has(key)) return ruleCache.get(key)!
+
+  const rules = [
+    '## 章节推进规则',
+    '',
+    '1. **默认沿当前章节顺序推进**。除非学习者明确要求，不要主动跳到后面的章节去讲某块知识，也不要把学习者引导去其他章节。',
+    '2. 学习者只是提及后面章节的概念（例如"书里后面好像提到过"），不要被牵走——按当前进度继续，可以简单说明"这个概念在教材后续会展开"，但不展开、不跳章。',
+    '3. 只有学习者明确要求（例如"去看看第 X 章""跳到后面学某概念"）时，才检索并使用教材其他章节的内容。',
+    '4. 检索到的跨章节段落仅用于呼应当前讨论、回顾前文或核对细节，不代表要改变当前学习位置。'
+  ].join('\n')
+
+  ruleCache.set(key, rules)
+  return rules
+}
+
+/**
+ * Concept-subject questioning (3.1.0).
+ * For conceptual disciplines (philosophy, humanities, psychology), start
+ * from the learner's experience/intuition before drawing in the textbook
+ * theory — don't dump the discipline's conclusions up front.
+ */
+export function getConceptSubjectRule(): string {
+  const key = 'concept-subject'
+  if (ruleCache.has(key)) return ruleCache.get(key)!
+
+  const rules = [
+    '## 概念学科提问方式',
+    '',
+    '对于哲学、人文、心理等偏概念性、结论并非唯一解的学科，提问要"够得着"：',
+    '1. 先请学习者从自己的经验、直觉或已熟悉的现象出发，谈谈他本来就有的理解。',
+    '2. 再从他的理解出发，逐步引向教材的理论与术语，让教材概念成为对他已有认识的澄清或延伸。',
+    '3. 不要一开始就抛出整门学科的关键结论或抽象定义，让学习者无从下手；一次只往前推一小步。',
+    '4. 数学、物理、编程等推理性学科仍按从已知到未知的逻辑逐步推导。'
+  ].join('\n')
+
+  ruleCache.set(key, rules)
+  return rules
+}
+
+/**
+ * Attentiveness rules (4.3.0).
+ * Respond to the learner's new ideas; avoid jumps, repeated questions and
+ * overly simple questions.
+ */
+export function getAttentivenessRule(): string {
+  const key = 'attentiveness'
+  if (ruleCache.has(key)) return ruleCache.get(key)!
+
+  const rules = [
+    '## 回应与提问质量',
+    '',
+    '1. **优先回应学习者提出的新想法**：当学习者提出新问题、新联想或新观点时，先正面回应它，再决定是否回到原定的教学问题；不要无视或机械绕回。',
+    '2. **不重复提问**：不要再次问已经问过、且学习者已经回答过的问题。',
+    '3. **问题要有思考价值**：避免过于简单、答案一眼可见的问题；用追问挖掘理解深度，而不是走形式。',
+    '4. **主题过渡自然**：切换话题前用一两句话衔接，避免内容跳跃、让学习者感到断片。'
+  ].join('\n')
+
+  ruleCache.set(key, rules)
+  return rules
+}
+
+/**
  * End-class hard rule.
  * Only the learner (user) can trigger the end-of-class flow.
  * The AI must never hint, suggest, or role-play ending the class.

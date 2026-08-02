@@ -15,15 +15,36 @@ import {
   isDue,
   loadAllSrs,
   saveAllSrs,
-  loadAllFlashcards
+  loadAllFlashcards,
+  loadAllFavorites,
+  toggleFavorite
 } from '../hooks/useFlashcards'
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function FlashcardReviewView(): React.ReactElement {
+interface FlashcardScope {
+  conversationId: string
+  title: string
+}
+
+interface FlashcardReviewViewProps {
+  /** When set, review only this lesson's new cards (4.0.1). */
+  scope?: FlashcardScope | null
+  /** Clear the scope and return to the full deck. */
+  onClearScope?: () => void
+}
+
+/** Minimum cards shown in a scoped (post-class) review before old cards are pulled in. */
+const MIN_SCOPED_CARDS = 5
+
+type DeckTab = 'all' | 'favorites'
+type ExportScope = 'current' | 'all' | 'favorites'
+
+export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewViewProps): React.ReactElement {
   const [flashcards, setFlashcards] = useState<Flashcard[]>([])
+  const [favorites, setFavorites] = useState<Set<string>>(new Set())
   const [srsStates, setSrsStates] = useState<Record<string, SrsState>>({})
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
@@ -34,17 +55,39 @@ export function FlashcardReviewView(): React.ReactElement {
   const [editQuestion, setEditQuestion] = useState('')
   const [editAnswer, setEditAnswer] = useState('')
   const [editError, setEditError] = useState('')
+  const [tab, setTab] = useState<DeckTab>('all')
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   const loadFlashcards = useCallback(async () => {
     setLoading(true)
     try {
-      const [allCards, states] = await Promise.all([loadAllFlashcards(), loadAllSrs()])
+      const [allCards, states, favs] = await Promise.all([loadAllFlashcards(), loadAllSrs(), loadAllFavorites()])
+      setSrsStates(states)
+      setFavorites(favs)
+      const now = Date.now()
+
+      // Scoped (post-class) review: this lesson's new cards first; when few,
+      // supplement with due cards from other lessons (4.0.1).
+      let cards = allCards
+      if (scope?.conversationId) {
+        const lessonCards = allCards.filter((c) => c.conversationId === scope.conversationId)
+        if (lessonCards.length < MIN_SCOPED_CARDS) {
+          const supplement = allCards
+            .filter((c) => c.conversationId !== scope.conversationId && isDue(states[c.id], now))
+            .sort((a, b) => (states[a.id]?.nextReview ?? 0) - (states[b.id]?.nextReview ?? 0))
+          cards = [...lessonCards, ...supplement]
+        } else {
+          cards = lessonCards
+        }
+      }
+
       // Sort: due cards first (by nextReview ascending), then new cards,
       // then future-scheduled cards (shouldn't appear in a review session
       // but are kept so the user can browse them).
-      setSrsStates(states)
-      const now = Date.now()
-      allCards.sort((a, b) => {
+      cards.sort((a, b) => {
         const sa = states[a.id]
         const sb = states[b.id]
         const aDue = isDue(sa, now)
@@ -54,24 +97,49 @@ export function FlashcardReviewView(): React.ReactElement {
         return (sa?.nextReview ?? 0) - (sb?.nextReview ?? 0)
       })
 
-      setFlashcards(allCards)
+      setFlashcards(cards)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [scope?.conversationId])
 
   useEffect(() => {
     loadFlashcards()
   }, [loadFlashcards])
 
-  // Auto-advance to the next due card on load
+  // The deck shown under the active tab.
+  const displayList = useMemo(() => {
+    if (tab === 'favorites') return flashcards.filter((c) => favorites.has(c.id))
+    return flashcards
+  }, [flashcards, favorites, tab])
+
+  // Keep the index valid when the deck shrinks (tab switch / filter change).
+  useEffect(() => {
+    if (currentIndex >= displayList.length) {
+      setCurrentIndex(Math.max(0, displayList.length - 1))
+    }
+  }, [displayList.length, currentIndex])
+
   const dueCount = useMemo(() => {
     const now = Date.now()
     return flashcards.filter((c) => isDue(srsStates[c.id], now)).length
   }, [flashcards, srsStates])
 
+  const currentCard = displayList[currentIndex]
+  const cardSrs = currentCard ? srsStates[currentCard.id] : undefined
+  const isNew = !cardSrs || cardSrs.nextReview === 0
+  const isFav = currentCard ? favorites.has(currentCard.id) : false
+
+  // Auto-advance to the next due card on load
+  useEffect(() => {
+    if (!loading && currentCard && !isDue(cardSrs, Date.now())) {
+      const nextIdx = displayList.findIndex((c, i) => i > currentIndex && isDue(srsStates[c.id], Date.now()))
+      if (nextIdx >= 0) setCurrentIndex(nextIdx)
+    }
+  }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleRate = (rating: Rating) => {
-    const card = flashcards[currentIndex]
+    const card = currentCard
     if (!card) return
 
     const prev = srsStates[card.id] ?? newSrsState()
@@ -83,14 +151,14 @@ export function FlashcardReviewView(): React.ReactElement {
     if (rating !== 'again') setSessionCorrect((n) => n + 1)
 
     // Move to next card
-    if (currentIndex < flashcards.length - 1) {
+    if (currentIndex < displayList.length - 1) {
       setCurrentIndex(currentIndex + 1)
       setIsFlipped(false)
     }
   }
 
   const handleNext = () => {
-    if (currentIndex < flashcards.length - 1) {
+    if (currentIndex < displayList.length - 1) {
       setCurrentIndex(currentIndex + 1)
       setIsFlipped(false)
     }
@@ -104,17 +172,25 @@ export function FlashcardReviewView(): React.ReactElement {
   }
 
   const handleShuffle = () => {
-    const shuffled = [...flashcards].sort(() => Math.random() - 0.5)
-    setFlashcards(shuffled)
+    const shuffled = [...displayList].sort(() => Math.random() - 0.5)
+    if (tab === 'favorites') {
+      setFlashcards((prev) => shuffled.concat(prev.filter((c) => !favorites.has(c.id))))
+    } else {
+      setFlashcards(shuffled)
+    }
     setCurrentIndex(0)
     setIsFlipped(false)
   }
 
+  const handleToggleFavorite = () => {
+    if (!currentCard) return
+    setFavorites((prev) => toggleFavorite(prev, currentCard.id))
+  }
+
   const handleStartEdit = () => {
-    const card = flashcards[currentIndex]
-    if (!card) return
-    setEditQuestion(card.question)
-    setEditAnswer(card.answer)
+    if (!currentCard) return
+    setEditQuestion(currentCard.question)
+    setEditAnswer(currentCard.answer)
     setEditError('')
     setEditing(true)
   }
@@ -124,7 +200,7 @@ export function FlashcardReviewView(): React.ReactElement {
       setEditError('问题不能为空')
       return
     }
-    const card = flashcards[currentIndex]
+    const card = currentCard
     if (!card) return
     try {
       const artifact = await window.sophia.data.getArtifact(card.artifactId, card.conversationId)
@@ -157,10 +233,14 @@ export function FlashcardReviewView(): React.ReactElement {
     }
   }
 
-  const handleExportAnki = async () => {
-    if (flashcards.length === 0) return
+  // ------------------------------------------------------------------
+  // Export (2.0.0 / 4.5.0) — scope selectable per need
+  // ------------------------------------------------------------------
+
+  const runExport = async (target: Flashcard[]) => {
+    if (target.length === 0) return
     const content = buildAnkiImport(
-      flashcards.map((c) => ({
+      target.map((c) => ({
         question: c.question,
         answer: c.answer,
         conversationTitle: c.conversationTitle,
@@ -173,7 +253,75 @@ export function FlashcardReviewView(): React.ReactElement {
     })
     if (result.canceled || !result.filePath) return
     await window.sophia.data.writeTextFile(result.filePath, content)
+    setExportMenuOpen(false)
   }
+
+  const exportScopeOptions: Array<{ key: ExportScope; label: string; cards: Flashcard[] }> = [
+    { key: 'current', label: `导出当前列表（${displayList.length} 张）`, cards: displayList },
+    { key: 'all', label: `导出全部卡片（${flashcards.length} 张）`, cards: flashcards },
+    { key: 'favorites', label: `仅导出珍藏（${flashcards.filter((c) => favorites.has(c.id)).length} 张）`, cards: flashcards.filter((c) => favorites.has(c.id)) }
+  ]
+
+  const handleExport = () => {
+    if (displayList.length === 0) return
+    setExportMenuOpen((v) => !v)
+  }
+
+  // ------------------------------------------------------------------
+  // Batch operations (2.0.0)
+  // ------------------------------------------------------------------
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAllInList = () => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const c of displayList) next.add(c.id)
+      return next
+    })
+  }
+
+  const clearSelection = () => setSelected(new Set())
+
+  const handleBatchExport = async () => {
+    const target = displayList.filter((c) => selected.has(c.id))
+    await runExport(target)
+  }
+
+  const handleBatchDelete = async () => {
+    if (selected.size === 0 || busy) return
+    const target = displayList.filter((c) => selected.has(c.id))
+    const confirmed = await window.sophia.dialog.confirm({
+      message: `确定删除选中的 ${target.length} 张卡片吗？此操作不可撤销，复习进度一并失效。`
+    })
+    if (!confirmed) return
+    setBusy(true)
+    try {
+      await window.sophia.data.deleteFlashcardCards(
+        target.map((c) => ({ conversationId: c.conversationId, artifactId: c.artifactId, cardIndex: c.cardIndex }))
+      )
+      setSelected(new Set())
+      await loadFlashcards()
+    } catch {
+      // best-effort: keep selection on failure
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const progress = displayList.length > 0 ? ((currentIndex + 1) / displayList.length) * 100 : 0
+  const nextReviewLabel = cardSrs && !isNew
+    ? cardSrs.interval === 1
+      ? '明天'
+      : `${cardSrs.interval} 天后`
+    : '新卡片'
 
   if (loading) {
     return (
@@ -194,31 +342,107 @@ export function FlashcardReviewView(): React.ReactElement {
     )
   }
 
-  const card = flashcards[currentIndex]
-  const cardSrs = srsStates[card.id]
-  const isNew = !cardSrs || cardSrs.nextReview === 0
-  const progress = ((currentIndex + 1) / flashcards.length) * 100
-  const nextReviewLabel = cardSrs && !isNew
-    ? cardSrs.interval === 1
-      ? '明天'
-      : `${cardSrs.interval} 天后`
-    : '新卡片'
+  if (displayList.length === 0 && tab === 'favorites') {
+    return (
+      <div className="flex h-full flex-col p-8">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex gap-1">
+            <button
+              onClick={() => setTab('all')}
+              className="rounded px-3 py-1.5 text-sm font-medium text-text-muted hover:bg-bg-elevated"
+            >
+              全部（{flashcards.length}）
+            </button>
+            <button
+              onClick={() => setTab('favorites')}
+              className="rounded px-3 py-1.5 text-sm font-medium bg-accent text-white"
+            >
+              珍藏（{flashcards.filter((c) => favorites.has(c.id)).length}）
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-center text-text-muted">
+            <p className="text-lg">还没有珍藏卡片</p>
+            <p className="mt-2 text-sm">在卡片右上角点击 ☆ 即可收藏</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full flex-col p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-bold">记忆卡片复习</h2>
-        <div className="flex items-center gap-4">
+      {scope && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-accent-border bg-accent-subtle px-4 py-2">
+          <p className="text-sm text-text-secondary">
+            正在复习 <span className="font-medium text-text-primary">{scope.title}</span> 的本课新卡（不足 {MIN_SCOPED_CARDS} 张时自动补充以前到期的卡片）
+          </p>
+          <button
+            onClick={onClearScope}
+            className="flex-shrink-0 rounded border border-surface-border-strong px-3 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
+          >
+            返回全部卡片
+          </button>
+        </div>
+      )}
+
+      {/* Deck tabs + actions */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-1">
+          <button
+            onClick={() => setTab('all')}
+            className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
+              tab === 'all' ? 'bg-accent text-white' : 'text-text-muted hover:bg-bg-elevated'
+            }`}
+          >
+            全部（{flashcards.length}）
+          </button>
+          <button
+            onClick={() => setTab('favorites')}
+            className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
+              tab === 'favorites' ? 'bg-accent text-white' : 'text-text-muted hover:bg-bg-elevated'
+            }`}
+          >
+            珍藏（{flashcards.filter((c) => favorites.has(c.id)).length}）
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
           <span className="text-sm text-text-muted">
             待复习 {dueCount} · 本次已复习 {sessionReviewed} · 答对 {sessionCorrect}
           </span>
+          <div className="relative">
+            <button
+              onClick={handleExport}
+              disabled={displayList.length === 0}
+              className="rounded border border-surface-border-strong px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
+            >
+              导出 Anki
+            </button>
+            {exportMenuOpen && (
+              <div className="absolute right-0 top-full z-30 mt-1 w-64 rounded-lg border border-surface-border-strong bg-bg-surface py-1 shadow-xl">
+                {exportScopeOptions.filter((o) => o.cards.length > 0).map((o) => (
+                  <button
+                    key={o.key}
+                    onClick={() => void runExport(o.cards)}
+                    className="block w-full px-4 py-2 text-left text-sm text-text-secondary hover:bg-bg-elevated"
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
-            onClick={handleExportAnki}
-            disabled={flashcards.length === 0}
-            className="rounded border border-surface-border-strong px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
-            title="导出全部卡片为 Anki 可导入的文本文件"
+            onClick={() => { setSelectMode((v) => !v); setSelected(new Set()) }}
+            className={`rounded border px-3 py-1.5 text-sm transition-colors ${
+              selectMode
+                ? 'border-accent bg-accent text-white'
+                : 'border-surface-border-strong text-text-secondary hover:bg-bg-elevated'
+            }`}
           >
-            导出 Anki
+            {selectMode ? '完成选择' : '批量操作'}
           </button>
           <button
             onClick={handleShuffle}
@@ -229,6 +453,43 @@ export function FlashcardReviewView(): React.ReactElement {
         </div>
       </div>
 
+      {/* Batch selection toolbar */}
+      {selectMode && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-surface-border bg-bg-surface px-4 py-2">
+          <p className="text-sm text-text-secondary">
+            已选 <span className="font-medium text-text-primary">{selected.size}</span> 张
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={selectAllInList}
+              className="rounded border border-surface-border-strong px-3 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
+            >
+              全选当前列表
+            </button>
+            <button
+              onClick={clearSelection}
+              className="rounded border border-surface-border-strong px-3 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
+            >
+              清空
+            </button>
+            <button
+              onClick={() => void handleBatchExport()}
+              disabled={selected.size === 0 || busy}
+              className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              批量导出 Anki
+            </button>
+            <button
+              onClick={() => void handleBatchDelete()}
+              disabled={selected.size === 0 || busy}
+              className="rounded bg-red-700 px-3 py-1 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50"
+            >
+              批量删除
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Progress bar */}
       <div className="mb-6 h-2 overflow-hidden rounded-full bg-bg-elevated">
         <div
@@ -237,135 +498,172 @@ export function FlashcardReviewView(): React.ReactElement {
         />
       </div>
 
-      {/* Card */}
-      <div className="flex flex-1 items-center justify-center">
-        {editing ? (
-          <div className="w-full max-w-2xl rounded-2xl border-2 border-accent-border bg-bg-surface p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs text-text-muted">
-                修正卡片
-              </span>
-              {editError && <span className="text-xs text-red-400">{editError}</span>}
-            </div>
-            <label className="mb-1 block text-xs font-medium text-text-muted">问题</label>
-            <textarea
-              value={editQuestion}
-              onChange={(e) => setEditQuestion(e.target.value)}
-              rows={4}
-              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none resize-none"
-            />
-            <label className="mb-1 mt-4 block text-xs font-medium text-text-muted">答案</label>
-            <textarea
-              value={editAnswer}
-              onChange={(e) => setEditAnswer(e.target.value)}
-              rows={7}
-              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none resize-none"
-            />
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => { setEditing(false); setEditError('') }}
-                className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleSaveEdit}
-                className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
-              >
-                保存修正
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            onClick={() => setIsFlipped(!isFlipped)}
-            className="relative w-full max-w-2xl cursor-pointer"
-            style={{ minHeight: '300px' }}
-          >
-            <div
-              className={`absolute inset-0 rounded-2xl border-2 p-8 transition-all duration-300 ${
-                isFlipped
-                  ? 'border-accent-border bg-bg-surface'
-                  : 'border-surface-border-strong bg-bg-surface'
-              }`}
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs text-text-muted">
-                  {isFlipped ? '答案' : '问题'} · 点击翻转
-                </span>
-                <span className="text-xs text-text-muted">
-                  {isNew ? '新' : `下次：${nextReviewLabel}`} · {currentIndex + 1}/{flashcards.length}
-                </span>
+      {/* Batch-select list view */}
+      {selectMode ? (
+        <div className="flex-1 overflow-auto">
+          <ul className="space-y-2">
+            {displayList.map((c) => (
+              <li key={c.id}>
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-surface-border bg-bg-surface px-4 py-3 hover:border-accent-border">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(c.id)}
+                    onChange={() => toggleSelect(c.id)}
+                    className="mt-1 h-4 w-4 flex-shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="markdown-body line-clamp-2 text-sm text-text-primary">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{c.question}</ReactMarkdown>
+                    </div>
+                    <p className="mt-1 text-xs text-text-muted truncate">
+                      来源：{c.conversationTitle} · {c.createdAt.slice(0, 10)}
+                    </p>
+                  </div>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <>
+          {/* Card */}
+          <div className="flex flex-1 items-center justify-center">
+            {editing ? (
+              <div className="w-full max-w-2xl rounded-2xl border-2 border-accent-border bg-bg-surface p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs text-text-muted">
+                    修正卡片
+                  </span>
+                  {editError && <span className="text-xs text-red-400">{editError}</span>}
+                </div>
+                <label className="mb-1 block text-xs font-medium text-text-muted">问题</label>
+                <textarea
+                  value={editQuestion}
+                  onChange={(e) => setEditQuestion(e.target.value)}
+                  rows={4}
+                  className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none resize-none"
+                />
+                <label className="mb-1 mt-4 block text-xs font-medium text-text-muted">答案</label>
+                <textarea
+                  value={editAnswer}
+                  onChange={(e) => setEditAnswer(e.target.value)}
+                  rows={7}
+                  className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none resize-none"
+                />
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    onClick={() => { setEditing(false); setEditError('') }}
+                    className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleSaveEdit}
+                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+                  >
+                    保存修正
+                  </button>
+                </div>
               </div>
-              <div className="markdown-body text-text-primary">
-                {isFlipped ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{card.answer}</ReactMarkdown>
-                ) : (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{card.question}</ReactMarkdown>
-                )}
+            ) : (
+              <div
+                onClick={() => setIsFlipped(!isFlipped)}
+                className="relative w-full max-w-2xl cursor-pointer"
+                style={{ minHeight: '300px' }}
+              >
+                <div
+                  className={`absolute inset-0 rounded-2xl border-2 p-8 transition-all duration-300 ${
+                    isFlipped
+                      ? 'border-accent-border bg-bg-surface'
+                      : 'border-surface-border-strong bg-bg-surface'
+                  }`}
+                >
+                  <div className="mb-4 flex items-center justify-between">
+                    <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs text-text-muted">
+                      {isFlipped ? '答案' : '问题'} · 点击翻转
+                    </span>
+                    <span className="flex items-center gap-3 text-xs text-text-muted">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleToggleFavorite() }}
+                        className={`text-base leading-none ${isFav ? 'text-amber-400' : 'text-text-muted hover:text-amber-400'}`}
+                        title={isFav ? '取消珍藏' : '加入珍藏'}
+                      >
+                        {isFav ? '★' : '☆'}
+                      </button>
+                      <span>{isNew ? '新' : `下次：${nextReviewLabel}`} · {currentIndex + 1}/{displayList.length}</span>
+                    </span>
+                  </div>
+                  <div className="markdown-body text-text-primary">
+                    {isFlipped ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{currentCard.answer}</ReactMarkdown>
+                    ) : (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{currentCard.question}</ReactMarkdown>
+                    )}
+                  </div>
+                  <p className="mt-6 text-xs text-text-muted">
+                    来源：{currentCard.conversationTitle}
+                  </p>
+                </div>
               </div>
-              <p className="mt-6 text-xs text-text-muted">
-                来源：{card.conversationTitle}
-              </p>
-            </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Controls */}
-      <div className="mt-6 flex items-center justify-center gap-3">
-        <button
-          onClick={handlePrev}
-          disabled={currentIndex === 0}
-          className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated disabled:opacity-30"
-        >
-          上一张
-        </button>
-        {isFlipped ? (
-          <>
+          {/* Controls */}
+          <div className="mt-6 flex items-center justify-center gap-3">
             <button
-              onClick={handleStartEdit}
-              className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated"
-              title="改正答案或解释"
+              onClick={handlePrev}
+              disabled={currentIndex === 0}
+              className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated disabled:opacity-30"
             >
-              修正
+              上一张
             </button>
+            {isFlipped ? (
+              <>
+                <button
+                  onClick={handleStartEdit}
+                  className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated"
+                  title="改正答案或解释"
+                >
+                  修正
+                </button>
+                <button
+                  onClick={() => handleRate('again')}
+                  className="rounded bg-red-800 px-5 py-2 text-sm font-medium text-white hover:bg-red-700"
+                >
+                  再看
+                </button>
+                <button
+                  onClick={() => handleRate('hard')}
+                  className="rounded bg-amber-700 px-5 py-2 text-sm font-medium text-white hover:bg-amber-600"
+                >
+                  困难
+                </button>
+                <button
+                  onClick={() => handleRate('good')}
+                  className="rounded bg-green-700 px-5 py-2 text-sm font-medium text-white hover:bg-green-600"
+                >
+                  良好
+                </button>
+                <button
+                  onClick={() => handleRate('easy')}
+                  className="rounded bg-blue-700 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600"
+                >
+                  简单
+                </button>
+              </>
+            ) : (
+              <span className="px-4 py-2 text-sm text-text-muted">翻转卡片后评分</span>
+            )}
             <button
-              onClick={() => handleRate('again')}
-              className="rounded bg-red-800 px-5 py-2 text-sm font-medium text-white hover:bg-red-700"
+              onClick={handleNext}
+              disabled={currentIndex === displayList.length - 1}
+              className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated disabled:opacity-30"
             >
-              再看
+              跳过
             </button>
-            <button
-              onClick={() => handleRate('hard')}
-              className="rounded bg-amber-700 px-5 py-2 text-sm font-medium text-white hover:bg-amber-600"
-            >
-              困难
-            </button>
-            <button
-              onClick={() => handleRate('good')}
-              className="rounded bg-green-700 px-5 py-2 text-sm font-medium text-white hover:bg-green-600"
-            >
-              良好
-            </button>
-            <button
-              onClick={() => handleRate('easy')}
-              className="rounded bg-blue-700 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600"
-            >
-              简单
-            </button>
-          </>
-        ) : (
-          <span className="px-4 py-2 text-sm text-text-muted">翻转卡片后评分</span>
-        )}
-        <button
-          onClick={handleNext}
-          disabled={currentIndex === flashcards.length - 1}
-          className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated disabled:opacity-30"
-        >
-          跳过
-        </button>
-      </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

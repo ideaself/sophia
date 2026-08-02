@@ -1,6 +1,32 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { WebDavSyncView } from './WebDavSyncView'
+import {
+  FONT_SCALE_OPTIONS,
+  getFontScale,
+  setFontScale,
+  type FontScale
+} from '../../../shared/font-scale'
+import {
+  MAX_TEXT_TEMPLATES,
+  MAX_TEMPLATE_LENGTH,
+  loadTextTemplates,
+  saveTextTemplates
+} from '../../../shared/text-templates'
+
+interface ArchiveItem {
+  id: string
+  kind: string
+  label: string
+  movedAt: string
+}
+
+const ARCHIVE_KIND_LABEL: Record<string, string> = {
+  conversation: '课堂',
+  textbook: '教材',
+  companion: '伙伴',
+  other: '其他'
+}
 
 export function SettingsView(): React.ReactElement {
   const [providers, setProviders] = useState<ProviderDTO[]>([])
@@ -30,6 +56,120 @@ export function SettingsView(): React.ReactElement {
   )
   const [backingUp, setBackingUp] = useState(false)
   const [backupMsg, setBackupMsg] = useState<string | null>(null)
+  const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale())
+  const [templates, setTemplates] = useState<string[]>(() => loadTextTemplates())
+  const [archiveItems, setArchiveItems] = useState<ArchiveItem[]>([])
+  const [archiveMsg, setArchiveMsg] = useState<string | null>(null)
+  const [purgeConfirmId, setPurgeConfirmId] = useState<string | null>(null)
+  const [lockEnabled, setLockEnabled] = useState(false)
+  const [lockPin, setLockPin] = useState('')
+  const [lockConfirmPin, setLockConfirmPin] = useState('')
+  const [lockError, setLockError] = useState<string | null>(null)
+  const [lockMsg, setLockMsg] = useState<string | null>(null)
+
+  const loadLockStatus = useCallback(async () => {
+    try {
+      setLockEnabled(await window.sophia.data.lock.has())
+    } catch {
+      setLockEnabled(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadLockStatus()
+  }, [loadLockStatus])
+
+  const handleSetLock = async () => {
+    setLockError(null)
+    setLockMsg(null)
+    if (lockPin.length < 4) {
+      setLockError('密码至少 4 位')
+      return
+    }
+    if (lockPin !== lockConfirmPin) {
+      setLockError('两次输入的密码不一致')
+      return
+    }
+    try {
+      await window.sophia.data.lock.set(lockPin)
+      setLockPin('')
+      setLockConfirmPin('')
+      setLockMsg('已启用档案锁，下次启动时需要解锁')
+      await loadLockStatus()
+    } catch (err) {
+      setLockError(err instanceof Error ? err.message : '设置失败')
+    }
+  }
+
+  const handleClearLock = async () => {
+    setLockError(null)
+    setLockMsg(null)
+    await window.sophia.data.lock.clear()
+    setLockMsg('已关闭档案锁')
+    await loadLockStatus()
+  }
+
+  const handleRelock = () => {
+    setLockMsg('已锁定')
+    window.dispatchEvent(new Event('sophia:relock'))
+  }
+
+  const loadArchive = useCallback(async () => {
+    try {
+      const items = await window.sophia.data.archive.list()
+      setArchiveItems(items)
+    } catch {
+      setArchiveItems([])
+    }
+  }, [])
+
+  useEffect(() => {
+    loadArchive()
+  }, [loadArchive])
+
+  const handleRestoreArchive = async (id: string) => {
+    const result = await window.sophia.data.archive.restore(id)
+    setArchiveMsg(result.success ? '已恢复到原位置' : '恢复失败，可能原位置已存在同名数据')
+    await loadArchive()
+  }
+
+  const handlePurgeArchive = async (id: string) => {
+    const result = await window.sophia.data.archive.purge(id)
+    setArchiveMsg(result.success ? '已永久删除' : '删除失败')
+    setPurgeConfirmId(null)
+    await loadArchive()
+  }
+
+  const handleFontScale = (scale: FontScale) => {
+    setFontScaleState(scale)
+    setFontScale(scale)
+  }
+
+  const updateTemplate = (index: number, value: string) => {
+    setTemplates((prev) => {
+      const next = [...prev]
+      next[index] = value
+      saveTextTemplates(next)
+      return next
+    })
+  }
+
+  const addTemplate = () => {
+    setTemplates((prev) => {
+      if (prev.length >= MAX_TEXT_TEMPLATES) return prev
+      const next = [...prev, '']
+      saveTextTemplates(next)
+      return next
+    })
+  }
+
+  const removeTemplate = (index: number) => {
+    setTemplates((prev) => {
+      const next = prev.filter((_, i) => i !== index)
+      saveTextTemplates(next)
+      return next
+    })
+  }
 
   const handleToggleThinking = (enabled: boolean) => {
     setThinkingEnabled(enabled)
@@ -194,6 +334,66 @@ export function SettingsView(): React.ReactElement {
       <div className="mb-8" />
 
       <div className="mb-8">
+        <h3 className="mb-3 text-lg font-semibold">界面字号</h3>
+        <p className="mb-3 text-xs text-text-muted">调整整个界面的文字大小（课堂教材阅读器的字号不受影响）。</p>
+        <div className="flex gap-2">
+          {FONT_SCALE_OPTIONS.map((o) => (
+            <button
+              key={o.key}
+              onClick={() => handleFontScale(o.key)}
+              className={`rounded px-4 py-2 text-sm transition-colors ${
+                fontScale === o.key
+                  ? 'bg-accent text-white'
+                  : 'border border-surface-border-strong text-text-secondary hover:bg-bg-elevated'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-8">
+        <h3 className="mb-3 text-lg font-semibold">常用文本模板</h3>
+        <p className="mb-3 text-xs text-text-muted">
+          设置常用文字片段（最多 {MAX_TEXT_TEMPLATES} 条，每条 ≤ {MAX_TEMPLATE_LENGTH} 字）。
+          在课堂输入框点「☰」按钮或按 Alt+1..9 插入。
+        </p>
+        <div className="space-y-2">
+          {templates.map((t, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <kbd className="flex-shrink-0 rounded border border-surface-border-strong bg-bg-elevated px-2 py-1.5 font-mono text-xs text-text-muted">
+                Alt+{i + 1}
+              </kbd>
+              <input
+                type="text"
+                value={t}
+                maxLength={MAX_TEMPLATE_LENGTH}
+                onChange={(e) => updateTemplate(i, e.target.value)}
+                placeholder={`第 ${i + 1} 条模板（点击后可在输入框插入）`}
+                className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
+              />
+              <button
+                onClick={() => removeTemplate(i)}
+                className="flex-shrink-0 rounded border border-surface-border-strong px-3 py-2 text-sm text-red-400 hover:bg-red-900/30"
+                title="删除此模板"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {templates.length < MAX_TEXT_TEMPLATES && (
+            <button
+              onClick={addTemplate}
+              className="w-full rounded-lg border border-dashed border-surface-border-strong px-4 py-2.5 text-sm text-text-muted hover:border-accent-border hover:text-accent-hover transition-colors"
+            >
+              + 添加模板
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="mb-8">
         <h3 className="mb-3 text-lg font-semibold">数据备份</h3>
         <div className="rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
           <p className="text-sm text-text-secondary">
@@ -210,6 +410,127 @@ export function SettingsView(): React.ReactElement {
             {backupMsg && <span className="text-xs text-text-muted">{backupMsg}</span>}
           </div>
         </div>
+      </div>
+
+      <div className="mb-8">
+        <h3 className="mb-3 text-lg font-semibold">历史归档（回收站）</h3>
+        <p className="mb-3 text-xs text-text-muted">
+          删除课堂、教材或伙伴时，数据会先移入此处，可随时恢复或彻底删除。
+        </p>
+        {archiveMsg && <p className="mb-2 text-xs text-green-400">{archiveMsg}</p>}
+        {archiveItems.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-surface-border px-4 py-6 text-center text-sm text-text-muted">
+            暂无归档内容
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {archiveItems.map((item) => (
+              <li
+                key={item.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-surface-border bg-bg-surface px-4 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-text-primary">
+                    <span className="mr-2 rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
+                      {ARCHIVE_KIND_LABEL[item.kind] ?? item.kind}
+                    </span>
+                    {item.label}
+                  </p>
+                  <p className="mt-0.5 text-xs text-text-muted">
+                    归档于 {new Date(item.movedAt).toLocaleString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void handleRestoreArchive(item.id)}
+                    className="rounded border border-accent px-3 py-1 text-xs text-accent-hover hover:bg-accent-subtle"
+                  >
+                    恢复
+                  </button>
+                  {purgeConfirmId === item.id ? (
+                    <>
+                      <button
+                        onClick={() => void handlePurgeArchive(item.id)}
+                        className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-500"
+                      >
+                        确认删除
+                      </button>
+                      <button
+                        onClick={() => setPurgeConfirmId(null)}
+                        className="rounded border border-surface-border-strong px-3 py-1 text-xs text-text-muted hover:bg-bg-elevated"
+                      >
+                        取消
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setPurgeConfirmId(item.id)}
+                      className="rounded border border-surface-border-strong px-3 py-1 text-xs text-red-400 hover:bg-red-900/30"
+                    >
+                      永久删除
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="mb-8">
+        <h3 className="mb-3 text-lg font-semibold">档案锁</h3>
+        <p className="mb-3 text-xs text-text-muted">
+          给本地学习档案加一道密码，共用电脑时防止他人误入。密码使用系统加密保存。
+        </p>
+        {lockMsg && <p className="mb-2 text-xs text-green-400">{lockMsg}</p>}
+        {lockError && <p className="mb-2 text-xs text-red-400">{lockError}</p>}
+        {lockEnabled ? (
+          <div className="rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
+            <p className="text-sm text-text-secondary">
+              档案锁已开启。
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={handleRelock}
+                className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+              >
+                立即锁定
+              </button>
+              <button
+                onClick={() => void handleClearLock()}
+                className="rounded border border-surface-border-strong px-4 py-2 text-sm text-red-400 hover:bg-red-900/30"
+              >
+                关闭档案锁
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
+            <div className="space-y-2">
+              <input
+                type="password"
+                value={lockPin}
+                onChange={(e) => setLockPin(e.target.value)}
+                placeholder="设置解锁密码（至少 4 位）"
+                className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
+              />
+              <input
+                type="password"
+                value={lockConfirmPin}
+                onChange={(e) => setLockConfirmPin(e.target.value)}
+                placeholder="再次输入确认"
+                className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
+              />
+            </div>
+            <button
+              onClick={() => void handleSetLock()}
+              disabled={!lockPin || !lockConfirmPin}
+              className="mt-3 rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              启用档案锁
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mb-8">

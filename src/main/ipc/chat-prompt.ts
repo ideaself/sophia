@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { Companion } from '../../shared/schemas/companion'
 import { CompanionSchema } from '../../shared/schemas/companion'
 import type { DeepSeekChatMessage } from '../llm/types'
-import { buildMessages } from '../prompt/prompt-builder'
+import { buildMessages, type HandoffMetaInfo } from '../prompt/prompt-builder'
 import { readWorldData } from '../storage/world-store'
 import { TextbookStore } from '../storage/textbook-store'
 import { ConversationStore } from '../storage/conversation-store'
@@ -90,7 +90,7 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
     }
 
     // 4. Load handoff tail from the most recent ended conversation with the same companion
-    const handoffTail = await loadHandoffTail(
+    const handoff = await loadHandoffTail(
       dataRoot,
       conversationStore,
       artifactStore,
@@ -98,6 +98,7 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
       params.worldId,
       params.conversationId
     )
+    const handoffTail = handoff.tail
 
     // 4b. Load pal moments (cross-session teaching interaction notes)
     let palMoments: string | undefined
@@ -229,6 +230,7 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
       pace: params.pace,
       hideNarration: params.hideNarration,
       handoffTail,
+      handoffMeta: handoff.meta,
       palMoments,
       relationState,
       teachingCoachAssessment: coachSegment,
@@ -264,18 +266,21 @@ async function loadHandoffTail(
   companionId: string,
   worldId: string,
   excludeConversationId: string
-): Promise<string | undefined> {
+): Promise<{ tail?: string; meta?: HandoffMetaInfo }> {
   // 1. Prefer structured metadata from handoff_meta.json — locate the
   //    exact previous conversation instead of guessing by endedAt.
   try {
     const metaRaw = await readFile(handoffMetaPath(dataRoot, worldId), 'utf-8')
-    const meta = JSON.parse(metaRaw) as Record<string, { prevConvId: string }>
+    const meta = JSON.parse(metaRaw) as Record<string, HandoffMetaInfo & { prevConvId: string }>
     const entry = meta[companionId]
     if (entry?.prevConvId && entry.prevConvId !== excludeConversationId) {
       const artifacts = await artifactStore.list(entry.prevConvId, worldId)
       const handoff = artifacts.find((a) => a.type === 'handoff_tail')
       if (handoff?.content) {
-        return handoff.content
+        return {
+          tail: handoff.content,
+          meta: { savedAt: entry.savedAt, endingPage: entry.endingPage }
+        }
       }
     }
   } catch {
@@ -293,11 +298,14 @@ async function loadHandoffTail(
       const artifacts = await artifactStore.list(conv.id, worldId)
       const handoff = artifacts.find((a) => a.type === 'handoff_tail')
       if (handoff?.content) {
-        return handoff.content
+        return {
+          tail: handoff.content,
+          meta: conv.endedAt ? { savedAt: conv.endedAt, endingPage: null } : undefined
+        }
       }
     }
   } catch {
     // Best-effort
   }
-  return undefined
+  return {}
 }

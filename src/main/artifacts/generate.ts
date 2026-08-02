@@ -49,10 +49,10 @@ export async function generateArtifacts(
   const results: ArtifactResult[] = []
   const failures: Array<{ type: ArtifactType; error: string }> = []
 
-  // Build conversation transcript for context
-  const transcript = messages
-    .map((m) => `${m.role === 'user' ? '学习者' : '导师'}: ${m.content}`)
-    .join('\n\n')
+  // Build conversation transcript for context. For long classes the
+  // transcript is sectioned (start / middle / end) so the summary and other
+  // artifacts remember the whole session, not just the ending (4.5.0).
+  const transcript = buildTranscript(messages)
 
   // Generate each artifact type with limited concurrency to avoid
   // triggering rate limits (429).  Process in batches of 3.
@@ -78,8 +78,12 @@ export async function generateArtifacts(
     }
   }
 
+  // Flashcard count scales with how much was actually taught (4.0.1).
+  const msgCount = messages.length
+  const cardTarget = msgCount >= 60 ? '8-10 张' : msgCount >= 30 ? '5-8 张' : '3-5 张'
+
   const generators = artifactTypes.map((type) =>
-    generateArtifact(client, type, transcript)
+    generateArtifact(client, type, transcript, type === ArtifactType.Flashcards ? cardTarget : undefined)
   )
 
   const settled: PromiseSettledResult<ArtifactResult | null>[] = []
@@ -104,12 +108,39 @@ export async function generateArtifacts(
   return { results, failures }
 }
 
+/** Classes longer than this get their transcript split into 三段. */
+const LONG_CLASS_MESSAGES = 40
+
+/**
+ * Build the conversation transcript. Long conversations are sectioned into
+ * 「课堂开头 / 课堂中间 / 课堂结尾」 so generation keeps the whole arc of
+ * the lesson in view instead of only the ending (4.5.0).
+ */
+function buildTranscript(messages: Message[]): string {
+  const line = (m: Message): string =>
+    `${m.role === 'user' ? '学习者' : '导师'}: ${m.content}`
+  const body = messages.map(line).join('\n\n')
+
+  if (messages.length <= LONG_CLASS_MESSAGES) return body
+
+  const third = Math.ceil(messages.length / 3)
+  const section = (msgs: Message[], label: string): string =>
+    `【${label}】\n${msgs.map(line).join('\n\n')}`
+
+  return [
+    section(messages.slice(0, third), '课堂开头'),
+    section(messages.slice(third, third * 2), '课堂中间'),
+    section(messages.slice(third * 2), '课堂结尾')
+  ].join('\n\n\n')
+}
+
 async function generateArtifact(
   client: DeepSeekClient,
   type: ArtifactType,
-  transcript: string
+  transcript: string,
+  cardTarget?: string
 ): Promise<ArtifactResult | null> {
-  const prompt = buildArtifactPrompt(type)
+  const prompt = buildArtifactPrompt(type, cardTarget)
 
   const response = await client.chat([
     { role: 'system', content: prompt },
@@ -121,7 +152,7 @@ async function generateArtifact(
   return { type, content: response.content.trim() }
 }
 
-function buildArtifactPrompt(type: ArtifactType): string {
+function buildArtifactPrompt(type: ArtifactType, cardTarget?: string): string {
   switch (type) {
     case ArtifactType.LessonSummary:
       return `你是一位教育助手。请根据以下苏格拉底式课堂对话，生成一份简洁的课堂总结。
@@ -140,13 +171,33 @@ function buildArtifactPrompt(type: ArtifactType): string {
 - 自测题必须基于本节课真实讨论过的内容，不要出课堂之外的题；
 - 提示要循序渐进，让学习者先尝试作答再看提示；
 - 答案放在最后，并保持简洁。
+
+【课堂事实铁律】
+- 严格区分：伙伴"提到过/讲解过" ≠ 伙伴"问过" ≠ 学习者"回答过" ≠ 伙伴"准备以后讲（计划）" ≠ 学习者"已经掌握"。
+- 只有学习者确实回答正确、或被确认理解的内容，才能写成"学习者掌握/理解"。
+- 如果课堂结尾伙伴刚提出问题、学习者还没来得及回答就下课，总结不得写成"已经完成"或"已经掌握"，要如实写"尚待回答的问题"。
+- 不得把计划、预告或伙伴的讲解写成已经发生的学习经历。
+- 如果学习者在整个课堂几乎没说话，只写一句陈述事实，不要虚构学习成果。
+
+【整段学习回顾】
+- 总结要兼顾课堂的"起点、发展、结尾"三个阶段：开头讨论的重要主题必须保留，不得被后半段内容挤掉。
+- 如果对话按【课堂开头/课堂中间/课堂结尾】分段给出，请分别概括每一段的主题，再合并成一份连贯的总结。
+
 用中文回答，控制在 450 字以内。`
 
     case ArtifactType.Flashcards:
-      return `你是一位教育助手。请根据以下苏格拉底式课堂对话，生成 3-5 张记忆卡片（flashcards）。
+      return `你是一位教育助手。请根据以下苏格拉底式课堂对话，生成 ${cardTarget ?? '3-5 张'} 记忆卡片（flashcards）。
 每张卡片格式：
 - 问题：(一个关键概念问题)
 - 答案：(简洁的答案)
+
+【质量要求】
+- 只考对话里真正讲过的内容，不考课堂之外的知识。
+- 优先选真正值得复习的核心概念与关键推论，避免缺乏学习价值的"数字陷阱"题（如无意义的年份、纯记忆数字）。
+- 专业题目的结论如果取决于具体前提（如税法等），题干必须完整保留前提条件，避免题目与答案对不上。
+- 不要给学习者编造名字，也不要虚构课堂中不存在的细节。
+- 答案与解析（如有）的选项字母/编号必须与题目一致；答案说明直接了当，不绕弯。
+- 长课堂可以覆盖讨论过的多个主题生成更多卡片；内容少的课堂宁少勿滥。
 
 用中文回答，使用 Markdown 格式。`
 

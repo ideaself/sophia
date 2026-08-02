@@ -8,6 +8,8 @@ import { registerCompanionIpc } from './ipc/companions'
 import { registerChatPromptIpc } from './ipc/chat-prompt'
 import { registerProviderIpc } from './ipc/providers'
 import { registerSyncIpc } from './ipc/sync'
+import { registerArchiveIpc } from './ipc/archive'
+import { registerLockIpc } from './ipc/lock'
 import { initDataDir } from './storage/initialize'
 import { resolveReferencePaths } from './storage/resolve-paths'
 import { createDeepSeekStreamAdapter } from './llm/deepseek-stream-adapter'
@@ -195,6 +197,8 @@ if (!app.requestSingleInstanceLock()) {
     registerConversationIpc(dataRoot, providerStore)
     registerCompanionIpc(dataRoot)
     registerChatPromptIpc(dataRoot, providerStore)
+    registerArchiveIpc(dataRoot)
+    registerLockIpc(dataRoot, safeStorage)
 
     createWindow()
 

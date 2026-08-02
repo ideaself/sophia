@@ -136,6 +136,35 @@ export function saveAllSrs(states: Record<string, SrsState>): void {
 }
 
 // ---------------------------------------------------------------------------
+// Favorites (珍藏) — persisted in flashcard-favorites.json for WebDAV sync
+// ---------------------------------------------------------------------------
+
+export async function loadAllFavorites(): Promise<Set<string>> {
+  try {
+    const ids = await window.sophia.data.getFlashcardFavorites()
+    return new Set(Array.isArray(ids) ? ids : [])
+  } catch {
+    return new Set()
+  }
+}
+
+export async function saveAllFavorites(ids: Iterable<string>): Promise<void> {
+  try {
+    await window.sophia.data.saveFlashcardFavorites(Array.from(ids))
+  } catch {
+    // best-effort
+  }
+}
+
+export function toggleFavorite(favorites: Set<string>, cardId: string): Set<string> {
+  const next = new Set(favorites)
+  if (next.has(cardId)) next.delete(cardId)
+  else next.add(cardId)
+  void saveAllFavorites(next)
+  return next
+}
+
+// ---------------------------------------------------------------------------
 // Loading all flashcards from ended conversations
 // ---------------------------------------------------------------------------
 

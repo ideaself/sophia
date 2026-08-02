@@ -191,6 +191,20 @@ declare global {
     deleteReadingNote: (noteId: string, textbookId: string, worldId?: string) => Promise<boolean>
     getFlashcardSrsState: () => Promise<Record<string, unknown>>
     saveFlashcardSrsState: (state: Record<string, unknown>) => Promise<{ success: boolean }>
+    getFlashcardFavorites: () => Promise<string[]>
+    saveFlashcardFavorites: (ids: string[]) => Promise<{ success: boolean }>
+    deleteFlashcardCards: (cards: Array<{ conversationId: string; artifactId: string; cardIndex: number }>, worldId?: string) => Promise<{ success: boolean; deleted: number }>
+    archive: {
+      list: () => Promise<Array<{ id: string; kind: string; label: string; movedAt: string }>>
+      restore: (entryId: string) => Promise<{ success: boolean }>
+      purge: (entryId: string) => Promise<{ success: boolean }>
+    },
+    lock: {
+      has: () => Promise<boolean>
+      set: (pin: string) => Promise<{ success: boolean }>
+      verify: (pin: string) => Promise<boolean>
+      clear: () => Promise<{ success: boolean }>
+    },
     diary: {
       listMonths: (worldId?: string) => Promise<string[]>
       getMonth: (month: string, worldId?: string) => Promise<string | null>

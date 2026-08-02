@@ -27,7 +27,10 @@ import {
   getTeachingLanguageRule,
   getContextFirstRules,
   getPlainDialogueRules,
-  getPaceRules
+  getPaceRules,
+  getChapterProgressionRule,
+  getConceptSubjectRule,
+  getAttentivenessRule
 } from './rules'
 import { truncateToBudget, windowMessages } from './token-budget'
 
@@ -64,8 +67,18 @@ export interface BuildSystemPromptParams {
   textbookTitle?: string
   /** Token budget for textbook content (default: 2000) */
   maxTextbookTokens?: number
-  /** Teaching language code (default: 'zh') */
+    /** Teaching language code (default: 'zh') */
   language?: string
+  /** Structured metadata from the previous ended session (time sense). */
+  handoffMeta?: HandoffMetaInfo
+}
+
+/** Structured handoff metadata written at the end of the previous class. */
+export interface HandoffMetaInfo {
+  /** ISO timestamp when the previous class ended. */
+  savedAt?: string
+  /** Textbook page the previous class ended near (may be null). */
+  endingPage?: number | null
 }
 
 export interface BuildMessagesParams extends BuildSystemPromptParams {
@@ -199,6 +212,43 @@ function buildHandoffSegment(tail: string): string {
   ].join('\n')
 }
 
+function relativeTimeLabel(savedAt: string): string {
+  const then = new Date(savedAt)
+  if (Number.isNaN(then.getTime())) return '上次'
+  const days = Math.max(1, Math.round((Date.now() - then.getTime()) / (24 * 60 * 60 * 1000)))
+  if (days === 1) return '昨天'
+  if (days < 7) return `${days} 天前`
+  const weeks = Math.floor(days / 7)
+  if (weeks < 5) return `${weeks} 周前`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months} 个月前`
+  const years = Math.floor(days / 365)
+  return `${years} 年前`
+}
+
+/**
+ * Handoff timeline segment (1.0.8 / 2.0.0).
+ * Grounds the previous class in "last time / previously" instead of
+ * "today / just now", and prevents the new class from re-staging the
+ * previous class's closing scene.
+ */
+function buildHandoffTimelineSegment(meta: HandoffMetaInfo): string {
+  const when = meta.savedAt ? relativeTimeLabel(meta.savedAt) : '上次'
+  const where = typeof meta.endingPage === 'number' && meta.endingPage > 0
+    ? `，当时读到教材第 ${meta.endingPage} 页附近`
+    : ''
+  return [
+    '## 上次课堂的时间与位置',
+    '',
+    `上次课堂结束于${when}${where}。`,
+    '',
+    '请据此把握时间感：',
+    '1. 上次课堂的内容发生在「上次/之前」，不是「今天」或「刚才」——用词要准确区分时间间隔。',
+    '2. 新课堂开场可以自然承接上次的学习话题，但**不要接续上次结尾的具体场景、画面或对话**，就像新的一天重新开始一样。',
+    '3. 不要重复讲解上次已经讲过且学习者已经掌握的概念；需要时可以简要提醒上次讲到哪，而不是重讲一遍。'
+  ].join('\n')
+}
+
 function buildPalMomentsSegment(content: string): string {
   return [
     '## 教学互动备忘',
@@ -229,6 +279,12 @@ function buildFormatRulesSegment(language: string, hideNarration?: boolean): str
     getPageNavigationRule(),
     '',
     getContextFirstRules(),
+    '',
+    getChapterProgressionRule(),
+    '',
+    getConceptSubjectRule(),
+    '',
+    getAttentivenessRule(),
     '',
     getTeachingLanguageRule(language)
   ].join('\n\n')
@@ -309,6 +365,11 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   // Optional handoff tail from previous session
   if (handoffTail) {
     segments.push(buildHandoffSegment(handoffTail))
+  }
+
+  // Optional handoff timeline — time sense + no scene pickup (1.0.8 / 2.0.0)
+  if (params.handoffMeta) {
+    segments.push(buildHandoffTimelineSegment(params.handoffMeta))
   }
 
   // Optional pal moments (cross-session teaching notes)

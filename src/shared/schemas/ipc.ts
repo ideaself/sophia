@@ -181,6 +181,36 @@ export const IpcListArtifactsInputSchema = z.object({
   worldId: z.string().optional()
 })
 
+// --- IPC: Flashcard (additional) ---
+
+/** One card to delete, identified by its artifact + index within it. */
+export const IpcFlashcardRefSchema = z.object({
+  conversationId: z.string().min(1),
+  artifactId: z.string().min(1),
+  cardIndex: z.number().int().min(0)
+})
+
+export const IpcFlashcardDeleteCardsInputSchema = z.object({
+  cards: z.array(IpcFlashcardRefSchema).min(1),
+  worldId: z.string().optional()
+})
+
+// --- IPC: Archive (回收站) ---
+
+export const IpcArchiveEntryIdInputSchema = z.object({
+  entryId: z.string().min(1)
+})
+
+// --- IPC: Profile lock (档案锁) ---
+
+export const IpcLockSetInputSchema = z.object({
+  pin: z.string().min(4).max(20)
+})
+
+export const IpcLockVerifyInputSchema = z.object({
+  pin: z.string().min(1).max(50)
+})
+
 // --- IPC: Textbook (additional) ---
 
 export const IpcCreateTextbookFullInputSchema = z.object({
