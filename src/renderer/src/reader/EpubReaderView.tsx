@@ -78,6 +78,14 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
   const [noteDraftOpen, setNoteDraftOpen] = useState(false)
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editingNoteText, setEditingNoteText] = useState('')
+  // ---- In-book search (Ctrl+F) ----
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchIndex, setSearchIndex] = useState(0)
+  const [searchCount, setSearchCount] = useState(0)
+  const [chapterSearchCounts, setChapterSearchCounts] = useState<number[]>([])
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchMarksRef = useRef<HTMLElement[]>([])
 
   // ---- Load chapters ----
   useEffect(() => {
@@ -179,6 +187,48 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
       .catch(() => setNotes([]))
   }, [textbookId])
 
+  // ---- In-book search: Ctrl+F opens, Escape closes ----
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'f') {
+        e.preventDefault()
+        setSearchOpen((v) => !v)
+        setTimeout(() => searchInputRef.current?.focus(), 0)
+      } else if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [searchOpen])
+
+  // ---- In-book search: count matches per chapter ----
+  useEffect(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) {
+      setChapterSearchCounts([])
+      setSearchCount(0)
+      setSearchIndex(0)
+      return
+    }
+    const timer = setTimeout(() => {
+      const counts = chapters.map((ch) => {
+        const text = htmlToPlainText(ch.html).toLowerCase()
+        let n = 0
+        let i = 0
+        while ((i = text.indexOf(q, i)) !== -1) { n++; i += q.length }
+        return n
+      })
+      setChapterSearchCounts(counts)
+      setSearchCount(counts.reduce((a, b) => a + b, 0))
+      if (counts[chapterIndex] === 0) {
+        const first = counts.findIndex((c) => c > 0)
+        if (first >= 0) goToChapter(first)
+      }
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [searchQuery, chapters, chapterIndex])
+
   const current = chapters[chapterIndex]
   const safeHtml = useMemo(
     () => (current ? DOMPurify.sanitize(current.html, SANITIZE_CONFIG) : ''),
@@ -188,6 +238,57 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
     () => applyNotesToHtml(safeHtml, notes, chapterIndex),
     [safeHtml, notes, chapterIndex]
   )
+
+  // ---- In-book search: wrap matches in the current chapter with <mark> ----
+  useEffect(() => {
+    const content = contentRef.current
+    if (!content) return
+    content.querySelectorAll('mark[data-search="1"]').forEach((m) => {
+      m.replaceWith(document.createTextNode(m.textContent ?? ''))
+    })
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) {
+      searchMarksRef.current = []
+      return
+    }
+    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT)
+    const textNodes: Text[] = []
+    while (walker.nextNode()) {
+      const n = walker.currentNode as Text
+      if (n.parentElement && !n.parentElement.closest('mark')) textNodes.push(n)
+    }
+    for (const node of textNodes) {
+      const raw = node.nodeValue ?? ''
+      const lower = raw.toLowerCase()
+      if (!lower.includes(q)) continue
+      const frag = document.createDocumentFragment()
+      let last = 0
+      let idx = lower.indexOf(q)
+      while (idx !== -1) {
+        if (idx > last) frag.appendChild(document.createTextNode(raw.slice(last, idx)))
+        const mark = document.createElement('mark')
+        mark.setAttribute('data-search', '1')
+        mark.textContent = raw.slice(idx, idx + q.length)
+        frag.appendChild(mark)
+        last = idx + q.length
+        idx = lower.indexOf(q, last)
+      }
+      if (last < raw.length) frag.appendChild(document.createTextNode(raw.slice(last)))
+      node.parentNode?.replaceChild(frag, node)
+    }
+    const marks = Array.from(content.querySelectorAll<HTMLElement>('mark[data-search="1"]'))
+    searchMarksRef.current = marks
+    setSearchIndex(0)
+    marks[0]?.scrollIntoView({ block: 'center' })
+  }, [highlightedHtml, searchQuery])
+
+  const jumpSearchMatch = (dir: 1 | -1) => {
+    const marks = searchMarksRef.current
+    if (marks.length === 0) return
+    const next = (searchIndex + dir + marks.length) % marks.length
+    setSearchIndex(next)
+    marks[next].scrollIntoView({ block: 'center' })
+  }
 
   // ---- Selection toolbar (highlight / underline / note) ----
   const handleContentMouseUp = () => {
@@ -285,6 +386,82 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {/* In-book search */}
+          {chapters.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => { setSearchOpen((v) => !v); setTimeout(() => searchInputRef.current?.focus(), 0) }}
+                className={`rounded border px-2 py-1 text-xs ${
+                  searchOpen
+                    ? 'border-accent text-accent'
+                    : 'border-surface-border-strong hover:bg-bg-elevated'
+                }`}
+                title="在教材中搜索 (Ctrl+F)"
+              >
+                🔍 搜索
+              </button>
+              {searchOpen && (
+                <div className="absolute right-0 top-full z-10 mt-1 w-80 rounded border border-surface-border bg-bg-surface p-3 shadow-lg">
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => { setSearchQuery(e.target.value); setSearchIndex(0) }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                          e.preventDefault()
+                          if (e.shiftKey) jumpSearchMatch(-1)
+                          else jumpSearchMatch(1)
+                        }
+                      }}
+                      placeholder="输入关键词，回车跳转..."
+                      className="w-full rounded border border-surface-border-strong bg-bg-deep px-2 py-1 text-xs text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
+                    />
+                    <button
+                      onClick={() => jumpSearchMatch(-1)}
+                      className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
+                      title="上一个 (Shift+Enter)"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => jumpSearchMatch(1)}
+                      className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
+                      title="下一个 (Enter)"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                  {searchQuery.trim() && (
+                    <div className="mt-2">
+                      <p className="text-[10px] text-text-muted">
+                        本页 {searchIndex + 1}/{searchMarksRef.current.length} · 全书共 {searchCount} 处
+                      </p>
+                      {chapterSearchCounts.some((c) => c > 0) && (
+                        <ul className="mt-1 max-h-40 overflow-auto space-y-0.5">
+                          {chapterSearchCounts.map((c, i) =>
+                            c > 0 ? (
+                              <li key={i}>
+                                <button
+                                  onClick={() => goToChapter(i)}
+                                  className={`block w-full truncate rounded px-2 py-1 text-left text-xs hover:bg-bg-elevated ${
+                                    i === chapterIndex ? 'text-accent' : 'text-text-secondary'
+                                  }`}
+                                >
+                                  {chapters[i]?.title || `第 ${i + 1} 章`} · {c} 处
+                                </button>
+                              </li>
+                            ) : null
+                          )}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {/* TOC dropdown */}
           {chapters.length > 0 && (
             <div ref={tocRef} className="relative">
