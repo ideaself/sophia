@@ -187,20 +187,34 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
       .catch(() => setNotes([]))
   }, [textbookId])
 
-  // ---- In-book search: Ctrl+F opens, Escape closes ----
+  // ---- In-book search: Ctrl+F opens, Escape closes, ←→ switches chapters ----
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'f') {
         e.preventDefault()
         setSearchOpen((v) => !v)
         setTimeout(() => searchInputRef.current?.focus(), 0)
-      } else if (e.key === 'Escape' && searchOpen) {
+        return
+      }
+      if (e.key === 'Escape' && searchOpen) {
         setSearchOpen(false)
+        return
+      }
+      const target = e.target as HTMLElement | null
+      const isTyping = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      if (!isTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault()
+          setChapterIndex((i) => Math.max(0, i - 1))
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault()
+          setChapterIndex((i) => Math.min(chapters.length - 1, i + 1))
+        }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [searchOpen])
+  }, [searchOpen, chapters.length])
 
   // ---- In-book search: count matches per chapter ----
   useEffect(() => {
@@ -627,21 +641,6 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
           >
             A+
           </button>
-          {/* Chapter nav */}
-          <button
-            onClick={() => setChapterIndex((i) => Math.max(0, i - 1))}
-            disabled={chapterIndex <= 0}
-            className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated disabled:opacity-50"
-          >
-            上一章
-          </button>
-          <button
-            onClick={() => setChapterIndex((i) => Math.min(chapters.length - 1, i + 1))}
-            disabled={chapterIndex >= chapters.length - 1}
-            className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated disabled:opacity-50"
-          >
-            下一章
-          </button>
           <button
             onClick={onClose}
             className="rounded border border-surface-border-strong px-3 py-1 text-xs text-red-400 hover:bg-red-900/30"
@@ -725,6 +724,31 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
               保存笔记
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Bottom-right chapter pager */}
+      {chapters.length > 0 && (
+        <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-lg border border-surface-border bg-bg-surface px-3 py-2 shadow-xl">
+          <button
+            onClick={() => setChapterIndex((i) => Math.max(0, i - 1))}
+            disabled={chapterIndex <= 0}
+            className="rounded border border-surface-border-strong px-2.5 py-1 text-xs hover:bg-bg-elevated disabled:opacity-40"
+            title="上一章 (←)"
+          >
+            ◀ 上一章
+          </button>
+          <span className="max-w-44 truncate text-xs text-text-secondary" title={current?.title ?? ''}>
+            第 {chapterIndex + 1} / {chapters.length} 章 · {current?.title || `第 ${chapterIndex + 1} 章`}
+          </span>
+          <button
+            onClick={() => setChapterIndex((i) => Math.min(chapters.length - 1, i + 1))}
+            disabled={chapterIndex >= chapters.length - 1}
+            className="rounded border border-surface-border-strong px-2.5 py-1 text-xs hover:bg-bg-elevated disabled:opacity-40"
+            title="下一章 (→)"
+          >
+            下一章 ▶
+          </button>
         </div>
       )}
     </div>

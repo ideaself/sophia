@@ -40,6 +40,30 @@ export function PdfReaderView({ textbookId, title, onClose }: PdfReaderViewProps
   const [searchHits, setSearchHits] = useState<SearchHit[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
   const pageTextCache = useRef<Record<number, string>>({})
+  // Bottom-right pager: editable page number input
+  const [pageInput, setPageInput] = useState('1')
+  const pageInputRef = useRef<HTMLInputElement>(null)
+
+  // Keep the page input in sync with pageNum (unless the user is typing in it)
+  useEffect(() => {
+    if (document.activeElement !== pageInputRef.current) {
+      setPageInput(String(pageNum))
+    }
+  }, [pageNum])
+
+  const goToPage = (n: number) => {
+    if (!pageCount) return
+    setPageNum(Math.min(pageCount, Math.max(1, n)))
+  }
+
+  const submitPageInput = () => {
+    const n = parseInt(pageInput, 10)
+    if (Number.isNaN(n)) {
+      setPageInput(String(pageNum))
+      return
+    }
+    goToPage(n)
+  }
 
   // Restore last page from textbook store / localStorage
   useEffect(() => {
@@ -125,20 +149,35 @@ export function PdfReaderView({ textbookId, title, onClose }: PdfReaderViewProps
     }).catch(() => {})
   }, [textbookId, pageNum, pageCount])
 
-  // Ctrl+F open / Escape close
+  // Ctrl+F open / Escape close / ←→ page navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'f') {
         e.preventDefault()
         setSearchOpen((v) => !v)
         setTimeout(() => searchInputRef.current?.focus(), 0)
-      } else if (e.key === 'Escape' && searchOpen) {
+        return
+      }
+      if (e.key === 'Escape' && searchOpen) {
         setSearchOpen(false)
+        return
+      }
+      // Arrow keys page through the document when not typing
+      const target = e.target as HTMLElement | null
+      const isTyping = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      if (!isTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+          e.preventDefault()
+          setPageNum((p) => Math.max(1, p - 1))
+        } else if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+          e.preventDefault()
+          setPageNum((p) => Math.min(pageCount || 1, p + 1))
+        }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [searchOpen])
+  }, [searchOpen, pageCount])
 
   const fitWidth = async () => {
     if (!doc || !containerRef.current) return
@@ -279,23 +318,6 @@ export function PdfReaderView({ textbookId, title, onClose }: PdfReaderViewProps
             </div>
           )}
           <button
-            onClick={() => setPageNum((p) => Math.max(1, p - 1))}
-            disabled={pageNum <= 1}
-            className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated disabled:opacity-50"
-          >
-            上一页
-          </button>
-          <span className="text-xs text-text-secondary">
-            {pageNum} / {pageCount || '…'}
-          </span>
-          <button
-            onClick={() => setPageNum((p) => Math.min(pageCount, p + 1))}
-            disabled={pageNum >= pageCount}
-            className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated disabled:opacity-50"
-          >
-            下一页
-          </button>
-          <button
             onClick={() => setScale((s) => Math.max(0.5, s - 0.25))}
             className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
           >
@@ -342,6 +364,48 @@ export function PdfReaderView({ textbookId, title, onClose }: PdfReaderViewProps
           </div>
         )}
       </div>
+
+      {/* Bottom-right pager */}
+      {pageCount > 0 && (
+        <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-lg border border-surface-border bg-bg-surface px-3 py-2 shadow-xl">
+          <button
+            onClick={() => goToPage(pageNum - 1)}
+            disabled={pageNum <= 1}
+            className="rounded border border-surface-border-strong px-2.5 py-1 text-xs hover:bg-bg-elevated disabled:opacity-40"
+            title="上一页 (←)"
+          >
+            ◀ 上一页
+          </button>
+          <div className="flex items-center gap-1 text-xs text-text-secondary">
+            <input
+              ref={pageInputRef}
+              type="text"
+              inputMode="numeric"
+              value={pageInput}
+              onChange={(e) => setPageInput(e.target.value.replace(/[^0-9]/g, ''))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                  e.preventDefault()
+                  submitPageInput()
+                  pageInputRef.current?.blur()
+                }
+              }}
+              onBlur={submitPageInput}
+              className="w-12 rounded border border-surface-border-strong bg-bg-deep px-1.5 py-1 text-center text-xs text-text-primary focus:border-accent-border focus:outline-none"
+              title="输入页码后回车跳转"
+            />
+            <span>/ {pageCount}</span>
+          </div>
+          <button
+            onClick={() => goToPage(pageNum + 1)}
+            disabled={pageNum >= pageCount}
+            className="rounded border border-surface-border-strong px-2.5 py-1 text-xs hover:bg-bg-elevated disabled:opacity-40"
+            title="下一页 (→)"
+          >
+            下一页 ▶
+          </button>
+        </div>
+      )}
     </div>
   )
 }
