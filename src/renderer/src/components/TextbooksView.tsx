@@ -24,6 +24,45 @@ export function TextbooksView(): React.ReactElement {
   const [editContent, setEditContent] = useState('')
   const [saving, setSaving] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  // EPUB 正文缺失修复（旧版解析器导入的教材只有书名+作者）
+  const [repairingIds, setRepairingIds] = useState<Set<string>>(new Set())
+  const [repairMsg, setRepairMsg] = useState<string | null>(null)
+
+  /** 旧版解析器导入的 EPUB：正文只有书名+作者，需要从原件重新提取。 */
+  const isContentMissing = (t: Textbook): boolean =>
+    t.format === 'epub' &&
+    !!t.originalFile &&
+    (t.content ?? '').trim().length < 200 &&
+    !(t.content ?? '').includes('\n')
+
+  const missingCount = textbooks.filter(isContentMissing).length
+
+  const repairEpub = async (t: Textbook) => {
+    setRepairingIds((prev) => new Set(prev).add(t.id))
+    setRepairMsg(null)
+    try {
+      const result = await window.sophia.data.reparseEpubContent(t.id)
+      setRepairMsg(result.success && result.content.trim()
+        ? `「${t.title}」已重新提取正文（${result.content.trim().length} 字）`
+        : `「${t.title}」重新提取失败`)
+      fetchTextbooks()
+    } catch (err) {
+      setRepairMsg(`「${t.title}」重新提取失败：${err instanceof Error ? err.message : '未知错误'}`)
+    } finally {
+      setRepairingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(t.id)
+        return next
+      })
+    }
+  }
+
+  const repairAllMissing = async () => {
+    const targets = textbooks.filter(isContentMissing)
+    for (const t of targets) {
+      await repairEpub(t)
+    }
+  }
 
   const handleTextImport = async () => {
     if (!title.trim()) return
@@ -187,6 +226,24 @@ export function TextbooksView(): React.ReactElement {
       </div>
 
       <div className="space-y-3">
+        {missingCount > 0 && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-800 bg-amber-900/20 px-4 py-2.5">
+            <p className="text-sm text-amber-300">
+              ⚠️ {missingCount} 本 EPUB 正文缺失（旧版解析器只提取到了书名和作者）。
+              点「重新提取」即可从原件修复，无需重新导入。
+            </p>
+            <button
+              onClick={() => void repairAllMissing()}
+              disabled={repairingIds.size > 0}
+              className="flex-shrink-0 rounded bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              {repairingIds.size > 0 ? '提取中...' : '全部重新提取'}
+            </button>
+          </div>
+        )}
+        {repairMsg && (
+          <p className="text-xs text-green-400">{repairMsg}</p>
+        )}
         {textbooks.map((t) => (
           <div
             key={t.id}
@@ -195,6 +252,16 @@ export function TextbooksView(): React.ReactElement {
             <div>
               <h4 className="font-medium">{t.title}</h4>
               <p className="text-xs text-text-muted">{t.format}</p>
+              {isContentMissing(t) && (
+                <button
+                  onClick={() => void repairEpub(t)}
+                  disabled={repairingIds.has(t.id)}
+                  className="mt-1 rounded border border-amber-800 px-2 py-0.5 text-xs text-amber-400 hover:bg-amber-900/30 disabled:opacity-50"
+                  title="旧版解析器导入的 EPUB 正文缺失，从原件重新提取"
+                >
+                  {repairingIds.has(t.id) ? '提取中...' : '⚠️ 正文缺失 · 重新提取'}
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {t.originalFile && (

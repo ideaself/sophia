@@ -12,6 +12,8 @@ export interface Textbook {
   title: string
   format: string
   originalFile: string
+  /** 提取的教材正文（列表接口会返回，用于检测正文缺失）。 */
+  content?: string
 }
 
 export interface ActiveConversation {
