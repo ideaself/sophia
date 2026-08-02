@@ -13,6 +13,9 @@ export interface UseTTSResult {
   /** Speech rate, clamped to [0.5, 2]. */
   rate: number
   setRate: (rate: number) => void
+  /** Loop the current utterance until stopped (3.2.0). */
+  loop: boolean
+  setLoop: (loop: boolean) => void
   speak: (text: string) => void
   stop: () => void
   /** Speak if idle, stop if speaking. */
@@ -27,6 +30,7 @@ interface TTSState {
   paused: boolean
   progress: number
   rate: number
+  loop: boolean
 }
 
 const MIN_RATE = 0.5
@@ -55,7 +59,8 @@ let state: TTSState = {
   speaking: false,
   paused: false,
   progress: 0,
-  rate: DEFAULT_RATE
+  rate: DEFAULT_RATE,
+  loop: false
 }
 
 const listeners = new Set<() => void>()
@@ -92,7 +97,14 @@ export function speakTTS(rawText: string, lang: string): void {
       setState({ progress: Math.min(1, Math.max(0, e.charIndex / text.length)) })
     }
   }
-  utter.onend = () => setState({ speaking: false, paused: false, progress: 1 })
+  utter.onend = () => {
+    // Loop (3.2.0): replay the utterance unless the user stopped it.
+    if (state.loop) {
+      speakTTS(text, lang)
+    } else {
+      setState({ speaking: false, paused: false, progress: 1 })
+    }
+  }
   utter.onerror = () => setState({ speaking: false, paused: false, progress: 0 })
 
   window.speechSynthesis.speak(utter)
@@ -121,6 +133,10 @@ export function setRateTTS(rate: number): void {
   setState({ rate: Math.min(MAX_RATE, Math.max(MIN_RATE, rate)) })
 }
 
+export function setLoopTTS(loop: boolean): void {
+  setState({ loop })
+}
+
 /**
  * React binding over the shared TTS store.
  *
@@ -128,7 +144,7 @@ export function setRateTTS(rate: number): void {
  * multiple callers stay in sync with the same speaking/paused/progress state.
  */
 export function useTTS(lang = 'zh-CN'): UseTTSResult {
-  const { supported, speaking, paused, progress, rate } = useSyncExternalStore(
+  const { supported, speaking, paused, progress, rate, loop } = useSyncExternalStore(
     subscribeTTS,
     getTTSState,
     getTTSState
@@ -139,6 +155,7 @@ export function useTTS(lang = 'zh-CN'): UseTTSResult {
   const pause = useCallback(() => pauseTTS(), [])
   const resume = useCallback(() => resumeTTS(), [])
   const setRate = useCallback((value: number) => setRateTTS(value), [])
+  const setLoop = useCallback((value: boolean) => setLoopTTS(value), [])
   const toggle = useCallback(
     (text: string) => {
       if (speaking) {
@@ -157,6 +174,8 @@ export function useTTS(lang = 'zh-CN'): UseTTSResult {
     progress,
     rate,
     setRate,
+    loop,
+    setLoop,
     speak,
     stop,
     toggle,

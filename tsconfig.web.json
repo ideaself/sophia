@@ -32,6 +32,7 @@
     "src/shared/reading-notes-utils.ts",
     "src/shared/text-templates.ts",
     "src/shared/font-scale.ts",
+    "src/shared/voice-trigger.ts",
     "src/shared/types/ids.ts"
   ]
 }

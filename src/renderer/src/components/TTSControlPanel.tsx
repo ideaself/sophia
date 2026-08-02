@@ -44,6 +44,17 @@ export function TTSControlPanel({ tts }: TTSControlPanelProps): React.ReactEleme
         >
           ⏹️
         </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); tts.setLoop(!tts.loop) }}
+          className={`rounded border px-2 py-1 text-xs transition-colors ${
+            tts.loop
+              ? 'border-accent text-accent'
+              : 'border-surface-border-strong hover:bg-bg-elevated'
+          }`}
+          title={tts.loop ? '循环播放：开（点击关闭）' : '循环播放：关（点击开启）'}
+        >
+          🔁
+        </button>
         <div className="flex flex-1 items-center gap-2">
           <input
             type="range"

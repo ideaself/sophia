@@ -6,6 +6,7 @@ import { stopTTS } from '../hooks/useTTS'
 import { loadTabs, saveTabs, serializeTabs } from '../../../shared/tab-persistence'
 import { useAppStore } from '../stores/useAppStore'
 import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-templates'
+import { detectVoiceTrigger, loadVoiceTriggers } from '../../../shared/voice-trigger'
 
 interface Companion {
   id: string
@@ -1357,7 +1358,19 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           <textarea
             ref={inputRef}
             value={activeTab.input}
-            onChange={(e) => setActiveTabInput(e.target.value)}
+            onChange={(e) => {
+              const { action, stripped } = detectVoiceTrigger(e.target.value, loadVoiceTriggers())
+              if (action === 'send') {
+                updateTab(activeIdx, { input: stripped })
+                if (stripped.trim()) {
+                  void handleSend(stripped)
+                }
+              } else if (action === 'clear') {
+                updateTab(activeIdx, { input: '' })
+              } else {
+                setActiveTabInput(e.target.value)
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
