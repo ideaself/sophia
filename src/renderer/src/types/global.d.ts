@@ -332,6 +332,7 @@ declare global {
   interface AppAPI {
     minimizeToTray: () => Promise<void>
     openExternal: (url: string) => Promise<{ success: boolean }>
+    onDictFrameBlocked: (callback: (payload: { url: string }) => void) => () => void
   }
 
   interface SophiaAPI {

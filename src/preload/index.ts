@@ -383,6 +383,8 @@ export interface SyncAPI {
 export interface AppAPI {
   minimizeToTray: () => Promise<void>
   openExternal: (url: string) => Promise<{ success: boolean }>
+  /** Subscribe to "dictionary site refuses iframe embedding" events. */
+  onDictFrameBlocked: (callback: (payload: { url: string }) => void) => () => void
 }
 
 export interface SophiaAPI {
@@ -443,7 +445,16 @@ const sophia: SophiaAPI = {
   getPlatform: () => ipcRenderer.invoke('app:get-platform'),
   app: {
     minimizeToTray: () => ipcRenderer.invoke('app:minimize-to-tray'),
-    openExternal: (url) => ipcRenderer.invoke('app:open-external', url)
+    openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
+    onDictFrameBlocked: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: { url: string }) => {
+        callback(payload)
+      }
+      ipcRenderer.on('dict:frame-blocked', handler)
+      return () => {
+        ipcRenderer.removeListener('dict:frame-blocked', handler)
+      }
+    }
   },
   settings: {
     hasDeepSeekKey: () => ipcRenderer.invoke('settings:has-deepseek-key'),

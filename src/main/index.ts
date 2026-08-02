@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, nativeImage, session } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, nativeImage, session, webContents } from 'electron'
 import trayIconDataUrl from '../../build/icon.png?inline'
 import { join } from 'path'
 import { registerSettingsIpc } from './ipc/settings'
@@ -150,7 +150,35 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     // Content Security Policy: restrict resource loading to local origin
     // and data: URIs (needed for KaTeX fonts, inline styles, etc.)
+    // Also detects third-party dictionary iframes that refuse embedding
+    // (X-Frame-Options / CSP frame-ancestors) — Chromium fires no iframe
+    // error event for these, so the renderer would otherwise show a blank
+    // popup. We cancel the request and notify the popup to show a fallback.
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      const headers = details.responseHeaders ?? {}
+
+      if (details.resourceType === 'subFrame' && details.webContentsId) {
+        const get = (key: string): string => {
+          const value = headers[key] ?? headers[key.toLowerCase()]
+          return Array.isArray(value) ? value.join(',') : ''
+        }
+        const xfo = get('x-frame-options')
+        const csp = get('content-security-policy')
+        const frameBlocked =
+          /deny|sameorigin/i.test(xfo) ||
+          /frame-ancestors/i.test(csp)
+        if (frameBlocked) {
+          try {
+            const wc = webContents.fromId(details.webContentsId)
+            wc?.send('dict:frame-blocked', { url: details.url })
+          } catch {
+            // best-effort — fallback stays hidden, user can still open in browser
+          }
+          callback({ cancel: true })
+          return
+        }
+      }
+
       callback({
         responseHeaders: {
           ...details.responseHeaders,

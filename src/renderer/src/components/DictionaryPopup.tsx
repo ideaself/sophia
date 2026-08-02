@@ -40,14 +40,14 @@ export function DictionaryPopup({ word, anchor, onClose }: DictionaryPopupProps)
     }
   }, [onClose])
 
-  // Some sites (X-Frame-Options) refuse embedding and fire an error on the
-  // iframe — surface a fallback message with an open-in-browser button.
+  // Chromium fires no error event when a site refuses embedding via
+  // X-Frame-Options / CSP frame-ancestors — the main process detects that on
+  // the response headers and notifies us here.
   useEffect(() => {
-    const el = iframeRef.current
-    if (!el) return
-    const onError = () => setLoadFailed(true)
-    el.addEventListener('error', onError)
-    return () => el.removeEventListener('error', onError)
+    const unsubscribe = window.sophia.app.onDictFrameBlocked(() => {
+      setLoadFailed(true)
+    })
+    return unsubscribe
   }, [url])
 
   const openInBrowser = () => {
