@@ -208,6 +208,7 @@ declare global {
     exportPdf: (html: string, filePath: string) => Promise<{ success: boolean }>
     captureScreenshot: (filePath: string) => Promise<{ success: boolean }>
     composeAiAnswer: (question: string, history: string) => Promise<{ content: string }>
+    reparseEpubContent: (textbookId: string, worldId?: string) => Promise<{ success: boolean; content: string }>
     diary: {
       listMonths: (worldId?: string) => Promise<string[]>
       getMonth: (month: string, worldId?: string) => Promise<string | null>

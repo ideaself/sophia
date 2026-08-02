@@ -221,6 +221,13 @@ export const IpcAiComposeInputSchema = z.object({
   history: z.string().optional().default('')
 })
 
+// --- IPC: EPUB 内容重新提取（导入时正文为空时修复用） ---
+
+export const IpcReparseEpubInputSchema = z.object({
+  textbookId: z.string().min(1),
+  worldId: z.string().optional()
+})
+
 // --- IPC: Profile lock (档案锁) ---
 
 export const IpcLockSetInputSchema = z.object({

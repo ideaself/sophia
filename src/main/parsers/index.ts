@@ -1,6 +1,6 @@
 import { extname } from 'node:path'
 import { extractPdfText } from './pdf-parser'
-import { extractEpubText, getEpubChapters } from './epub-parser'
+import { extractEpubText, getEpubChapters, epubChaptersToText } from './epub-parser'
 
 export interface ParseResult {
   content: string
@@ -8,7 +8,7 @@ export interface ParseResult {
 }
 
 export type { EpubChapter, EpubChaptersResult } from './epub-parser'
-export { getEpubChapters }
+export { getEpubChapters, epubChaptersToText }
 
 export async function extractText(filePath: string): Promise<ParseResult> {
   const ext = extname(filePath).toLowerCase()

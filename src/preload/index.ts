@@ -228,6 +228,7 @@ export interface DataAPI {
   exportPdf: (html: string, filePath: string) => Promise<{ success: boolean }>
   captureScreenshot: (filePath: string) => Promise<{ success: boolean }>
   composeAiAnswer: (question: string, history: string) => Promise<{ content: string }>
+  reparseEpubContent: (textbookId: string, worldId?: string) => Promise<{ success: boolean; content: string }>
   diary: {
     listMonths: (worldId?: string) => Promise<string[]>
     getMonth: (month: string, worldId?: string) => Promise<string | null>
@@ -571,6 +572,8 @@ const sophia: SophiaAPI = {
     exportPdf: (html, filePath) => ipcRenderer.invoke('pdf:export', { html, filePath }),
     captureScreenshot: (filePath) => ipcRenderer.invoke('screenshot:capture', { filePath }),
     composeAiAnswer: (question, history) => ipcRenderer.invoke('ai:compose-answer', { question, history }),
+    reparseEpubContent: (textbookId, worldId = 'world_default') =>
+      ipcRenderer.invoke('epub:reparse-content', { textbookId, worldId }),
     diary: {
       listMonths: (worldId = 'world_default') => ipcRenderer.invoke('diary:list-months', { worldId }),
       getMonth: (month, worldId = 'world_default') => ipcRenderer.invoke('diary:get-month', { worldId, month })

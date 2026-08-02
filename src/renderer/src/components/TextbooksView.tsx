@@ -86,7 +86,25 @@ export function TextbooksView(): React.ReactElement {
     setLoadingContent(true)
     try {
       const full = await window.sophia.data.getTextbook(t.id)
-      setViewingContent(full?.content ?? '')
+      let content = full?.content ?? ''
+      // EPUBs imported before the parser's raw-file fallback may only contain
+      // "title + author" — re-extract the body from the original file.
+      if (
+        t.format === 'epub' &&
+        content.trim().length < 200 &&
+        !content.includes('\n') &&
+        t.originalFile
+      ) {
+        try {
+          const result = await window.sophia.data.reparseEpubContent(t.id)
+          if (result.success && result.content.trim()) {
+            content = result.content
+          }
+        } catch {
+          // keep whatever we had
+        }
+      }
+      setViewingContent(content)
     } catch {
       setViewingContent('加载失败')
     } finally {

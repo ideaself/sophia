@@ -11,7 +11,7 @@ import { DiaryStore } from '../storage/diary-store'
 import type { ProviderStore } from '../storage/provider-store'
 import { generateArtifacts } from '../artifacts/generate'
 import { parseFlashcards, rebuildArtifactContent } from '../../shared/flashcard-utils'
-import { extractText, getEpubChapters } from '../parsers'
+import { extractText, getEpubChapters, epubChaptersToText } from '../parsers'
 import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
 import { DeepSeekClient } from '../llm/deepseek-client'
 import { createDeepSeekHttpAdapter } from '../llm/deepseek-http-adapter'
@@ -70,7 +70,8 @@ import {
   IpcDiaryGetMonthInputSchema,
   IpcFlashcardDeleteCardsInputSchema,
   IpcPdfExportInputSchema,
-  IpcScreenshotInputSchema
+  IpcScreenshotInputSchema,
+  IpcReparseEpubInputSchema
 } from '../../shared/schemas/ipc'
 import {
   ArtifactType,
@@ -410,6 +411,27 @@ export function registerConversationIpc(
     }
     const fullPath = join(textbookDir(dataRoot, parsed.textbookId, worldId), textbook.originalFile)
     return getEpubChapters(fullPath)
+  })
+
+  // Re-extract an EPUB's content from its original file. Fixes books imported
+  // before the parser gained the raw-file fallback (content was only
+  // "title + author"). The renderer triggers this when a stored EPUB content
+  // looks empty; the rebuilt text is written back to the textbook store.
+  ipcMain.handle('epub:reparse-content', async (_event, input: unknown) => {
+    const parsed = IpcReparseEpubInputSchema.parse(input)
+    const worldId = parsed.worldId ?? 'world_default'
+    const textbook = await textbookStore.get(parsed.textbookId, worldId)
+    if (!textbook || !textbook.originalFile) {
+      throw new Error('Textbook not found or has no original file')
+    }
+    const fullPath = join(textbookDir(dataRoot, parsed.textbookId, worldId), textbook.originalFile)
+    const result = await getEpubChapters(fullPath)
+    if (result.chapters.length === 0) {
+      throw new Error('该 EPUB 没有可读的章节（spine 与 manifest 均未提供可读 HTML）')
+    }
+    const content = epubChaptersToText(result)
+    await textbookStore.updateContent(parsed.textbookId, worldId, content)
+    return { success: true, content }
   })
 
   // Look up the real textbook passage for a chat citation chip

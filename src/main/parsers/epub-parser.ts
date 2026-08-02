@@ -15,6 +15,62 @@ export interface EpubChaptersResult {
   author: string
 }
 
+/**
+ * Flatten parsed chapters into plain text (title + author header, then each
+ * chapter's body text) — used to rebuild a textbook's content from its
+ * original EPUB when the initial import produced no body text.
+ */
+export function epubChaptersToText(result: EpubChaptersResult): string {
+  const lines: string[] = []
+  if (result.title) lines.push(`# ${result.title}`)
+  if (result.author) lines.push(`Author: ${result.author}`)
+  if (lines.length > 0) lines.push('')
+  for (const chapter of result.chapters) {
+    const text = htmlToText(extractBodyHtml(chapter.html))
+    if (text) {
+      lines.push(text)
+      lines.push('')
+    }
+  }
+  return lines.join('\n')
+}
+
+interface FlowChapter {
+  id: string
+  href?: string
+  title?: string
+  index?: number
+}
+
+/**
+ * Load a chapter's HTML with a raw-file fallback.
+ *
+ * The upstream `epub` library's getChapter() rejects anything whose manifest
+ * media-type isn't application/xhtml+xml / image/svg+xml — many older EPUBs
+ * use text/html or leave the media-type off entirely. When that happens we
+ * fall back to reading the file's raw bytes directly via readFile(href).
+ */
+async function loadChapterHtml(
+  epub: { getChapter: (id: string) => Promise<string>; readFile: (name: string, encoding?: BufferEncoding | undefined) => Promise<string | Buffer> },
+  chapter: FlowChapter
+): Promise<string | null> {
+  try {
+    return await epub.getChapter(chapter.id)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    try {
+      if (chapter.href) {
+        const raw = await epub.readFile(chapter.href, 'utf-8')
+        return typeof raw === 'string' ? raw : (raw as Buffer).toString('utf-8')
+      }
+      console.warn(`[epub-parser] Chapter ${chapter.id} has no href to fall back to (${msg})`)
+    } catch (fallbackErr) {
+      console.warn(`[epub-parser] Failed to load chapter ${chapter.id}: ${msg}; raw-read fallback also failed: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`)
+    }
+  }
+  return null
+}
+
 function htmlToText(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n')
@@ -56,10 +112,14 @@ export async function extractEpubText(filePath: string): Promise<ParseResult> {
     lines.push('')
   }
 
-  for (const chapter of epub.flow) {
+  for (const chapter of epub.flow as FlowChapter[]) {
     try {
-      const html = await epub.getChapter(chapter.id)
-      const text = htmlToText(html)
+      const html = await loadChapterHtml(epub, chapter)
+      if (!html) continue
+      // Raw-file fallback returns the full document — strip <head>/<style>/
+      // <script> wrappers so only body text survives the tag-stripping below.
+      const body = extractBodyHtml(html)
+      const text = htmlToText(body)
       if (text) {
         lines.push(text)
         lines.push('')
@@ -81,32 +141,12 @@ export async function getEpubChapters(filePath: string): Promise<EpubChaptersRes
 
   const chapters: EpubChapter[] = []
 
-  // Preferred path: iterate spine (reading order). But the upstream `epub`
-  // library's getChapter() rejects anything whose manifest media-type isn't
-  // application/xhtml+xml / image/svg+xml — many older EPUBs use text/html
-  // or leave the media-type off entirely. When that happens we fall back
-  // to reading the file's raw bytes directly via readFile(href).
+  // Preferred path: iterate spine (reading order). getChapter() rejects
+  // certain media-types, so loadChapterHtml falls back to raw file reads.
   const seenHrefs = new Set<string>()
-  for (const chapter of epub.flow) {
-    let html: string | null = null
-    const chapterHref = (chapter as { href?: string }).href
-    try {
-      html = await epub.getChapter(chapter.id)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      // Re-read the raw file — bypasses the mime-type gate but keeps working
-      // for any well-formed XHTML/HTML the spine actually points at.
-      try {
-        if (chapterHref) {
-          const raw = await epub.readFile(chapterHref, 'utf-8')
-          html = typeof raw === 'string' ? raw : (raw as Buffer).toString('utf-8')
-        } else {
-          console.warn(`[epub-parser] Chapter ${chapter.id} has no href to fall back to (${msg})`)
-        }
-      } catch (fallbackErr) {
-        console.warn(`[epub-parser] Failed to load chapter ${chapter.id}: ${msg}; raw-read fallback also failed: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`)
-      }
-    }
+  for (const chapter of epub.flow as FlowChapter[]) {
+    const chapterHref = chapter.href
+    const html = await loadChapterHtml(epub, chapter)
     if (html) {
       if (chapterHref) seenHrefs.add(chapterHref)
       const bodyHtml = extractBodyHtml(html)
