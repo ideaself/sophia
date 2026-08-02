@@ -22,6 +22,8 @@ interface EpubReaderViewProps {
   textbookId: string
   title: string
   onClose: () => void
+  /** 嵌入模式：不占满全屏，用于课堂分栏等内嵌场景。 */
+  embedded?: boolean
 }
 
 const PROGRESS_KEY = (id: string) => `epub-progress-${id}`
@@ -61,7 +63,7 @@ function htmlToPlainText(html: string): string {
   return (div.textContent ?? div.innerText ?? '').replace(/\s+/g, ' ').trim()
 }
 
-export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewProps): React.ReactElement {
+export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubReaderViewProps): React.ReactElement {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const [chapters, setChapters] = useState<EpubChapterData[]>([])
@@ -403,9 +405,11 @@ export function EpubReaderView({ textbookId, title, onClose }: EpubReaderViewPro
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-bg-deep">
+    <div
+      className={`${embedded ? 'relative flex h-full w-full flex-col' : 'fixed inset-0 z-50 flex flex-col'} bg-bg-deep`}
+    >
       {/* ---- Toolbar ---- */}
-      <div className="relative flex items-center justify-between border-b border-surface-border px-4 py-2">
+      <div className="relative flex flex-wrap items-center justify-between gap-2 border-b border-surface-border px-4 py-2">
         <div className="flex min-w-0 items-center gap-3">
           <h3 className="truncate text-sm font-medium text-text-primary">{title}</h3>
           {chapters.length > 0 && (

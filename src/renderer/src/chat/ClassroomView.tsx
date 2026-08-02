@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useChatStream } from './useChatStream'
 import { ChatMessage, type MessageHighlight } from './ChatMessage'
+import { EpubReaderView } from '../reader/EpubReaderView'
+import { PdfReaderView } from '../reader/PdfReaderView'
 import { stopTTS } from '../hooks/useTTS'
 import { loadTabs, saveTabs, serializeTabs } from '../../../shared/tab-persistence'
 import { useAppStore } from '../stores/useAppStore'
@@ -17,6 +19,8 @@ interface Companion {
 interface Textbook {
   id: string
   title: string
+  format?: string
+  originalFile?: string
 }
 
 interface ClassroomViewProps {
@@ -138,6 +142,18 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const templateRef = useRef<HTMLDivElement>(null)
   // AI 代答 (3.2.0 Ctrl+Shift+A): draft a learner reply to paste/send.
   const [aiAnswering, setAiAnswering] = useState(false)
+  // 课堂内嵌教材阅读分栏（左右并排，宽度可拖拽调整）
+  const [readerOpen, setReaderOpen] = useState(false)
+  const [readerWidth, setReaderWidth] = useState(() => {
+    try {
+      const w = parseInt(localStorage.getItem('sophia.classroomReaderWidth') ?? '', 10)
+      return Number.isFinite(w) ? Math.min(900, Math.max(280, w)) : 480
+    } catch {
+      return 480
+    }
+  })
+  const readerResizeStart = useRef<{ x: number; w: number } | null>(null)
+  const readerWidthRef = useRef(readerWidth)
   // Math symbol quick-insert panel
   const [mathOpen, setMathOpen] = useState(false)
   const [mathTab, setMathTab] = useState('greek')
@@ -651,6 +667,30 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     await window.sophia.data.captureScreenshot(result.filePath)
   }
 
+  // 课堂内嵌教材阅读分栏：拖动分隔条调整宽度
+  const handleReaderResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault()
+    readerResizeStart.current = { x: e.clientX, w: readerWidth }
+    const onMove = (ev: MouseEvent) => {
+      const s = readerResizeStart.current
+      if (!s) return
+      // 分隔条右侧是阅读器：向右拖变宽。
+      const next = Math.min(900, Math.max(280, s.w + (ev.clientX - s.x)))
+      readerWidthRef.current = next
+      setReaderWidth(next)
+    }
+    const onUp = () => {
+      readerResizeStart.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      try {
+        localStorage.setItem('sophia.classroomReaderWidth', String(readerWidthRef.current))
+      } catch { /* best-effort */ }
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
   const handleAiAnswer = async () => {
     if (aiAnswering || !companion) return
     const tab = activeTab
@@ -1031,6 +1071,19 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             >
               {activeTab.classMode === 'feynman' ? '🗣 费曼回讲' : '🎓 标准课堂'}
             </button>
+            {textbook?.originalFile && (
+              <button
+                onClick={() => setReaderOpen((v) => !v)}
+                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  readerOpen
+                    ? 'border-accent text-accent hover:bg-accent-subtle'
+                    : 'border-surface-border-strong text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
+                }`}
+                title="并排打开教材阅读（拖动分隔条调整宽度）"
+              >
+                📖 {readerOpen ? '关闭阅读' : '教材阅读'}
+              </button>
+            )}
             <button
               onClick={() => void handleScreenshot()}
               className="rounded-full border border-surface-border-strong px-3 py-1 text-xs text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
@@ -1111,6 +1164,9 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         </div>
       )}
 
+      {/* 左右分栏：聊天（左） + 教材阅读（右，可拖宽） */}
+      <div className="flex flex-1 min-h-0">
+        <div className="flex flex-col flex-1 min-w-0">
       {/* Messages */}
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto p-6">
         {rows.length === 0 ? (
@@ -1400,6 +1456,39 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           )}
         </div>
       </div>
+        </div>{/* 聊天列（消息 + 输入）结束 */}
+
+        {/* 教材阅读分栏（可拖拽宽度） */}
+        {readerOpen && textbook?.originalFile && (
+          <>
+            <div
+              onMouseDown={handleReaderResizeStart}
+              className="w-1.5 flex-shrink-0 cursor-col-resize bg-bg-surface transition-colors hover:bg-accent/60"
+              title="拖动调整阅读宽度"
+            />
+            <div
+              className="flex min-w-0 flex-shrink-0 flex-col border-l border-surface-border bg-bg-deep"
+              style={{ width: readerWidth }}
+            >
+              {textbook.format === 'epub' ? (
+                <EpubReaderView
+                  textbookId={textbook.id}
+                  title={textbook.title}
+                  onClose={() => setReaderOpen(false)}
+                  embedded
+                />
+              ) : (
+                <PdfReaderView
+                  textbookId={textbook.id}
+                  title={textbook.title}
+                  onClose={() => setReaderOpen(false)}
+                  embedded
+                />
+              )}
+            </div>
+          </>
+        )}
+      </div>{/* 左右分栏容器结束 */}
 
       {/* Shortcut cheat sheet */}
       {showShortcuts && (

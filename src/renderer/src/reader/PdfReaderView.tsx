@@ -8,6 +8,8 @@ interface PdfReaderViewProps {
   textbookId: string
   title: string
   onClose: () => void
+  /** 嵌入模式：不占满全屏，用于课堂分栏等内嵌场景。 */
+  embedded?: boolean
 }
 
 interface SearchHit {
@@ -24,7 +26,7 @@ interface HighlightRect {
 
 const PROGRESS_KEY = (id: string) => `pdf-progress-${id}`
 
-export function PdfReaderView({ textbookId, title, onClose }: PdfReaderViewProps): React.ReactElement {
+export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReaderViewProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [doc, setDoc] = useState<pdfjs.PDFDocumentProxy | null>(null)
@@ -253,8 +255,10 @@ export function PdfReaderView({ textbookId, title, onClose }: PdfReaderViewProps
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-bg-deep">
-      <div className="flex items-center justify-between border-b border-surface-border px-4 py-2">
+    <div
+      className={`${embedded ? 'relative flex h-full w-full flex-col' : 'fixed inset-0 z-50 flex flex-col'} bg-bg-deep`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-border px-4 py-2">
         <h3 className="text-sm font-medium text-text-primary">{title}</h3>
         <div className="flex items-center gap-2">
           {/* Search */}
