@@ -11,7 +11,7 @@ import { ConversationStore } from '../storage/conversation-store'
 import { ArtifactStore } from '../storage/artifact-store'
 import { companionDir, palMomentsPath, relationPath, handoffMetaPath } from '../storage/app-data'
 import type { WorldId } from '../../shared/types/ids'
-import { IpcChatPromptMessagesInputSchema } from '../../shared/schemas/ipc'
+import { IpcChatPromptMessagesInputSchema, IpcAiComposeInputSchema } from '../../shared/schemas/ipc'
 import { compressMessages, shouldCompress, splitCompressionWindow } from '../prompt/message-compressor'
 import { analyzeTeaching, shouldAnalyze, formatAssessment, type TeachingCoachAssessment } from '../prompt/teaching-coach'
 import {
@@ -20,6 +20,8 @@ import {
   extractRegionAroundProgress
 } from '../prompt/textbook-retrieval'
 import type { ProviderStore } from '../storage/provider-store'
+import { DeepSeekClient } from '../llm/deepseek-client'
+import { createDeepSeekHttpAdapter } from '../llm/deepseek-http-adapter'
 
 // ---------------------------------------------------------------
 // Registration
@@ -241,6 +243,39 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
     })
 
     return builtMessages
+  })
+
+  // AI 代答 (3.2.0) — compose a draft reply the learner can paste/send, as a
+  // model answer / hint. Uses the learner's first-person voice.
+  ipcMain.handle('ai:compose-answer', async (_event, input: unknown) => {
+    const params = IpcAiComposeInputSchema.parse(input)
+    const active = providerStore ? await providerStore.getActive() : null
+    if (!active) throw new Error('未配置模型服务')
+    const apiKey = await providerStore!.readApiKey(active.id)
+    if (!apiKey) throw new Error('未配置 API Key，请在设置中添加')
+
+    const endpoint = (active.baseUrl || 'https://api.deepseek.com').replace(/\/$/, '') + '/chat/completions'
+    const client = new DeepSeekClient(apiKey, createDeepSeekHttpAdapter({ endpoint }), active.selectedModel || 'deepseek-v4-flash')
+
+    const system = [
+      '你是学习者的代答助手。根据课堂上下文，用学习者第一人称起草一段简短、自然的回答。',
+      '目的：帮助学习者示范如何回应导师（AI 学习伙伴）的提问，或者作为答不上来时的提示。',
+      '要求：',
+      '1. 像真人说话：简洁、口语化，不必追求完美，可以表达不确定。',
+      '2. 直接回应导师的问题，如果问题明确就先给出你的理解/思路。',
+      '3. 只输出回答本身，不要任何额外说明、不要用星号旁白、不要自称是 AI。',
+      '4. 控制在 150 字以内。'
+    ].join('\n')
+    const context = params.history
+      ? `最近的课堂对话：\n${params.history}`
+      : '（没有历史上下文）'
+    const userMsg = `导师的问题是：${params.question}\n\n${context}`
+
+    const response = await client.chat([
+      { role: 'system', content: system },
+      { role: 'user', content: userMsg }
+    ])
+    return { content: (response.content ?? '').trim() }
   })
 }
 

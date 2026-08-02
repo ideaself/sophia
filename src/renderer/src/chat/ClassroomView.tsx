@@ -135,6 +135,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   // Quick text templates (1.0.7): Alt+1..9 inserts a saved snippet.
   const [templateOpen, setTemplateOpen] = useState(false)
   const templateRef = useRef<HTMLDivElement>(null)
+  // AI 代答 (3.2.0 Ctrl+Shift+A): draft a learner reply to paste/send.
+  const [aiAnswering, setAiAnswering] = useState(false)
   // Math symbol quick-insert panel
   const [mathOpen, setMathOpen] = useState(false)
   const [mathTab, setMathTab] = useState('greek')
@@ -349,7 +351,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       const target = e.target as HTMLElement | null
       const isTyping = !!target &&
         (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
-      if (isTyping && e.key !== 'f' && e.key !== '/') return
+      if (isTyping && e.key !== 'f' && e.key !== '/' && e.key !== 'a') return
 
       if (e.key === 't' && !e.shiftKey) {
         e.preventDefault()
@@ -387,6 +389,12 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       if (e.key === '/' && !e.shiftKey) {
         e.preventDefault()
         setShowShortcuts((v) => !v)
+        return
+      }
+
+      if (e.key === 'a' && e.shiftKey) {
+        e.preventDefault()
+        void handleAiAnswer()
         return
       }
     }
@@ -631,6 +639,42 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       title: activeTab.title
     })
     useAppStore.getState().setView('flashcards')
+  }
+
+  const handleScreenshot = async () => {
+    const result = await window.sophia.dialog.saveFile({
+      defaultPath: `Sophia_课堂_${new Date().toISOString().slice(0, 10)}.png`,
+      filters: [{ name: 'PNG 图片', extensions: ['png'] }]
+    })
+    if (result.canceled || !result.filePath) return
+    await window.sophia.data.captureScreenshot(result.filePath)
+  }
+
+  const handleAiAnswer = async () => {
+    if (aiAnswering || !companion) return
+    const tab = activeTab
+    const recent = tab.messages.slice(-8)
+    const lastAssistant = [...recent].reverse().find((m) => m.role === 'assistant')
+    const question = lastAssistant?.content || activeTab.input.trim() || '（当前没有明确的问题）'
+    const history = recent
+      .filter((m) => m.role !== 'system')
+      .map((m) => `${m.role === 'user' ? '你' : companion.name}: ${m.content}`)
+      .join('\n\n')
+
+    setAiAnswering(true)
+    try {
+      const { content } = await window.sophia.data.composeAiAnswer(question, history)
+      if (content) {
+        const cur = activeTab.input
+        const combined = cur.trim() ? `${cur.trimEnd()}\n${content}` : content
+        setActiveTabInput(combined.slice(0, MAX_INPUT_LENGTH))
+        inputRef.current?.focus()
+      }
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : 'AI 代答失败，请重试')
+    } finally {
+      setAiAnswering(false)
+    }
   }
 
   const handleSaveTitle = async () => {
@@ -986,6 +1030,13 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             >
               {activeTab.classMode === 'feynman' ? '🗣 费曼回讲' : '🎓 标准课堂'}
             </button>
+            <button
+              onClick={() => void handleScreenshot()}
+              className="rounded-full border border-surface-border-strong px-3 py-1 text-xs text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
+              title="截图当前课堂窗口并保存为图片"
+            >
+              📷 截图
+            </button>
             {textbook && (
               <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs">
                 📖 {textbook.title}
@@ -1295,6 +1346,14 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
               ☰
             </button>
           </div>
+          <button
+            onClick={() => void handleAiAnswer()}
+            disabled={aiAnswering || !companion}
+            className="rounded border border-surface-border-strong px-3 py-2 text-sm text-text-muted hover:bg-bg-elevated hover:text-text-secondary disabled:opacity-50"
+            title="AI 代答：让伙伴示范起草一段回复（Ctrl+Shift+A）"
+          >
+            {aiAnswering ? '起草中...' : 'AI 代答'}
+          </button>
           <textarea
             ref={inputRef}
             value={activeTab.input}
@@ -1348,6 +1407,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                 ['Ctrl + Shift + Tab', '上一个标签页'],
                 ['Ctrl + F', '在当前对话中搜索'],
                 ['Ctrl + /', '显示 / 隐藏快捷键'],
+                ['Ctrl + Shift + A', 'AI 代答（示范回复）'],
                 ['Alt + 1..9', '插入常用文本模板']
               ].map(([keys, desc]) => (
                 <div key={keys} className="flex items-center justify-between gap-3">

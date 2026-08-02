@@ -130,14 +130,6 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
   const isNew = !cardSrs || cardSrs.nextReview === 0
   const isFav = currentCard ? favorites.has(currentCard.id) : false
 
-  // Auto-advance to the next due card on load
-  useEffect(() => {
-    if (!loading && currentCard && !isDue(cardSrs, Date.now())) {
-      const nextIdx = displayList.findIndex((c, i) => i > currentIndex && isDue(srsStates[c.id], Date.now()))
-      if (nextIdx >= 0) setCurrentIndex(nextIdx)
-    }
-  }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleRate = (rating: Rating) => {
     const card = currentCard
     if (!card) return

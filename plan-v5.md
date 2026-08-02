@@ -192,3 +192,40 @@
 | 第 4 批 | C1 + C2 + C3 | 日常体验 |
 | 第 5 批 | D1 | 数据安全（删除前归档） |
 | 第 6 批 | C4 / D2（可选） | 成本较高或与定位冲突，最后做 |
+
+---
+
+## v5.1 补充（2026-08-02）
+
+> 继续逐条核对 changelog 后补充的一轮，全部完成。
+
+### E1. PDF 导入跳过目录/序言 (1.0.9)
+- `pdf-front-matter.ts` 纯函数启发式识别正文起始页（标题/版权/目录/序言/致谢页跳过，
+  章节页/散文页视为正文，20% 上限防过度跳过）；`pdf-parser.ts` 改为按页提取后从正文起点拼接。
+- 附带：`ParseResult` 增加 `bodyStartPage`。
+- **状态**: [x]
+
+### E2. 课堂记录 / 课后笔记 PDF 导出（含 KaTeX）(1.0.7/1.1.0/2.0.0)
+- 新增 `pdf:export` IPC：渲染端用 react-dom/server + 与聊天气泡相同的 remark/rehype 管线
+  把 markdown 转 HTML（KaTeX 已渲染），主进程开隐藏窗口内联 KaTeX CSS 后 `printToPDF`。
+- HistoryView：每节课 + 每个课后产物加 📄 导出 PDF。
+- **状态**: [x]
+
+### E3. 课堂截图 (2.0.0/4.5.0)
+- 新增 `screenshot:capture` IPC（`webContents.capturePage()` → PNG），课堂工具栏加 📷 截图按钮。
+- **状态**: [x]
+
+### E4. AI 代答 (3.2.0, Ctrl+Shift+A)
+- 新增 `ai:compose-answer` IPC：用学习者第一人称起草一段回复草稿；课堂输入区「AI 代答」按钮 +
+  Ctrl+Shift+A 快捷键（打字时也不误触发），草稿追加进输入框。
+- **状态**: [x]
+
+### E5. 删除入回收站提示 + HistoryView 继续学习
+- 删除课程后提示「已移入历史归档可恢复」；已下课课程在历史页一键「继续学习」
+  （同教材同伙伴开新课）。
+- **状态**: [x]
+
+### E6. 代码清理
+- 移除 `FlashcardReviewView` 一个依赖不全的 auto-advance effect；确认 `as any` 已无残留
+  （pdf-parser 的 polyfill 属必要）。
+- **状态**: [x]

@@ -201,6 +201,26 @@ export const IpcArchiveEntryIdInputSchema = z.object({
   entryId: z.string().min(1)
 })
 
+// --- IPC: PDF export (课堂记录/笔记导出) ---
+
+export const IpcPdfExportInputSchema = z.object({
+  html: z.string(),
+  filePath: z.string().min(1)
+})
+
+// --- IPC: Screenshot (截图) ---
+
+export const IpcScreenshotInputSchema = z.object({
+  filePath: z.string().min(1)
+})
+
+// --- IPC: AI 代答 (3.2.0 Ctrl+Shift+A) ---
+
+export const IpcAiComposeInputSchema = z.object({
+  question: z.string(),
+  history: z.string().optional().default('')
+})
+
 // --- IPC: Profile lock (档案锁) ---
 
 export const IpcLockSetInputSchema = z.object({

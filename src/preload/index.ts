@@ -225,6 +225,9 @@ export interface DataAPI {
     verify: (pin: string) => Promise<boolean>
     clear: () => Promise<{ success: boolean }>
   }
+  exportPdf: (html: string, filePath: string) => Promise<{ success: boolean }>
+  captureScreenshot: (filePath: string) => Promise<{ success: boolean }>
+  composeAiAnswer: (question: string, history: string) => Promise<{ content: string }>
   diary: {
     listMonths: (worldId?: string) => Promise<string[]>
     getMonth: (month: string, worldId?: string) => Promise<string | null>
@@ -565,6 +568,9 @@ const sophia: SophiaAPI = {
       verify: (pin) => ipcRenderer.invoke('lock:verify', { pin }),
       clear: () => ipcRenderer.invoke('lock:clear')
     },
+    exportPdf: (html, filePath) => ipcRenderer.invoke('pdf:export', { html, filePath }),
+    captureScreenshot: (filePath) => ipcRenderer.invoke('screenshot:capture', { filePath }),
+    composeAiAnswer: (question, history) => ipcRenderer.invoke('ai:compose-answer', { question, history }),
     diary: {
       listMonths: (worldId = 'world_default') => ipcRenderer.invoke('diary:list-months', { worldId }),
       getMonth: (month, worldId = 'world_default') => ipcRenderer.invoke('diary:get-month', { worldId, month })

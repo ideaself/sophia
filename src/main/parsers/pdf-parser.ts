@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { findBodyStartPage } from './pdf-front-matter'
 
 if (typeof globalThis.DOMMatrix === 'undefined') {
   ;(globalThis as any).DOMMatrix = class DOMMatrix {
@@ -89,6 +90,8 @@ async function loadUnpdf() {
 export interface ParseResult {
   content: string
   totalPages: number
+  /** 0-based index of the first body page (front matter skipped). */
+  bodyStartPage: number
 }
 
 export async function extractPdfText(filePath: string): Promise<ParseResult> {
@@ -98,10 +101,18 @@ export async function extractPdfText(filePath: string): Promise<ParseResult> {
   const data = new Uint8Array(buffer)
 
   const pdf = await getDocumentProxy(data)
-  const result = await extractText(pdf, { mergePages: true })
+  const result = await extractText(pdf, { mergePages: false })
+  const pages: string[] = Array.isArray(result.text) ? result.text : [result.text]
+
+  const bodyStartPage = findBodyStartPage(pages)
+  const content = pages
+    .slice(bodyStartPage)
+    .join('\n\n')
+    .trim()
 
   return {
-    content: result.text,
-    totalPages: result.totalPages
+    content,
+    totalPages: result.totalPages,
+    bodyStartPage
   }
 }

@@ -205,6 +205,9 @@ declare global {
       verify: (pin: string) => Promise<boolean>
       clear: () => Promise<{ success: boolean }>
     },
+    exportPdf: (html: string, filePath: string) => Promise<{ success: boolean }>
+    captureScreenshot: (filePath: string) => Promise<{ success: boolean }>
+    composeAiAnswer: (question: string, history: string) => Promise<{ content: string }>
     diary: {
       listMonths: (worldId?: string) => Promise<string[]>
       getMonth: (month: string, worldId?: string) => Promise<string | null>

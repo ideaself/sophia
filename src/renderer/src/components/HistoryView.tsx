@@ -7,6 +7,7 @@ import { useTextbookStore } from '../stores/useTextbookStore'
 import { WORLD_ID } from '../types/models'
 import { ArtifactType } from '../../../shared/types/ids'
 import { parseSelfTestQuestions } from '../../../shared/self-test-utils'
+import { markdownToHtml } from '../lib/markdownToHtml'
 import { SelfTestModal } from './SelfTestModal'
 
 /** Artifact types persisted as standalone artifacts (redo-able from history). */
@@ -40,6 +41,7 @@ export function HistoryView(): React.ReactElement {
   const [selfTestOpen, setSelfTestOpen] = useState(false)
   const [selfTestQuestions, setSelfTestQuestions] = useState<ReturnType<typeof parseSelfTestQuestions>>([])
   const [redoingMissing, setRedoingMissing] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const setView = useAppStore((s) => s.setView)
   const setLoadConversationId = useAppStore((s) => s.setLoadConversationId)
@@ -95,6 +97,8 @@ export function HistoryView(): React.ReactElement {
       setExpandedMessages([])
       setExpandedArtifacts([])
     }
+    setNotice('课程已删除，数据已移入历史归档，可在「设置 → 历史归档」恢复。')
+    setTimeout(() => setNotice(null), 5000)
   }
 
   const doSearch = useCallback(async (query: string, offset: number) => {
@@ -223,6 +227,58 @@ export function HistoryView(): React.ReactElement {
     await window.sophia.data.writeTextFile(result.filePath, content)
   }
 
+  // --- PDF export (课堂记录/笔记导出，含 KaTeX) ---
+
+  const savePdf = async (html: string, defaultName: string) => {
+    const safe = defaultName.replace(/[<>:"/\\|?*]/g, '_')
+    const result = await window.sophia.dialog.saveFile({
+      defaultPath: `${safe}.pdf`,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    })
+    if (result.canceled || !result.filePath) return
+    await window.sophia.data.exportPdf(html, result.filePath)
+  }
+
+  const handleExportPdf = async (conv: ConversationDTO) => {
+    const msgs = await window.sophia.data.listMessages(conv.id)
+    if (msgs.length === 0) return
+    const compName = companionMap[conv.companionId] ?? conv.companionId
+    const parts: string[] = [
+      `<h1>${escapeHtml(conv.title)}</h1>`,
+      `<p>AI 角色：${escapeHtml(compName)} · 消息数：${msgs.length}</p>`
+    ]
+    for (const msg of msgs) {
+      const label = msg.role === 'user' ? '你' : msg.role === 'assistant' ? compName : '系统'
+      parts.push(`<h3>${escapeHtml(label)} — ${escapeHtml(new Date(msg.createdAt).toLocaleString())}</h3>`)
+      parts.push(markdownToHtml(msg.content))
+    }
+    await savePdf(parts.join('\n'), conv.title)
+  }
+
+  const handleExportArtifactPdf = async (conv: ConversationDTO, content: string) => {
+    const html = `<h1>${escapeHtml(conv.title)} · 课后笔记</h1>\n` + markdownToHtml(content)
+    await savePdf(html, `${conv.title}_笔记`)
+  }
+
+  // Continue learning: open a fresh classroom for the same companion + textbook.
+  const handleContinueLearning = async (conv: ConversationDTO) => {
+    try {
+      const comp = await window.sophia.companions.get(conv.companionId)
+      if (comp) setSelectedCompanion({ id: comp.id, name: comp.name, identity: comp.identity, personalityKeywords: comp.personalityKeywords })
+    } catch { /* keep current selection */ }
+    if (conv.textbookId) {
+      try {
+        const tb = await window.sophia.data.getTextbook(conv.textbookId)
+        if (tb) setSelectedTextbook({ id: tb.id, title: tb.title, format: tb.format, originalFile: tb.originalFile })
+      } catch { /* keep current selection */ }
+    } else {
+      setSelectedTextbook(null)
+    }
+    setLoadConversationId(null)
+    useAppStore.getState().incrementResetKey()
+    setView('classroom')
+  }
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -328,6 +384,12 @@ export function HistoryView(): React.ReactElement {
   return (
     <div className="p-8">
       <h2 className="mb-6 text-2xl font-bold">学习历史</h2>
+
+      {notice && (
+        <div className="mb-4 rounded border border-green-800 bg-green-900/20 px-4 py-2 text-sm text-green-300">
+          {notice}
+        </div>
+      )}
 
       <div className="mb-6 flex gap-3">
         <input
@@ -498,9 +560,16 @@ export function HistoryView(): React.ReactElement {
                 </div>
                 <div className="flex items-center gap-2">
                   {conv.endedAt ? (
-                    <span className="rounded-full bg-amber-900/30 px-2 py-0.5 text-xs text-amber-400">
-                      已下课
-                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void handleContinueLearning(conv)
+                      }}
+                      className="rounded bg-accent px-3 py-1 text-xs text-white hover:bg-accent-hover"
+                      title="同一本教材、同一位伙伴开一节新课堂"
+                    >
+                      继续学习
+                    </button>
                   ) : (
                     <button
                       onClick={(e) => {
@@ -518,6 +587,13 @@ export function HistoryView(): React.ReactElement {
                     title="导出为 Markdown"
                   >
                     📥
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); void handleExportPdf(conv) }}
+                    className="text-xs text-text-muted hover:text-accent-hover"
+                    title="导出为 PDF（含公式渲染）"
+                  >
+                    📄
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id) }}
@@ -590,6 +666,13 @@ export function HistoryView(): React.ReactElement {
                                       🎯 自测
                                     </button>
                                   )}
+                                <button
+                                  onClick={() => void handleExportArtifactPdf(conv, art.content)}
+                                  className="text-xs text-text-muted hover:text-accent-hover"
+                                  title="导出为 PDF（含公式渲染）"
+                                >
+                                  📄
+                                </button>
                                 <button
                                   onClick={() => handleStartArtifactEdit(conv.id, art)}
                                   className="text-xs text-text-muted hover:text-text-secondary"
@@ -672,4 +755,13 @@ export function HistoryView(): React.ReactElement {
       )}
     </div>
   )
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }

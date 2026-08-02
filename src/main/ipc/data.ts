@@ -68,7 +68,9 @@ import {
   IpcConfirmDialogInputSchema,
   IpcDiaryListMonthsInputSchema,
   IpcDiaryGetMonthInputSchema,
-  IpcFlashcardDeleteCardsInputSchema
+  IpcFlashcardDeleteCardsInputSchema,
+  IpcPdfExportInputSchema,
+  IpcScreenshotInputSchema
 } from '../../shared/schemas/ipc'
 import {
   ArtifactType,
@@ -586,6 +588,65 @@ export function registerConversationIpc(
       throw new Error('Target file must be selected through the save dialog')
     }
     await writeFile(parsed.filePath, parsed.content, 'utf-8')
+    return { success: true }
+  })
+
+  // Render an HTML string (produced by the renderer's markdown+KaTeX pipeline)
+  // to a PDF with the KaTeX stylesheet inlined — used for 课堂记录/笔记导出.
+  ipcMain.handle('pdf:export', async (_event, input: unknown) => {
+    const parsed = IpcPdfExportInputSchema.parse(input)
+    if (!pickedFiles.has(parsed.filePath)) {
+      throw new Error('Target file must be selected through the save dialog')
+    }
+    let katexCss = ''
+    try {
+      katexCss = await readFile(require.resolve('katex/dist/katex.min.css'), 'utf-8')
+    } catch {
+      // Best-effort — KaTeX HTML will still render, just unstyled.
+    }
+    const fullHtml = [
+      '<!doctype html>',
+      '<html lang="zh-CN"><head><meta charset="utf-8">',
+      `<style>${katexCss}`,
+      '  body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color: #1a1a1a; padding: 8px; }',
+      '  h1, h2, h3 { color: #111; line-height: 1.4; }',
+      '  h1 { border-bottom: 1px solid #ddd; padding-bottom: 6px; }',
+      '  pre { background: #f6f8fa; padding: 12px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }',
+      '  blockquote { border-left: 3px solid #ccc; margin: 0; padding-left: 12px; color: #555; }',
+      '  table { border-collapse: collapse; margin: 8px 0; }',
+      '  td, th { border: 1px solid #ddd; padding: 4px 8px; }',
+      '  code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; }',
+      '  img { max-width: 100%; }',
+      '</style></head><body>',
+      parsed.html,
+      '</body></html>'
+    ].join('\n')
+
+    const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } })
+    try {
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(fullHtml))
+      const pdf = await win.webContents.printToPDF({
+        printBackground: true,
+        pageSize: 'A4',
+        margins: { top: 0.7, bottom: 0.7, left: 0.6, right: 0.6 }
+      })
+      await writeFile(parsed.filePath, pdf)
+      return { success: true }
+    } finally {
+      win.destroy()
+    }
+  })
+
+  // Capture the main window as a PNG screenshot (截图导出).
+  ipcMain.handle('screenshot:capture', async (_event, input: unknown) => {
+    const parsed = IpcScreenshotInputSchema.parse(input)
+    if (!pickedFiles.has(parsed.filePath)) {
+      throw new Error('Target file must be selected through the save dialog')
+    }
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    if (!win) throw new Error('No window available')
+    const image = await win.webContents.capturePage()
+    await writeFile(parsed.filePath, image.toPNG())
     return { success: true }
   })
 
