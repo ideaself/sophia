@@ -11,6 +11,7 @@ import { TextbooksView } from './components/TextbooksView'
 import { HistoryView } from './components/HistoryView'
 import { FlashcardReviewView } from './components/FlashcardReviewView'
 import { StatsView } from './components/StatsView'
+import { ReviewView } from './components/ReviewView'
 import { useAppStore } from './stores/useAppStore'
 import { useCompanionStore } from './stores/useCompanionStore'
 import { useTextbookStore } from './stores/useTextbookStore'
@@ -266,6 +267,7 @@ function App(): React.ReactElement {
           {view === 'companions' && <CompanionsManageView />}
           {view === 'textbooks' && <TextbooksView />}
           {view === 'history' && <HistoryView />}
+          {view === 'review' && <ReviewView />}
           {view === 'flashcards' && (
             <FlashcardReviewView scope={flashcardScope} onClearScope={() => setFlashcardScope(null)} />
           )}

@@ -595,6 +595,19 @@ export function HistoryView(): React.ReactElement {
                   >
                     📄
                   </button>
+                  {conv.endedAt && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        useAppStore.getState().setReviewScope({ conversationId: conv.id, title: conv.title })
+                        setView('review')
+                      }}
+                      className="text-xs text-text-muted hover:text-accent-hover"
+                      title="课程复盘：总结 / 自测 / 闪卡 / 日记一页回顾"
+                    >
+                      📋
+                    </button>
+                  )}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id) }}
                     className="text-xs text-text-muted hover:text-red-400"
