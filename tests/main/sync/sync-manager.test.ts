@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, mkdir, writeFile, readFile, rm, access, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm, access, stat, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
@@ -12,14 +12,27 @@ const CONFIG: WebDavConfig = { url: 'https://example.com/dav', username: 'u', pa
 /** In-memory stand-in for SyncWebDavClient — records calls, serves canned data. */
 class FakeClient {
   private remote = new Map<string, { content: Buffer; lastmod: string }>()
+  private dirs = new Set<string>()
   private clock = 0
   uploads: { path: string; content: Buffer }[] = []
   downloads: string[] = []
   deletions: string[] = []
+  moves: { path: string; target: string }[] = []
+
+  /** Register parent directories of a path (WebDAV collections exist implicitly). */
+  private ensureParentDirs(path: string): void {
+    const parts = path.split('/').filter((p) => p.length > 0)
+    let cur = ''
+    for (const p of parts.slice(0, -1)) {
+      cur += '/' + p
+      this.dirs.add(cur)
+    }
+  }
 
   /** Test helper: place a file on the fake server. */
   setRemote(path: string, content: string | Buffer, lastmod?: string): void {
     const buf = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf-8')
+    this.ensureParentDirs(path)
     this.remote.set(path, { content: buf, lastmod: lastmod ?? `mod-${++this.clock}` })
   }
 
@@ -27,6 +40,14 @@ class FakeClient {
     const f = this.remote.get(path)
     if (!f) throw new Error(`no such remote file: ${path}`)
     return f.lastmod
+  }
+
+  hasRemote(path: string): boolean {
+    return this.remote.has(path)
+  }
+
+  remoteCount(): number {
+    return this.remote.size
   }
 
   async uploadFile(path: string, content: string | Buffer | Readable): Promise<void> {
@@ -52,16 +73,28 @@ class FakeClient {
     return [...children.entries()].map(([name, isDir]) => ({ path: `${dir}/${name}`, isDir }))
   }
   async deleteFile(path: string): Promise<void> {
-    if (this.remote.delete(path)) {
+    // Real servers delete collections recursively — simulate that with
+    // directory tracking: files under the path, then the collection itself.
+    const keys = [...this.remote.keys()]
+    const children = keys.filter((k) => k.startsWith(path + '/'))
+    const wasDir = this.dirs.has(path)
+    for (const k of children) this.remote.delete(k)
+    for (const d of [...this.dirs]) {
+      if (d === path || d.startsWith(path + '/')) this.dirs.delete(d)
+    }
+    if (this.remote.delete(path) || wasDir || children.length > 0) {
       this.deletions.push(path)
       return
     }
-    // Directory deletion: the real server would refuse (or worse, recurse)
-    // on a non-empty collection, so the fake does too.
-    for (const key of this.remote.keys()) {
-      if (key.startsWith(path + '/')) throw new Error(`directory not empty: ${path}`)
-    }
-    this.deletions.push(path)
+    throw new Error(`no such remote file: ${path}`)
+  }
+  async moveFile(path: string, target: string): Promise<void> {
+    const f = this.remote.get(path)
+    if (!f) throw new Error(`no such remote file: ${path}`)
+    this.remote.delete(path)
+    this.ensureParentDirs(target)
+    this.remote.set(target, f)
+    this.moves.push({ path, target })
   }
   async listAllFilesDetailed(dir: string): Promise<WebDavRemoteFile[]> {
     return [...this.remote.entries()]
@@ -217,7 +250,7 @@ describe('SyncManager.push — incremental mirror', () => {
     expect(result.skipped).toBe(1)
   })
 
-  it('deletes remote files that were synced before but are gone locally', async () => {
+  it('parks removed remote files in the remote trash instead of deleting', async () => {
     const fake = new FakeClient()
     fake.setRemote(R('ghost.md'), 'old', 'mod-1')
     await saveSyncState(dataRoot, {
@@ -227,8 +260,12 @@ describe('SyncManager.push — incremental mirror', () => {
 
     const result = await makeManager(dataRoot, fake).push(CONFIG)
 
-    expect(fake.deletions).toEqual([R('ghost.md')])
-    expect(result.deleted).toBe(1)
+    expect(fake.moves).toHaveLength(1)
+    expect(fake.moves[0].path).toBe(R('ghost.md'))
+    expect(fake.moves[0].target).toMatch(/^\/sophia\/\.trash\/[^/]+\/ghost\.md$/)
+    expect(fake.deletions).toHaveLength(0)
+    expect(result.trashed).toBe(1)
+    expect(result.deleted).toBe(0)
   })
 
   it('leaves never-synced remote files untouched', async () => {
@@ -242,14 +279,16 @@ describe('SyncManager.push — incremental mirror', () => {
     expect(result.deleted).toBe(0)
   })
 
-  it('first push with no state seeds from the remote listing and cleans extras', async () => {
+  it('first push with no state seeds from the remote listing and trashes extras', async () => {
     const fake = new FakeClient()
     fake.setRemote(R('orphan.md'), 'junk from old full-uploads', 'mod-1')
 
     const result = await makeManager(dataRoot, fake).push(CONFIG)
 
-    expect(fake.deletions).toEqual([R('orphan.md')])
-    expect(result.deleted).toBe(1)
+    expect(fake.moves).toHaveLength(1)
+    expect(fake.moves[0].path).toBe(R('orphan.md'))
+    expect(result.trashed).toBe(1)
+    expect(result.deleted).toBe(0)
   })
 })
 
@@ -333,7 +372,7 @@ describe('SyncManager — sync-set filtering (junk from old versions)', () => {
     expect(Object.keys(state.files)).toEqual(['a.md'])
   })
 
-  it('push deletes remote junk that is not in the sync set, even without a state record', async () => {
+  it('push trashes remote junk that is not in the sync set, even without a state record', async () => {
     const fake = new FakeClient()
     fake.setRemote(R('sync-state.json'), '{"version":1}', 'mod-1')
     fake.setRemote(R('config/api.key.enc'), 'deadbeef', 'mod-2')
@@ -342,11 +381,14 @@ describe('SyncManager — sync-set filtering (junk from old versions)', () => {
 
     const result = await makeManager(dataRoot, fake).push(CONFIG)
 
-    // The emptied /sophia/config directory is pruned along with the junk
-    expect(fake.deletions.sort()).toEqual(
-      [R('config/api.key.enc'), R('sync-state.json'), R('config')].sort()
+    // Junk is moved to the trash; the emptied /sophia/config directory
+    // is pruned along the way. Unknown-but-valid files are untouched.
+    expect(fake.moves.map((m) => m.path).sort()).toEqual(
+      [R('config/api.key.enc'), R('sync-state.json')].sort()
     )
-    expect(result.deleted).toBe(2)
+    expect(fake.deletions).toEqual([R('config')])
+    expect(result.trashed).toBe(2)
+    expect(result.deleted).toBe(0)
   })
 })
 
@@ -382,7 +424,7 @@ describe('SyncManager — empty directory pruning', () => {
     await access(dataRoot)
   })
 
-  it('push deletes remote directories emptied by mirror deletion, deepest first', async () => {
+  it('push trashes remote files emptied by mirror deletion and prunes empty dirs, deepest first', async () => {
     const md = 'profiles/p/worlds/w/textbooks/tb_1/source.md'
     const pdf = 'profiles/p/worlds/w/textbooks/tb_1/source.pdf'
     const fake = new FakeClient()
@@ -398,7 +440,9 @@ describe('SyncManager — empty directory pruning', () => {
 
     const result = await makeManager(dataRoot, fake).push(CONFIG)
 
-    expect(result.deleted).toBe(2)
+    // Files go to the trash; the emptied directories are pruned.
+    expect(result.trashed).toBe(2)
+    expect(result.deleted).toBe(0)
     expect(fake.deletions).toContain(R('profiles/p/worlds/w/textbooks/tb_1'))
     expect(fake.deletions).toContain(R('profiles'))
     // the remote prefix itself is never a deletion candidate
@@ -418,7 +462,8 @@ describe('SyncManager — empty directory pruning', () => {
 
     const result = await makeManager(dataRoot, fake).push(CONFIG)
 
-    expect(result.deleted).toBe(1)
+    expect(result.trashed).toBe(1)
+    expect(result.deleted).toBe(0)
     expect(fake.deletions).toContain(R('textbooks/a'))
     expect(fake.deletions).not.toContain(R('textbooks'))
   })
@@ -618,3 +663,115 @@ describe('SyncManager — plan previews', () => {
     expect(await readFile(join(dataRoot, 'old.md'), 'utf-8')).toBe('was synced')
   })
 })
+
+describe('SyncManager — remote trash lifecycle', () => {
+  it('prunes trash batches beyond the newest 3, oldest first', async () => {
+    const fake = new FakeClient()
+    for (let i = 1; i <= 5; i++) {
+      fake.setRemote(`/sophia/.trash/2026-01-0${i}T00-00-00-000Z/file${i}.md`, 'x', `mod-${i}`)
+    }
+    await saveSyncState(dataRoot, { version: 1, files: {} })
+
+    await makeManager(dataRoot, fake).push(CONFIG)
+
+    // Batches are ISO timestamps → lexical sort == chronological order.
+    // Newest 3 (03, 04, 05) stay; 01 and 02 are pruned.
+    expect(fake.deletions).toEqual([
+      '/sophia/.trash/2026-01-01T00-00-00-000Z',
+      '/sophia/.trash/2026-01-02T00-00-00-000Z'
+    ])
+    expect(fake.hasRemote('/sophia/.trash/2026-01-03T00-00-00-000Z/file3.md')).toBe(true)
+  })
+
+  it('trash files are invisible to the sync set (never re-deleted as junk)', async () => {
+    const fake = new FakeClient()
+    fake.setRemote('/sophia/.trash/2026-01-01T00-00-00-000Z/old.md', 'x', 'mod-1')
+    fake.setRemote(R('alien.md'), 'unknown but valid — leave alone', 'mod-2')
+    await saveSyncState(dataRoot, { version: 1, files: {} })
+
+    const result = await makeManager(dataRoot, fake).push(CONFIG)
+
+    expect(result.trashed).toBe(0)
+    expect(fake.moves).toHaveLength(0)
+    expect(fake.deletions).toHaveLength(0)
+    expect(fake.hasRemote('/sophia/.trash/2026-01-01T00-00-00-000Z/old.md')).toBe(true)
+  })
+
+  it('listRemoteTrash reports batches, counts and sizes', async () => {
+    const fake = new FakeClient()
+    fake.setRemote('/sophia/.trash/2026-01-01T00-00-00-000Z/a.md', 'aaaa', 'mod-1')
+    fake.setRemote('/sophia/.trash/2026-01-01T00-00-00-000Z/b.md', 'bb', 'mod-2')
+    fake.setRemote('/sophia/.trash/2026-01-02T00-00-00-000Z/c.md', 'c', 'mod-3')
+
+    const trash = await makeManager(dataRoot, fake).listRemoteTrash(CONFIG)
+
+    expect(trash.batches).toHaveLength(2)
+    expect(trash.fileCount).toBe(3)
+    expect(trash.totalSize).toBe(7)
+  })
+
+  it('emptyRemoteTrash removes every batch', async () => {
+    const fake = new FakeClient()
+    fake.setRemote('/sophia/.trash/2026-01-01T00-00-00-000Z/a.md', 'x', 'mod-1')
+    fake.setRemote('/sophia/.trash/2026-01-02T00-00-00-000Z/b.md', 'x', 'mod-2')
+
+    const res = await makeManager(dataRoot, fake).emptyRemoteTrash(CONFIG)
+
+    expect(res.success).toBe(true)
+    expect(res.deletedBatches).toBe(2)
+    expect(fake.remoteCount()).toBe(0)
+  })
+})
+
+describe('SyncManager — pull safety', () => {
+  it('preserves a local copy when both sides changed since the last sync', async () => {
+    await touch('conv/messages.json', 'local version')
+    const ls = await localStat('conv/messages.json')
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: {
+        'conv/messages.json': entry(
+          { size: ls.size, mtimeMs: ls.mtimeMs - 1000 }, // recorded OLDER than actual → local changed
+          { size: 5, lastmod: 'mod-1' }                    // remote also recorded, and differs below
+        )
+      }
+    })
+    const fake = new FakeClient()
+    fake.setRemote(R('conv/messages.json'), 'remote version', 'mod-2')
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.success).toBe(true)
+    expect(result.conflicts).toBe(1)
+    expect(await readFile(join(dataRoot, 'conv/messages.json'), 'utf-8')).toBe('remote version')
+    // The local version survives as a conflict sibling.
+    const dir = join(dataRoot, 'conv')
+    const names = (await readdir(dir)).filter((n) => n.startsWith('messages.conflict-'))
+    expect(names).toHaveLength(1)
+    expect(await readFile(join(dir, names[0]), 'utf-8')).toBe('local version')
+  })
+
+  it('leaves no temp files behind after a successful pull', async () => {
+    const fake = new FakeClient()
+    fake.setRemote(R('a.md'), 'hello')
+    fake.setRemote(R('b.pdf'), Buffer.from([0x25, 0x50, 0x44, 0x46]), 'mod-1')
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.success).toBe(true)
+    expect(result.transferred).toBe(2)
+    const leftover = (await walkLocal(dataRoot)).filter((p) => p.includes('.part-'))
+    expect(leftover).toEqual([])
+  })
+})
+
+async function walkLocal(dir: string): Promise<string[]> {
+  const out: string[] = []
+  const entries = await readdir(dir, { withFileTypes: true })
+  for (const e of entries) {
+    const full = join(dir, e.name)
+    if (e.isDirectory()) out.push(...(await walkLocal(full)))
+    else out.push(full)
+  }
+  return out
+}

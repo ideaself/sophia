@@ -70,4 +70,12 @@ export function registerSyncIpc(dataRoot: string, safeStorage: SafeStorageAdapte
     }
     return result
   })
+
+  ipcMain.handle('sync:list-trash', async (_event, input: unknown) => {
+    return manager.listRemoteTrash(await resolveConfig(input))
+  })
+
+  ipcMain.handle('sync:empty-trash', async (_event, input: unknown) => {
+    return manager.emptyRemoteTrash(await resolveConfig(input))
+  })
 }

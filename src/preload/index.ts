@@ -340,6 +340,10 @@ export interface SyncResult {
   transferred: number
   skipped: number
   deleted: number
+  /** Push: files parked in the remote trash instead of deleted. */
+  trashed: number
+  /** Pull: local copies preserved because both sides had changed. */
+  conflicts: number
   errors: string[]
   timestamp?: string
 }
@@ -364,6 +368,12 @@ export interface SyncAPI {
   planPull: (config: SyncWebDavConfig) => Promise<SyncPlanSummary>
   push: (config: SyncWebDavConfig) => Promise<SyncResult>
   pull: (config: SyncWebDavConfig) => Promise<SyncResult>
+  listTrash: (config: SyncWebDavConfig) => Promise<{
+    batches: Array<{ name: string; fileCount: number; totalSize: number }>
+    fileCount: number
+    totalSize: number
+  }>
+  emptyTrash: (config: SyncWebDavConfig) => Promise<{ success: boolean; deletedBatches: number }>
   hasWebdavPassword: () => Promise<boolean>
   setWebdavPassword: (password: string) => Promise<void>
   /** Subscribe to per-file sync progress. Returns an unsubscribe function. */
@@ -610,6 +620,8 @@ const sophia: SophiaAPI = {
     planPull: (config) => ipcRenderer.invoke('sync:plan-pull', config),
     push: (config) => ipcRenderer.invoke('sync:push', config),
     pull: (config) => ipcRenderer.invoke('sync:pull', config),
+    listTrash: (config) => ipcRenderer.invoke('sync:list-trash', config),
+    emptyTrash: (config) => ipcRenderer.invoke('sync:empty-trash', config),
     hasWebdavPassword: () => ipcRenderer.invoke('sync:has-webdav-password'),
     setWebdavPassword: (password) => ipcRenderer.invoke('sync:set-webdav-password', { password }),
     onProgress: (callback) => {

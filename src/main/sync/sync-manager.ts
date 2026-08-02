@@ -10,9 +10,11 @@ import {
   emptySyncState,
   type SyncState
 } from './sync-state'
-import { DatabaseSyncManager, type DatabaseSyncResult } from './database-sync-manager'
 
 const REMOTE_PREFIX = '/sophia'
+const REMOTE_TRASH = `${REMOTE_PREFIX}/.trash`
+/** Keep this many trash batches on the server before pruning the oldest. */
+const MAX_TRASH_BATCHES = 3
 
 export interface SyncResult {
   success: boolean
@@ -22,6 +24,10 @@ export interface SyncResult {
   skipped: number
   /** Files deleted on the target side (previously synced, gone from source) */
   deleted: number
+  /** Push: files parked in the remote trash instead of deleted */
+  trashed: number
+  /** Pull: local copies preserved because both sides had changed */
+  conflicts: number
   errors: string[]
 }
 
@@ -78,6 +84,8 @@ interface FileTransfer {
   relPath: string
   localPath: string
   remotePath: string
+  /** Pull only: local copy should be kept because both sides changed. */
+  conflict?: boolean
 }
 
 interface PushPlan {
@@ -99,11 +107,7 @@ interface LocalFileStat {
 }
 
 export class SyncManager {
-  private readonly databaseSyncManager: DatabaseSyncManager
-
-  constructor(private readonly dataRoot: string) {
-    this.databaseSyncManager = new DatabaseSyncManager(dataRoot)
-  }
+  constructor(private readonly dataRoot: string) {}
 
   private createClient(config: WebDavConfig): SyncWebDavClient {
     return new SyncWebDavClient(config)
@@ -112,68 +116,6 @@ export class SyncManager {
   async test(config: WebDavConfig): Promise<{ success: boolean; message?: string }> {
     const client = this.createClient(config)
     return client.test()
-  }
-
-  /**
-   * Sync database file with safe download, validation, and recovery
-   */
-  async syncDatabase(
-    config: WebDavConfig,
-    direction: 'push' | 'pull',
-    onProgress?: (received: number, total: number) => void
-  ): Promise<DatabaseSyncResult> {
-    const client = this.createClient(config)
-    const remoteDbPath = `${REMOTE_PREFIX}/app.db`
-
-    if (direction === 'pull') {
-      return this.databaseSyncManager.safeDownloadDatabase(client, remoteDbPath, onProgress)
-    } else {
-      // Push: create snapshot and upload
-      try {
-        const snapshotPath = await this.databaseSyncManager.prepareUploadSnapshot()
-        await client.uploadFile(remoteDbPath, createReadStream(snapshotPath))
-        await this.databaseSyncManager.cleanupTempFile(snapshotPath)
-        return { success: true, message: 'Database uploaded successfully' }
-      } catch (e) {
-        return {
-          success: false,
-          message: `Database upload failed: ${e instanceof Error ? e.message : 'Unknown error'}`,
-          failureType: undefined,
-        }
-      }
-    }
-  }
-
-  /**
-   * Get available database backups
-   */
-  async getDatabaseBackups(): Promise<string[]> {
-    return this.databaseSyncManager.getAvailableBackups()
-  }
-
-  /**
-   * Restore database from backup
-   */
-  async restoreDatabaseFromBackup(backupPath: string): Promise<DatabaseSyncResult> {
-    try {
-      await this.databaseSyncManager.recoverFromBackup(backupPath)
-      return { success: true, message: 'Database restored successfully' }
-    } catch (e) {
-      return {
-        success: false,
-        message: `Database restore failed: ${e instanceof Error ? e.message : 'Unknown error'}`,
-        failureType: undefined,
-      }
-    }
-  }
-
-  /**
-   * Validate local database integrity
-   */
-  async validateLocalDatabase(): Promise<{ isValid: boolean; error?: string }> {
-    return this.databaseSyncManager.validateDatabase(
-      join(this.dataRoot, 'app.db')
-    )
   }
 
   private async statLocal(relPath: string): Promise<LocalFileStat | null> {
@@ -244,9 +186,11 @@ export class SyncManager {
     // - junk that fails the sync-set rules (sync-state.json, config/*.enc
     //   uploaded by old versions) — deleted outright, no state needed.
     // Valid remote files we know nothing about are left alone.
+    // The remote trash itself is never touched by push.
     const remoteDeletions: FileTransfer[] = []
     for (const [rel, remote] of remoteByRel) {
       if (localRelSet.has(rel)) continue
+      if (rel.startsWith('.trash/')) continue
       if (isSyncableRelPath(rel) && !(rel in state.files)) continue
       remoteDeletions.push({ relPath: rel, localPath: '', remotePath: remote.path })
     }
@@ -288,7 +232,15 @@ export class SyncManager {
       if (unchanged) {
         skipped++
       } else {
-        downloads.push({ relPath: rel, localPath: join(this.dataRoot, rel), remotePath: remote.path })
+        // Conflict: both sides changed since the last sync. The remote wins
+        // (we download), but the local copy is preserved first (execution).
+        const conflict =
+          entry !== undefined &&
+          local !== null &&
+          entry.localMtimeMs !== null &&
+          entry.localMtimeMs !== local.mtimeMs &&
+          (entry.remoteSize !== remote.size || entry.remoteLastmod !== remote.lastmod)
+        downloads.push({ relPath: rel, localPath: join(this.dataRoot, rel), remotePath: remote.path, conflict })
       }
     }
 
@@ -445,9 +397,9 @@ export class SyncManager {
   }
 
   /**
-   * Push: upload changed local files, delete previously-synced remote files
-   * that no longer exist locally (plus non-syncable junk left by old
-   * versions). Unchanged files are skipped.
+   * Push: upload changed local files, park deleted remote files in the remote
+   * trash (falling back to DELETE when the server lacks MOVE), prune old
+   * trash batches. Unchanged files are skipped.
    */
   async push(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
     await this.backupBeforeSync()
@@ -456,6 +408,7 @@ export class SyncManager {
     const errors: string[] = []
     let transferred = 0
     let deleted = 0
+    let trashed = 0
     const total = plan.uploads.length + plan.remoteDeletions.length
 
     // Create each needed remote directory once, up front — previously every
@@ -481,31 +434,48 @@ export class SyncManager {
       }
     })
 
-    await runPool(plan.remoteDeletions, SYNC_CONCURRENCY, async (del, index) => {
-      onProgress?.({
-        direction: 'push',
-        current: plan.uploads.length + index + 1,
-        total,
-        file: del.relPath
+    // Deletions are recoverable: MOVE into the remote trash first, DELETE only
+    // when the server doesn't support MOVE.
+    if (plan.remoteDeletions.length > 0) {
+      const batch = `${REMOTE_TRASH}/${new Date().toISOString().replace(/[:.]/g, '-')}`
+      await client.ensureDir(batch)
+      await runPool(plan.remoteDeletions, SYNC_CONCURRENCY, async (del, index) => {
+        onProgress?.({
+          direction: 'push',
+          current: plan.uploads.length + index + 1,
+          total,
+          file: del.relPath
+        })
+        try {
+          await client.moveFile(del.remotePath, `${batch}/${del.relPath}`)
+          trashed++
+        } catch {
+          try {
+            await client.deleteFile(del.remotePath)
+            deleted++
+          } catch (e) {
+            errors.push(`${del.relPath}: ${e instanceof Error ? e.message : 'unknown error'}`)
+          }
+        }
       })
-      try {
-        await client.deleteFile(del.remotePath)
-        deleted++
-      } catch (e) {
-        errors.push(`${del.relPath}: ${e instanceof Error ? e.message : 'unknown error'}`)
-      }
-    })
+    }
+
+    // Prune old trash batches on every push, not just ones that deleted files.
+    await this.pruneRemoteTrash(client)
 
     await this.pruneEmptyRemoteDirs(client, plan.remoteDeletions.map((d) => d.remotePath))
 
     await this.rebuildStateAfterPush(client)
 
-    return { success: errors.length === 0, transferred, skipped: plan.skipped, deleted, errors }
+    return { success: errors.length === 0, transferred, skipped: plan.skipped, deleted, trashed, conflicts: 0, errors }
   }
 
   /**
    * Pull: download changed remote files, delete previously-synced local
-   * files that no longer exist remotely. Unchanged files are skipped.
+   * files that no longer exist remotely. Downloads are written atomically
+   * (temp file + rename) so an interrupted transfer never corrupts the
+   * local copy; when both sides changed, the local copy is preserved as a
+   * `-conflict-<ts>` sibling before the remote version overwrites it.
    */
   async pull(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
     await this.backupBeforeSync()
@@ -514,21 +484,31 @@ export class SyncManager {
     const errors: string[] = plan.unsafePaths.map((p) => `${p}: unsafe remote path, skipped`)
     let transferred = 0
     let deleted = 0
+    let conflicts = 0
     const total = plan.downloads.length + plan.localDeletions.length
 
     await runPool(plan.downloads, SYNC_CONCURRENCY, async (down, index) => {
       onProgress?.({ direction: 'pull', current: index + 1, total, file: down.relPath })
+      // Atomic write: download to a sibling temp file, rename into place.
+      const tmpPath = down.localPath + `.part-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       try {
         await mkdir(dirname(down.localPath), { recursive: true })
+        if (down.conflict) {
+          const conflictPath = conflictCopyPath(down.localPath)
+          await copyFile(down.localPath, conflictPath)
+          conflicts++
+        }
         if (isBinaryFile(down.relPath)) {
           // Streamed straight to disk — survives multi-hundred-MB files
-          await client.downloadToFile(down.remotePath, down.localPath)
+          await client.downloadToFile(down.remotePath, tmpPath)
         } else {
           const content = await client.downloadFile(down.remotePath)
-          await writeFile(down.localPath, content, 'utf-8')
+          await writeFile(tmpPath, content, 'utf-8')
         }
+        await rename(tmpPath, down.localPath)
         transferred++
       } catch (e) {
+        await rm(tmpPath, { force: true }).catch(() => {})
         errors.push(`${down.relPath}: ${e instanceof Error ? e.message : 'unknown error'}`)
       }
     })
@@ -552,6 +532,84 @@ export class SyncManager {
 
     await this.rebuildStateAfterPull(client)
 
-    return { success: errors.length === 0, transferred, skipped: plan.skipped, deleted, errors }
+    return { success: errors.length === 0, transferred, skipped: plan.skipped, deleted, trashed: 0, conflicts, errors }
   }
+
+  /**
+   * Keep only the newest `MAX_TRASH_BATCHES` trash batches on the server.
+   * Batch names are ISO timestamps, so lexical sort == chronological order.
+   */
+  private async pruneRemoteTrash(client: SyncWebDavClient): Promise<void> {
+    try {
+      const batches = await client.listFiles(REMOTE_TRASH)
+      const dirs = batches.filter((b) => b.isDir).map((b) => b.path).sort()
+      const excess = dirs.slice(0, Math.max(0, dirs.length - MAX_TRASH_BATCHES))
+      for (const dir of excess) {
+        try {
+          await client.deleteFile(dir)
+        } catch {
+          // best-effort — a stale trash batch is harmless
+        }
+      }
+    } catch {
+      // trash root doesn't exist yet
+    }
+  }
+
+  /** Remote-trash overview for the sync settings UI. */
+  async listRemoteTrash(config: WebDavConfig): Promise<{
+    batches: Array<{ name: string; fileCount: number; totalSize: number }>
+    fileCount: number
+    totalSize: number
+  }> {
+    const client = this.createClient(config)
+    const batches: Array<{ name: string; fileCount: number; totalSize: number }> = []
+    let fileCount = 0
+    let totalSize = 0
+    try {
+      const entries = await client.listFiles(REMOTE_TRASH)
+      const dirs = entries.filter((e) => e.isDir).map((e) => e.path).sort()
+      for (const dir of dirs) {
+        const files = await client.listAllFilesDetailed(dir)
+        const size = files.reduce((a, f) => a + f.size, 0)
+        batches.push({ name: dir.split('/').pop() ?? dir, fileCount: files.length, totalSize: size })
+        fileCount += files.length
+        totalSize += size
+      }
+    } catch {
+      // trash root doesn't exist yet — empty result
+    }
+    return { batches, fileCount, totalSize }
+  }
+
+  /** Permanently delete everything in the remote trash. */
+  async emptyRemoteTrash(config: WebDavConfig): Promise<{ success: boolean; deletedBatches: number }> {
+    const client = this.createClient(config)
+    let deletedBatches = 0
+    try {
+      const entries = await client.listFiles(REMOTE_TRASH)
+      for (const entry of entries) {
+        if (!entry.isDir) continue
+        try {
+          await client.deleteFile(entry.path)
+          deletedBatches++
+        } catch {
+          // best-effort per batch
+        }
+      }
+    } catch {
+      // nothing to empty
+    }
+    return { success: true, deletedBatches }
+  }
+}
+
+/**
+ * Insert `-conflict-<ts>` before the extension, e.g.
+ * `conv/messages.json` → `conv/messages.conflict-1722600000000.json`.
+ */
+function conflictCopyPath(localPath: string): string {
+  const ext = extname(localPath)
+  const base = ext ? localPath.slice(0, -ext.length) : localPath
+  return `${base}.conflict-${Date.now()}${ext}`
 }

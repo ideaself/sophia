@@ -9,7 +9,10 @@ const EXCLUDE_PATTERNS = [
   // Local sync bookkeeping is per-device and must not sync.
   /(^|[/\\])sync-state\.json$/,
   // Local sync cache (pre-sync backups, etc.) is per-device.
-  /(^|[/\\])\.sync-cache[/\\]/
+  /(^|[/\\])\.sync-cache[/\\]/,
+  // Remote trash (deleted files parked on the server before removal) is
+  // invisible to sync: never downloaded, never re-deleted as junk.
+  /(^|[/\\])\.trash[/\\]/
 ]
 
 export interface SyncableFile {

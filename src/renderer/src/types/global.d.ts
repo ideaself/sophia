@@ -290,6 +290,10 @@ declare global {
     transferred: number
     skipped: number
     deleted: number
+    /** Push: files parked in the remote trash instead of deleted. */
+    trashed: number
+    /** Pull: local copies preserved because both sides had changed. */
+    conflicts: number
     errors: string[]
     timestamp?: string
   }
@@ -314,6 +318,12 @@ declare global {
     planPull: (config: SyncWebDavConfig) => Promise<SyncPlanSummary>
     push: (config: SyncWebDavConfig) => Promise<SyncResult>
     pull: (config: SyncWebDavConfig) => Promise<SyncResult>
+    listTrash: (config: SyncWebDavConfig) => Promise<{
+      batches: Array<{ name: string; fileCount: number; totalSize: number }>
+      fileCount: number
+      totalSize: number
+    }>
+    emptyTrash: (config: SyncWebDavConfig) => Promise<{ success: boolean; deletedBatches: number }>
     hasWebdavPassword: () => Promise<boolean>
     setWebdavPassword: (password: string) => Promise<void>
     onProgress: (callback: (progress: SyncProgress) => void) => () => void

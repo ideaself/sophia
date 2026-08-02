@@ -15,6 +15,23 @@ export function WebDavSyncView(): React.ReactElement {
   const [lastPull, setLastPull] = useState(() => localStorage.getItem('webdav-last-pull') || '')
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [progress, setProgress] = useState<SyncProgress | null>(null)
+  // Remote trash (推送时被移入回收站的文件)
+  const [trash, setTrash] = useState<{ batches: Array<{ name: string; fileCount: number; totalSize: number }>; fileCount: number; totalSize: number } | null>(null)
+  const [trashLoading, setTrashLoading] = useState(false)
+  const [emptyingTrash, setEmptyingTrash] = useState(false)
+
+  const fetchTrash = async () => {
+    if (!url.trim()) return
+    setTrashLoading(true)
+    try {
+      const data = await window.sophia.sync.listTrash(getConfig())
+      setTrash(data)
+    } catch {
+      setTrash(null)
+    } finally {
+      setTrashLoading(false)
+    }
+  }
 
   const fetchTextbooks = useTextbookStore((s) => s.fetch)
   const fetchConversations = useConversationStore((s) => s.fetchActive)
@@ -58,7 +75,7 @@ export function WebDavSyncView(): React.ReactElement {
       if (plan.deleteCount > 0) {
         const sample = plan.deleteSample.slice(0, 10).join('\n')
         const more = plan.deleteCount > 10 ? `\n... and ${plan.deleteCount - 10} more` : ''
-        if (!await window.sophia.dialog.confirm({ message: `Push will DELETE ${plan.deleteCount} remote file(s) that no longer exist locally:\n${sample}${more}\n\nContinue?`, confirmLabel: 'Push' })) {
+        if (!await window.sophia.dialog.confirm({ message: `Push will REMOVE ${plan.deleteCount} remote file(s) that no longer exist locally (moved to the remote trash, recoverable):\n${sample}${more}\n\nContinue?`, confirmLabel: 'Push' })) {
           return
         }
       }
@@ -72,19 +89,20 @@ export function WebDavSyncView(): React.ReactElement {
     try {
       const res = await window.sophia.sync.push(getConfig())
       if (res.success) {
-        setResult({ ok: true, msg: `Pushed ${res.transferred}, skipped ${res.skipped}, deleted ${res.deleted}` })
+        setResult({ ok: true, msg: `Pushed ${res.transferred}, skipped ${res.skipped}, trashed ${res.trashed}, deleted ${res.deleted}` })
         if (res.timestamp) {
           setLastPush(res.timestamp)
           localStorage.setItem('webdav-last-push', res.timestamp)
         }
       } else {
-        setResult({ ok: false, msg: `Pushed ${res.transferred}, skipped ${res.skipped}, deleted ${res.deleted}, ${res.errors.length} errors: ${res.errors[0]}` })
+        setResult({ ok: false, msg: `Pushed ${res.transferred}, skipped ${res.skipped}, trashed ${res.trashed}, ${res.errors.length} errors: ${res.errors[0]}` })
       }
     } catch (e) {
       setResult({ ok: false, msg: e instanceof Error ? e.message : 'Push failed' })
     } finally {
       setPushing(false)
       setProgress(null)
+      void fetchTrash()
     }
   }
 
@@ -116,7 +134,7 @@ export function WebDavSyncView(): React.ReactElement {
     try {
       const res = await window.sophia.sync.pull(getConfig())
       if (res.success) {
-        setResult({ ok: true, msg: `Pulled ${res.transferred}, skipped ${res.skipped}, deleted ${res.deleted}` })
+        setResult({ ok: true, msg: `Pulled ${res.transferred}, skipped ${res.skipped}, deleted ${res.deleted}${res.conflicts > 0 ? `, conflicts preserved ${res.conflicts}` : ''}` })
       } else {
         setResult({ ok: false, msg: `Pulled ${res.transferred}, skipped ${res.skipped}, deleted ${res.deleted}, ${res.errors.length} errors: ${res.errors[0]}` })
       }
@@ -131,6 +149,24 @@ export function WebDavSyncView(): React.ReactElement {
     } finally {
       setPulling(false)
       setProgress(null)
+    }
+  }
+
+  const handleEmptyTrash = async () => {
+    if (!trash || trash.fileCount === 0) return
+    if (!await window.sophia.dialog.confirm({
+      message: `确定清空远端回收站吗？${trash.fileCount} 个文件将被永久删除，无法恢复。`,
+      confirmLabel: '清空'
+    })) return
+    setEmptyingTrash(true)
+    try {
+      const res = await window.sophia.sync.emptyTrash(getConfig())
+      setResult({ ok: true, msg: `已清空远端回收站（${res.deletedBatches} 批）` })
+    } catch (e) {
+      setResult({ ok: false, msg: e instanceof Error ? e.message : '清空失败' })
+    } finally {
+      setEmptyingTrash(false)
+      void fetchTrash()
     }
   }
 
@@ -223,6 +259,56 @@ export function WebDavSyncView(): React.ReactElement {
             <p>Last push: {lastPush ? new Date(lastPush).toLocaleString() : 'never'}</p>
             <p>Last pull: {lastPull ? new Date(lastPull).toLocaleString() : 'never'}</p>
           </div>
+        </div>
+
+        {/* Remote trash (推送时被移入回收站的文件，可恢复) */}
+        <div className="border-t border-surface-border pt-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-medium text-text-secondary">远端回收站</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void fetchTrash()}
+                disabled={trashLoading || !url.trim()}
+                className="rounded border border-surface-border-strong px-2 py-1 text-xs text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
+              >
+                {trashLoading ? '查询中...' : '刷新'}
+              </button>
+              {trash && trash.fileCount > 0 && (
+                <button
+                  onClick={() => void handleEmptyTrash()}
+                  disabled={emptyingTrash}
+                  className="rounded border border-red-800 px-2 py-1 text-xs text-red-400 hover:bg-red-900/30 disabled:opacity-50"
+                >
+                  {emptyingTrash ? '清空中...' : '清空回收站'}
+                </button>
+              )}
+            </div>
+          </div>
+          {trash === null ? (
+            <p className="text-xs text-text-muted">
+              推送时被移除的远端文件会先移入回收站（保留最近 3 批），点击「刷新」查看。
+            </p>
+          ) : trash.fileCount === 0 ? (
+            <p className="text-xs text-text-muted">回收站为空。</p>
+          ) : (
+            <>
+              <p className="mb-2 text-xs text-text-muted">
+                共 {trash.fileCount} 个文件（{(trash.totalSize / 1048576).toFixed(1)} MB），{trash.batches.length} 批：
+              </p>
+              <ul className="space-y-1">
+                {trash.batches.map((b) => (
+                  <li key={b.name} className="flex items-center justify-between rounded bg-bg-elevated/50 px-2 py-1 text-xs">
+                    <span className="truncate text-text-secondary" title={b.name}>
+                      批 {b.name.slice(0, 10)} · {new Date(b.name.replace(/-/g, ':')).toLocaleString()}
+                    </span>
+                    <span className="flex-shrink-0 text-text-muted">
+                      {b.fileCount} 个 · {(b.totalSize / 1048576).toFixed(1)} MB
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
 
         {result && (

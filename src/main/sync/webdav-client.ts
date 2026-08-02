@@ -237,6 +237,18 @@ export class SyncWebDavClient {
     )
   }
 
+  /**
+   * MOVE a remote resource (used for the remote trash). Fails loudly — the
+   * caller falls back to DELETE when the server doesn't support MOVE.
+   */
+  async moveFile(remotePath: string, targetPath: string): Promise<void> {
+    await withTimeout(
+      this.client.moveFile(remotePath, targetPath, { overwrite: true }),
+      REQUEST_TIMEOUT_MS,
+      `MOVE ${remotePath}`
+    )
+  }
+
   private async walkRemote(dir: string, files: string[]): Promise<void> {
     try {
       const entries = await withTimeout(
