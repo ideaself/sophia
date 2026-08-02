@@ -674,8 +674,10 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     const onMove = (ev: MouseEvent) => {
       const s = readerResizeStart.current
       if (!s) return
-      // 分隔条右侧是阅读器：向右拖变宽。
-      const next = Math.min(900, Math.max(280, s.w + (ev.clientX - s.x)))
+      // 分隔条右侧是阅读器。分隔条位于聊天列与阅读器之间（flex 布局）：
+      // 宽度增大时分隔条会向左移动，所以要让分隔条跟随鼠标（向右拖 =
+      // 阅读器变窄），宽度变化必须与鼠标位移相反。
+      const next = Math.min(900, Math.max(280, s.w + (s.x - ev.clientX)))
       readerWidthRef.current = next
       setReaderWidth(next)
     }
