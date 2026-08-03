@@ -470,15 +470,20 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
       let convId = tab.conversationId
       if (!convId) {
+        // 默认课堂名：MM-DD 角色名（与课堂浏览器的显示规则一致）
+        const now = new Date()
+        const mm = String(now.getMonth() + 1).padStart(2, '0')
+        const dd = String(now.getDate()).padStart(2, '0')
+        const defaultTitle = `${mm}-${dd} ${companion.name}`
         try {
           const conv = await window.sophia.data.createConversation({
             worldId: WORLD_ID,
             companionId: companion.id,
             textbookId: textbook?.id,
-            title: userMessage.slice(0, 50)
+            title: defaultTitle
           })
           convId = conv.id
-          updateTab(activeIdx, { conversationId: convId, title: userMessage.slice(0, 50) })
+          updateTab(activeIdx, { conversationId: convId, title: defaultTitle })
         } catch {
           setSendError('创建对话失败，请重试')
           return
@@ -494,14 +499,18 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         })
       } catch {
         try {
+          const now = new Date()
+          const mm = String(now.getMonth() + 1).padStart(2, '0')
+          const dd = String(now.getDate()).padStart(2, '0')
+          const defaultTitle = `${mm}-${dd} ${companion.name}`
           const conv = await window.sophia.data.createConversation({
             worldId: WORLD_ID,
             companionId: companion.id,
             textbookId: textbook?.id,
-            title: userMessage.slice(0, 50)
+            title: defaultTitle
           })
           convId = conv.id
-          updateTab(activeIdx, { conversationId: convId, title: userMessage.slice(0, 50) })
+          updateTab(activeIdx, { conversationId: convId, title: defaultTitle })
           await window.sophia.data.sendMessage({
             conversationId: convId,
             content: userMessage,
