@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useChatStream } from './useChatStream'
 import { ChatMessage, type MessageHighlight } from './ChatMessage'
+import { ThinkingBlock } from '../components/ThinkingBlock'
 import { EpubReaderView } from '../reader/EpubReaderView'
 import { PdfReaderView } from '../reader/PdfReaderView'
 import { stopTTS } from '../hooks/useTTS'
@@ -1208,9 +1209,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                           <summary className="cursor-pointer select-none text-xs text-text-muted hover:text-text-secondary">
                             🧠 思考过程 {chatStream.state.isStreaming && <span className="text-amber-400 animate-pulse">(进行中...)</span>}
                           </summary>
-                          <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-text-secondary">
-                            {chatStream.state.reasoningContent}
-                          </p>
+                          <ThinkingBlock content={chatStream.state.reasoningContent} />
                         </details>
                       )}
                       <ChatMessage
