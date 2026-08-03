@@ -168,6 +168,12 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   // Mirror of `tabs` for async callbacks — the render-closure `tabs` goes
   // stale inside .then() chains that run after later re-renders.
   const tabsRef = useRef(tabs)
+  // 当前流式回复归属的标签索引。流式内容是全局单例状态，
+  // 必须只显示在发起发送的标签上，避免切换标签时内容"串位"。
+  const streamOwnerIdxRef = useRef<number | null>(null)
+  // 发送中防重：覆盖"按下发送 → 流式开始"之间的间隙，避免连按 Enter
+  // 重复创建会话 / 重复发送。
+  const sendingRef = useRef(false)
   useEffect(() => { tabsRef.current = tabs }, [tabs])
 
   // Persist the tab strip (title / conversationId / draft) across restarts
@@ -293,6 +299,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     const id = companion?.id ?? null
     if (prevCompanionIdRef.current !== null && prevCompanionIdRef.current !== id) {
       if (chatStream.state.isStreaming) chatStream.cancel()
+      streamOwnerIdxRef.current = null
     }
     prevCompanionIdRef.current = id
   }, [companion?.id])
@@ -452,9 +459,13 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   }, [templateOpen])
 
   const handleSend = async (retryInput?: string) => {
-    const tab = tabs[activeIdx]
-    if (!tab) return
+    // 发送防重：从按下发送到流式真正开始的间隙（构建 prompt 可能要一两秒）
+    // 期间没有 isStreaming 标记，连按 Enter 会重复创建会话/发送多条。
+    if (sendingRef.current) return
+    sendingRef.current = true
     try {
+      const tab = tabs[activeIdx]
+      if (!tab) return
       const userMessage = retryInput ?? tab.input.trim()
       if (!userMessage || !companion) return
       if (userMessage.length > MAX_INPUT_LENGTH) {
@@ -463,8 +474,21 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       }
 
       if (chatStream.state.isStreaming) {
+        // 其他标签正在回复：先确认，避免静默打断对方的回复。
+        const ownerIdx = streamOwnerIdxRef.current
+        if (ownerIdx !== null && ownerIdx !== activeIdx) {
+          const ownerTab = tabs[ownerIdx]
+          const ok = await window.sophia.dialog.confirm({
+            message: `「${ownerTab?.title ?? '其他标签'}」正在回复中，发送将中断它的回复。确定继续吗？`,
+            confirmLabel: '中断并发送'
+          })
+          if (!ok) return
+        }
         await chatStream.cancel()
       }
+
+      // 本次流式回复归属当前标签（用于流式内容显示定位）。
+      streamOwnerIdxRef.current = activeIdx
 
       setSendError(null)
 
@@ -553,6 +577,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
       const endPromise = chatStream.streamEnd
       if (endPromise) {
+        // 回复归属发起标签（用户可能已在流式期间切换到其他标签）
+        const targetIdx = streamOwnerIdxRef.current ?? activeIdx
         try {
           const { content, finishReason } = await endPromise
           const isPartial = finishReason.startsWith('error:')
@@ -567,7 +593,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           if (content) {
             setTabs((prev) => {
               const next = [...prev]
-              const t = next[activeIdx]
+              const t = next[targetIdx]
               if (t) t.messages = [...t.messages, { id: `assistant-${Date.now()}`, role: 'assistant', content }]
               return next
             })
@@ -575,7 +601,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           if (isPartial) {
             setTabs((prev) => {
               const next = [...prev]
-              const t = next[activeIdx]
+              const t = next[targetIdx]
               if (t) t.retryMessage = { input: userMessage, convId: convId! }
               return next
             })
@@ -584,16 +610,20 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         } catch {
           setTabs((prev) => {
             const next = [...prev]
-            const t = next[activeIdx]
+            const t = next[targetIdx]
             if (t) t.retryMessage = { input: userMessage, convId: convId! }
             return next
           })
+        } finally {
+          streamOwnerIdxRef.current = null
         }
       }
 
       inputRef.current?.focus()
     } catch (e) {
       setSendError(e instanceof Error ? e.message : '发送失败，请重试')
+    } finally {
+      sendingRef.current = false
     }
   }
 
@@ -837,8 +867,12 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   }
 
   // Build display messages including streaming
+  // 流式内容是全局单例状态，只显示在发起发送的标签上，避免切换标签时串位。
+  const streamingHere =
+    chatStream.state.isStreaming &&
+    streamOwnerIdxRef.current === activeIdx
   const allMessages = [...activeTab.messages]
-  if (chatStream.state.isStreaming && chatStream.state.assistantContent) {
+  if (streamingHere && chatStream.state.assistantContent) {
     allMessages.push({
       id: 'streaming',
       role: 'assistant',
@@ -881,6 +915,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       showThinking:
         idx === allMessages.length - 1 &&
         msg.role === 'assistant' &&
+        streamingHere &&
         chatStream.state.reasoningContent.length > 0,
       highlight:
         q.length > 0 && msg.content.toLowerCase().includes(q)
@@ -1449,7 +1484,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             }}
             rows={1}
             placeholder="输入你的问题... (Enter 发送，Shift+Enter 换行)"
-            disabled={chatStream.state.isStreaming}
+            disabled={chatStream.state.isStreaming || sendingRef.current}
             className="flex-1 resize-none overflow-y-auto rounded border border-surface-border-strong bg-bg-deep px-4 py-2 text-sm leading-relaxed text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none disabled:opacity-50"
           />
           {chatStream.state.isStreaming ? (
@@ -1462,10 +1497,10 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           ) : (
             <button
               onClick={() => handleSend()}
-              disabled={!activeTab.input.trim()}
+              disabled={!activeTab.input.trim() || sendingRef.current}
               className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
             >
-              发送
+              {sendingRef.current ? '发送中...' : '发送'}
             </button>
           )}
         </div>
