@@ -166,3 +166,24 @@
 .markdown-body li {
   margin: 0.25em 0;
 }
+
+/* ============================================
+   PDF.js text layer — transparent selectable text
+   overlaid on the rendered page bitmap. Minimal styles
+   for pdfjs-dist v6 (spans are positioned via CSS transform).
+   ============================================ */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  transform-origin: 0 0;
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}

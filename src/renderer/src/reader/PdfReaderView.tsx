@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import * as pdfjs from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { DictionaryPopup } from '../components/DictionaryPopup'
+import { isEnglishWord, loadDictConfig } from '../../../shared/dict'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -29,12 +31,17 @@ const PROGRESS_KEY = (id: string) => `pdf-progress-${id}`
 export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReaderViewProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const textLayerRef = useRef<HTMLDivElement>(null)
+  const textLayerInstanceRef = useRef<pdfjs.TextLayer | null>(null)
+  const textLayerPageRef = useRef<number | null>(null)
   const [doc, setDoc] = useState<pdfjs.PDFDocumentProxy | null>(null)
   const [pageNum, setPageNum] = useState(1)
   const [pageCount, setPageCount] = useState(0)
   const [scale, setScale] = useState(1.5)
   const [error, setError] = useState('')
   const [highlights, setHighlights] = useState<HighlightRect[]>([])
+  // 在线词典浮层（选中英文单词自动弹出）
+  const [dictPopup, setDictPopup] = useState<{ word: string } | null>(null)
   // In-page search (Ctrl+F)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -111,7 +118,7 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
     }
   }, [textbookId])
 
-  // Render current page
+  // Render current page + selectable text layer
   useEffect(() => {
     if (!doc || !canvasRef.current) return
     let cancelled = false
@@ -124,6 +131,41 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
       canvas.height = viewport.height
       await page.render({ canvas, viewport }).promise
       if (cancelled) return
+
+      // --- Text layer: transparent selectable text over the bitmap ---
+      const textLayerDiv = textLayerRef.current
+      if (textLayerDiv) {
+        textLayerDiv.style.width = `${viewport.width}px`
+        textLayerDiv.style.height = `${viewport.height}px`
+        const existing = textLayerInstanceRef.current
+        try {
+          if (existing && textLayerPageRef.current === pageNum) {
+            // Same page: just re-layout for the new scale.
+            existing.update({ viewport })
+          } else {
+            // New page: drop the previous layer and rebuild.
+            existing?.cancel()
+            textLayerInstanceRef.current = null
+            textLayerDiv.innerHTML = ''
+            const instance = new pdfjs.TextLayer({
+              textContentSource: page.streamTextContent(),
+              container: textLayerDiv,
+              viewport
+            })
+            textLayerPageRef.current = pageNum
+            textLayerInstanceRef.current = instance
+            await instance.render()
+            if (cancelled) {
+              instance.cancel()
+              textLayerInstanceRef.current = null
+              textLayerDiv.innerHTML = ''
+            }
+          }
+        } catch {
+          // best-effort — selection falls back to none on this page
+        }
+      }
+
       // Recompute highlights for this page after render
       const q = searchQuery.trim().toLowerCase()
       if (q) {
@@ -137,6 +179,24 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
       cancelled = true
     }
   }, [doc, pageNum, scale]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 选中英文单词 → 自动弹出在线词典（与 EPUB 阅读器一致）
+  const handleContentMouseUp = () => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return
+    const text = sel.toString().trim()
+    if (!text || text.length > 200) return
+    if (isEnglishWord(text) && loadDictConfig().enabled) {
+      setDictPopup({ word: text })
+    }
+  }
+
+  // Clean up the text layer on unmount
+  useEffect(() => {
+    return () => {
+      textLayerInstanceRef.current?.cancel()
+    }
+  }, [])
 
   // Persist progress
   useEffect(() => {
@@ -347,12 +407,13 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
           </button>
         </div>
       </div>
-      <div ref={containerRef} className="flex-1 overflow-auto p-4">
+      <div ref={containerRef} onMouseUp={handleContentMouseUp} className="flex-1 overflow-auto p-4">
         {error ? (
           <p className="mt-8 text-sm text-red-400">{error}</p>
         ) : (
           <div className="relative inline-block">
             <canvas ref={canvasRef} className="shadow-lg" />
+            <div ref={textLayerRef} className="textLayer" />
             {highlights.map((r, i) => (
               <div
                 key={i}
@@ -368,6 +429,14 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
           </div>
         )}
       </div>
+
+      {/* 在线词典浮层 */}
+      {dictPopup && (
+        <DictionaryPopup
+          word={dictPopup.word}
+          onClose={() => setDictPopup(null)}
+        />
+      )}
 
       {/* Bottom-right pager */}
       {pageCount > 0 && (
