@@ -147,6 +147,9 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
       if (textLayerDiv) {
         textLayerDiv.style.width = `${viewport.width}px`
         textLayerDiv.style.height = `${viewport.height}px`
+        // span 字形大小 = --total-scale-factor × --font-height（PDF 单位），
+        // 必须与位图保持同一缩放，否则缩放页面时文本层字号不变而错位。
+        textLayerDiv.style.setProperty('--total-scale-factor', String(viewport.scale))
         const existing = textLayerInstanceRef.current
         try {
           if (existing && textLayerPageRef.current === pageNum) {

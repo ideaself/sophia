@@ -169,8 +169,10 @@
 
 /* ============================================
    PDF.js text layer — transparent selectable text
-   overlaid on the rendered page bitmap. Minimal styles
-   for pdfjs-dist v6 (spans are positioned via CSS transform).
+   overlaid on the rendered page bitmap. Mirrors the
+   official pdf_viewer.css rules (pdfjs-dist v6):
+   span glyph size = var(--total-scale-factor) × var(--font-height).
+   The reader must set --total-scale-factor = viewport.scale.
    ============================================ */
 .textLayer {
   position: absolute;
@@ -178,6 +180,10 @@
   overflow: hidden;
   line-height: 1;
   transform-origin: 0 0;
+
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
 }
 
 .textLayer :is(span, br) {
@@ -186,4 +192,18 @@
   white-space: pre;
   cursor: text;
   transform-origin: 0% 0%;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
 }
