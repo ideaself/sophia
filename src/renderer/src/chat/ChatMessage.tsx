@@ -7,6 +7,7 @@ import rehypeHighlight from 'rehype-highlight'
 import mermaid from 'mermaid'
 import { useTTS, stripMarkdown } from '../hooks/useTTS'
 import { TTSControlPanel } from '../components/TTSControlPanel'
+import { normalizeMathDelimiters } from '../../../shared/math-delimiters'
 
 mermaid.initialize({
   startOnLoad: false,
@@ -339,7 +340,7 @@ export function ChatMessage({
             }
           }}
         >
-          {content}
+          {normalizeMathDelimiters(content)}
         </ReactMarkdown>
       </div>
     )
