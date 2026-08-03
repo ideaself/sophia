@@ -900,25 +900,25 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 120,
+    estimateSize: () => 200,
     overscan: 10,
     getItemKey: (index) => rows[index].key
   })
 
+  // 当前虚拟化总高度（估计 + 已测量）。行高测量更新时该值变化，
+  // 用于在贴底状态下跟随内容高度变化重新钉底。
+  const totalSize = virtualizer.getTotalSize()
+
   // Auto-scroll to the newest message while pinned to the bottom.
+  // 直接钉在真实底部（scrollHeight），不依赖虚拟化的估计总高度——
+  // 用 scrollToOffset(getTotalSize()) 时，未测量行按 estimateSize 估算，
+  // 长回复会低估总高度，把视口"弹回"到比真实底部高的位置。
   useEffect(() => {
     if (!stickToBottom || rows.length === 0) return
     const el = scrollRef.current
     if (!el) return
-    virtualizer.scrollToOffset(virtualizer.getTotalSize(), { align: 'end' })
-    // Re-scroll once the newly mounted bottom rows have been measured —
-    // `getTotalSize()` is only an estimate until then.
-    const raf = requestAnimationFrame(() => {
-      virtualizer.measure()
-      virtualizer.scrollToOffset(virtualizer.getTotalSize(), { align: 'end' })
-    })
-    return () => cancelAnimationFrame(raf)
-  }, [activeTab.messages, chatStream.state.assistantContent, stickToBottom, rows.length])
+    el.scrollTop = el.scrollHeight
+  }, [activeTab.messages, chatStream.state.assistantContent, stickToBottom, totalSize, rows.length])
 
   // Scroll the current search match into view.
   useEffect(() => {
