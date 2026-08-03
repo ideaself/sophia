@@ -207,3 +207,10 @@
   --rotate: 0deg;
   transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
 }
+
+/* 选中时也不显示系统字体字形，只保留高亮背景 —— 视觉上始终是位图
+   本身的字形（斜体、特殊字体等与页面完全一致）。复制/查词不受影响。 */
+.textLayer :is(span, br)::selection {
+  color: transparent;
+  background: rgba(37, 99, 235, 0.35);
+}
