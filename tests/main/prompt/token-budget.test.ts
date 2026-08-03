@@ -194,4 +194,48 @@ describe('windowMessages', () => {
     // system message should still be present
     expect(result.some(m => m.role === 'system')).toBe(true)
   })
+
+  it('keeps the summary (first system message) even when it alone exceeds the budget', () => {
+    const msgs = [
+      makeMsg('system', '【早期对话摘要】' + '很长'.repeat(500)),
+      makeMsg('user', '最近的消息'),
+      makeMsg('assistant', '回复')
+    ]
+    // 预算小于摘要本身：摘要必须仍在开头，消息部分尽可能保留。
+    const result = windowMessages(msgs, 100)
+
+    expect(result.length).toBeGreaterThanOrEqual(1)
+    expect(result[0].role).toBe('system')
+    expect(result[0].content.startsWith('【早期对话摘要】')).toBe(true)
+  })
+
+  it('summary sits first and newest messages follow it within budget', () => {
+    const msgs = [
+      makeMsg('system', '【早期对话摘要】' + '很长'.repeat(300)), // ~900 tokens
+      makeMsg('user', '最近的消息'),
+      makeMsg('assistant', '回复')
+    ]
+    const result = windowMessages(msgs, 1000)
+
+    expect(result[0].role).toBe('system')
+    expect(result.map((m) => m.content)).toEqual([
+      '【早期对话摘要】' + '很长'.repeat(300),
+      '最近的消息',
+      '回复'
+    ])
+  })
+
+  it('window still keeps the newest messages when there is no summary', () => {
+    const msgs = [
+      makeMsg('user', 'A'.repeat(500)),
+      makeMsg('assistant', 'B'.repeat(500)),
+      makeMsg('user', 'C'),
+      makeMsg('assistant', 'D')
+    ]
+    const result = windowMessages(msgs, 200)
+
+    expect(result[0].content).not.toBe('A'.repeat(500))
+    expect(result.some(m => m.content === 'C')).toBe(true)
+    expect(result.some(m => m.content === 'D')).toBe(true)
+  })
 })

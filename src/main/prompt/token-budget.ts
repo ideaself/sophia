@@ -123,15 +123,28 @@ export function windowMessages(
   const windowed: DeepSeekChatMessage[] = []
   let budgetUsed = 0
 
-  for (let i = messages.length - 1; i >= 0; i--) {
+  // 首条为压缩摘要（system）时始终保留在开头——否则长对话的早期记忆
+  // 会被纯丢弃，模型"失忆"。无摘要时按普通窗口从最新往回保留。
+  const firstIsSummary = messages[0].role === 'system'
+  if (firstIsSummary) {
+    windowed.push(messages[0])
+    budgetUsed += estimateTokens(messages[0].content)
+  }
+
+  for (let i = messages.length - 1; i > (firstIsSummary ? 0 : -1); i--) {
     const msg = messages[i]
     const msgTokens = estimateTokens(msg.content)
 
-    if (budgetUsed + msgTokens > maxTokens && windowed.length > 0) {
+    if (budgetUsed + msgTokens > maxTokens && windowed.length > (firstIsSummary ? 1 : 0)) {
       break
     }
 
-    windowed.unshift(msg)
+    if (firstIsSummary) {
+      // 摘要固定在开头，新消息插到它之后（保持从新到旧的顺序）。
+      windowed.splice(1, 0, msg)
+    } else {
+      windowed.unshift(msg)
+    }
     budgetUsed += msgTokens
 
     if (budgetUsed >= maxTokens) break

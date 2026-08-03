@@ -12,7 +12,7 @@ import { ArtifactStore } from '../storage/artifact-store'
 import { companionDir, palMomentsPath, relationPath, handoffMetaPath } from '../storage/app-data'
 import type { WorldId } from '../../shared/types/ids'
 import { IpcChatPromptMessagesInputSchema, IpcAiComposeInputSchema } from '../../shared/schemas/ipc'
-import { compressMessages, shouldCompress, splitCompressionWindow } from '../prompt/message-compressor'
+import { compressMessages, splitCompressionWindowByTokens } from '../prompt/message-compressor'
 import { analyzeTeaching, shouldAnalyze, formatAssessment, type TeachingCoachAssessment } from '../prompt/teaching-coach'
 import {
   retrievePassages,
@@ -22,6 +22,7 @@ import {
 import type { ProviderStore } from '../storage/provider-store'
 import { DeepSeekClient } from '../llm/deepseek-client'
 import { createDeepSeekHttpAdapter } from '../llm/deepseek-http-adapter'
+import { estimateTokens } from '../prompt/token-budget'
 
 // ---------------------------------------------------------------
 // Registration
@@ -125,19 +126,25 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
         content: m.content
       }))
 
-    // 6. Compress early messages if conversation is very long
-    if (shouldCompress(history) && providerStore) {
+    // 6. Compress early messages when the conversation outgrows the history
+    //    window — pure windowing would silently drop early context (模型失忆).
+    //    Trigger on token volume, not message count: classrooms rarely reach
+    //    150 messages but easily blow past the token budget.
+    const historyTokens = history.reduce((sum, m) => sum + estimateTokens(m.content), 0)
+    const HISTORY_WINDOW = 8000
+    const COMPRESS_THRESHOLD = 12000
+    if (historyTokens > COMPRESS_THRESHOLD && providerStore) {
       try {
         const active = await providerStore.getActive()
         if (active) {
           const apiKey = await providerStore.readApiKey(active.id)
           if (apiKey) {
-            const { toCompress, toKeep } = splitCompressionWindow(history)
-            const windowSize = toCompress.filter((m) => m.role !== 'system').length
-            const cached = compressionCache.get(params.conversationId)
+            const { toCompress, toKeep } = splitCompressionWindowByTokens(history, HISTORY_WINDOW)
+            const cacheKey = `${params.conversationId}:${toCompress.length}`
+            const cached = compressionCache.get(cacheKey)
             let summary: string | null = null
 
-            if (cached && cached.windowSize === windowSize) {
+            if (cached) {
               summary = cached.summary
             } else {
               summary = await compressMessages(toCompress, {
@@ -146,7 +153,7 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
                 model: active.selectedModel || 'deepseek-v4-flash'
               })
               if (summary) {
-                compressionCache.set(params.conversationId, { windowSize, summary })
+                compressionCache.set(cacheKey, { windowSize: toCompress.length, summary })
               }
             }
 
@@ -238,7 +245,7 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
       teachingCoachAssessment: coachSegment,
       history,
       userMessage: params.userMessage,
-      maxHistoryTokens: 3000,
+      maxHistoryTokens: HISTORY_WINDOW,
       maxTextbookTokens: isSecondHalf ? 4000 : 2000
     })
 
