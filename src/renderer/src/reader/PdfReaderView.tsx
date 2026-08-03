@@ -127,9 +127,19 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
       if (cancelled) return
       const viewport = page.getViewport({ scale })
       const canvas = canvasRef.current!
-      canvas.width = viewport.width
-      canvas.height = viewport.height
-      await page.render({ canvas, viewport }).promise
+      // 与 TextLayer 保持同一坐标系：TextLayer 内部按 viewport.scale ×
+      // devicePixelRatio 定位文本，canvas 必须做同样的 DPR 高清渲染，
+      // 否则高 DPI 屏上文本层与位图错位（且页面会模糊）。
+      const outputScale = new pdfjs.OutputScale()
+      canvas.width = Math.floor(viewport.width * outputScale.sx)
+      canvas.height = Math.floor(viewport.height * outputScale.sy)
+      canvas.style.width = `${viewport.width}px`
+      canvas.style.height = `${viewport.height}px`
+      await page.render({
+        canvas,
+        viewport,
+        transform: outputScale.scaled ? [outputScale.sx, 0, 0, outputScale.sy, 0, 0] : undefined
+      }).promise
       if (cancelled) return
 
       // --- Text layer: transparent selectable text over the bitmap ---
