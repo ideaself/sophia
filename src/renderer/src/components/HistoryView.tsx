@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import { normalizeMathDelimiters } from '../../../shared/math-delimiters'
+import { rehypeTexSource, handleCopyMathSource } from '../lib/mathCopy'
 import { useAppStore } from '../stores/useAppStore'
 import { useCompanionStore } from '../stores/useCompanionStore'
 import { useTextbookStore } from '../stores/useTextbookStore'
@@ -526,8 +530,10 @@ export function HistoryView(): React.ReactElement {
                 {loadingDiary ? (
                   <p className="text-xs text-text-muted">加载中...</p>
                 ) : diaryMonthContent ? (
-                  <div className="markdown-body text-sm text-text-secondary">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{diaryMonthContent}</ReactMarkdown>
+                  <div className="markdown-body text-sm text-text-secondary" onCopy={handleCopyMathSource}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeTexSource, rehypeKatex]}>
+                      {normalizeMathDelimiters(diaryMonthContent)}
+                    </ReactMarkdown>
                   </div>
                 ) : (
                   <p className="text-xs text-text-muted">该月暂无日记。</p>
@@ -679,8 +685,13 @@ export function HistoryView(): React.ReactElement {
                               </div>
                             </div>
                           ) : (
-                            <div className="markdown-body max-h-48 overflow-auto text-xs text-text-secondary">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{art.content}</ReactMarkdown>
+                            <div className="markdown-body max-h-48 overflow-auto text-xs text-text-secondary" onCopy={handleCopyMathSource}>
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm, remarkMath]}
+                                rehypePlugins={[rehypeTexSource, rehypeKatex]}
+                              >
+                                {normalizeMathDelimiters(art.content)}
+                              </ReactMarkdown>
                             </div>
                           )}
                         </div>
@@ -706,7 +717,14 @@ export function HistoryView(): React.ReactElement {
                             <p className="mb-1 text-xs text-text-muted">
                               {msg.role === 'user' ? '你' : msg.role === 'assistant' ? 'AI' : '系统'} · {new Date(msg.createdAt).toLocaleTimeString()}
                             </p>
-                            <p className="whitespace-pre-wrap text-text-secondary">{msg.content}</p>
+                            <div className={msg.role === 'user' ? 'whitespace-pre-wrap text-text-secondary' : 'markdown-body text-text-secondary'} onCopy={handleCopyMathSource}>
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm, remarkMath]}
+                                rehypePlugins={[rehypeTexSource, rehypeKatex]}
+                              >
+                                {normalizeMathDelimiters(msg.content)}
+                              </ReactMarkdown>
+                            </div>
                           </div>
                         ))}
                       </div>
