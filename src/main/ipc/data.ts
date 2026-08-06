@@ -125,7 +125,7 @@ export function registerConversationIpc(
     artifactQueue = artifactQueue.then(async () => {
       try {
         const pipeline = await runArtifactPipeline(
-          { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, diaryStore },
+          { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, readingNoteStore, diaryStore },
           conversationId,
           worldId,
           { classMode }
@@ -230,7 +230,7 @@ export function registerConversationIpc(
 
     try {
       const pipeline = await runArtifactPipeline(
-        { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, diaryStore },
+        { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, readingNoteStore, diaryStore },
         conversationId,
         worldId,
         { types: validTypes }
@@ -777,6 +777,7 @@ interface ArtifactPipelineDeps {
   conversationStore: ConversationStore
   textbookStore: TextbookStore
   artifactStore: ArtifactStore
+  readingNoteStore: ReadingNoteStore
   diaryStore: DiaryStore
 }
 
@@ -792,8 +793,25 @@ async function runArtifactPipeline(
   worldId: string,
   options: { classMode?: ClassMode; types?: ArtifactType[] } = {}
 ): Promise<ArtifactPipelineResult> {
-  const { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, diaryStore } = deps
+  const { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, readingNoteStore, diaryStore } = deps
   const { classMode, types } = options
+
+  // 本课教材的阅读批注（供日记产物参考；读取失败不影响产物生成）
+  const conv = await conversationStore.get(conversationId, worldId)
+  let readingNotes = ''
+  if (conv?.textbookId) {
+    try {
+      const notes = await readingNoteStore.list(conv.textbookId, worldId)
+      const parts = notes.slice(0, 12).map((n) => {
+        const loc = n.chapter || (n.position ? `位置 ${n.position}` : '教材')
+        const noteText = n.readerNote ? `（笔记：${n.readerNote}）` : ''
+        return `- ${loc}：${n.content.slice(0, 120)}${noteText}`
+      })
+      readingNotes = parts.join('\n').slice(0, 1500)
+    } catch {
+      // best-effort
+    }
+  }
 
   let apiKey = ''
   let model = 'deepseek-v4-flash'
@@ -817,7 +835,7 @@ async function runArtifactPipeline(
   const { results, failures: genFailures } = await generateArtifacts(
     messages,
     { apiKey, model, baseUrl },
-    { classMode, types }
+    { classMode, types, readingNotes: readingNotes || undefined }
   )
 
   let artifactCount = 0
@@ -861,10 +879,6 @@ async function runArtifactPipeline(
     if (result.type === ArtifactType.HandoffTail) handoffTailContent = result.content
     if (result.type === ArtifactType.Diary) diaryContent = result.content
   }
-
-  // Load conversation to get companionId / textbookId for writebacks
-  const conv = await conversationStore.get(conversationId, worldId)
-
   // Writeback: save progress artifact content to textbook progress
   if (progressContent && conv?.textbookId) {
     try {

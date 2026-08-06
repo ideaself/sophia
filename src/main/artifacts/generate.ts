@@ -29,6 +29,8 @@ export interface ArtifactGenerationOptions {
   classMode?: ClassMode
   /** Restrict generation to these artifact types (redo of missing items). */
   types?: ArtifactType[]
+  /** 本课教材的阅读批注文本（供日记参考），可选。 */
+  readingNotes?: string
 }
 
 /**
@@ -71,7 +73,8 @@ export async function generateArtifacts(
       ArtifactType.LearnerProfile,
       ArtifactType.PalMoments,
       ArtifactType.Relation,
-      ArtifactType.CompanionNote
+      ArtifactType.CompanionNote,
+      ArtifactType.KnowledgeGraph
     ]
     if (options.classMode === 'feynman') {
       artifactTypes.push(ArtifactType.FeynmanNote)
@@ -83,7 +86,13 @@ export async function generateArtifacts(
   const cardTarget = msgCount >= 60 ? '8-10 张' : msgCount >= 30 ? '5-8 张' : '3-5 张'
 
   const generators = artifactTypes.map((type) =>
-    generateArtifact(client, type, transcript, type === ArtifactType.Flashcards ? cardTarget : undefined)
+    generateArtifact(
+      client,
+      type,
+      transcript,
+      type === ArtifactType.Flashcards ? cardTarget : undefined,
+      type === ArtifactType.Diary ? options.readingNotes : undefined
+    )
   )
 
   const settled: PromiseSettledResult<ArtifactResult | null>[] = []
@@ -138,13 +147,18 @@ async function generateArtifact(
   client: DeepSeekClient,
   type: ArtifactType,
   transcript: string,
-  cardTarget?: string
+  cardTarget?: string,
+  readingNotes?: string
 ): Promise<ArtifactResult | null> {
   const prompt = buildArtifactPrompt(type, cardTarget)
 
+  const userContent = readingNotes
+    ? transcript + '\n\n【教材阅读批注】\n' + readingNotes
+    : transcript
+
   const response = await client.chat([
     { role: 'system', content: prompt },
-    { role: 'user', content: transcript }
+    { role: 'user', content: userContent }
   ])
 
   if (!response.content) return null
@@ -207,6 +221,8 @@ function buildArtifactPrompt(type: ArtifactType, cardTarget?: string): string {
 - 今天学到了什么
 - 有什么新的认识或感悟
 - 还想继续探索的问题
+
+如果用户内容中附有【教材阅读批注】（学习者阅读教材时做的标注），可自然融入其中 1-2 条与之相关的感悟，但不要逐条罗列。
 
 用中文回答。`
 
@@ -302,6 +318,16 @@ function buildArtifactPrompt(type: ArtifactType, cardTarget?: string): string {
 铁律：必须基于对话中的真实内容，绝不虚构学习者没有讲过的东西。
 如果对话很短或学习者几乎没讲，只写一句陈述事实即可。
 用中文回答，控制在 250 字以内。只输出知识蛋内容。`
+
+    case ArtifactType.KnowledgeGraph:
+      return `你是一位教育助手。请根据以下课堂对话，用 Mermaid flowchart 语法生成本节课的知识点关系图。
+要求：
+- 节点 = 本课真实讨论过的核心概念/知识点，标签简短（如 A[一元二次方程]）
+- 连线 = 概念间关系（引出/依赖/对比/举例等），用边标签标注，如 A -->|引出| B
+- 只使用对话中真正出现过的概念，不补充课外知识
+- 图例可加一句说明（用 %% 注释）
+输出格式：直接输出一个 mermaid 代码块（\`\`\`mermaid ... \`\`\`），不要其他解释文字。
+如果概念太少（少于 3 个），输出一句说明"本节课知识点较少，未生成图谱"。`
 
     default: {
       const _exhaustive: never = type
