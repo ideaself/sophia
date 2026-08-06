@@ -21,7 +21,7 @@ interface ArtifactDTO {
   createdAt: string
 }
 
-type ReviewTab = 'summary' | 'selftest' | 'flashcards' | 'diary' | 'progress' | 'feynman'
+type ReviewTab = 'summary' | 'selftest' | 'flashcards' | 'diary' | 'progress' | 'feynman' | 'knowledge'
 
 /** 逐级揭晓自测题（提示1 → 提示2 → 答案）。 */
 function SelfTestBlock({ questions }: { questions: SelfTestQuestion[] }): React.ReactElement {
@@ -147,6 +147,7 @@ export function ReviewView(): React.ReactElement {
     { key: 'flashcards', label: '记忆卡片', show: !!art('flashcards') },
     { key: 'diary', label: '学习日记', show: !!art('diary') },
     { key: 'progress', label: '学习进展', show: !!art('progress') },
+    { key: 'knowledge', label: '🧠 知识点图谱', show: !!art('knowledge_graph') },
     { key: 'feynman', label: '费曼知识蛋', show: !!art('feynman_note') }
   ]
   const visibleTabs = TABS.filter((t) => t.show)
@@ -254,6 +255,12 @@ export function ReviewView(): React.ReactElement {
           <div className="markdown-body max-w-3xl">
             <Suspense fallback={null}>
               <MarkdownRenderer>{art('progress') ?? ''}</MarkdownRenderer>
+            </Suspense>
+          </div>
+        ) : currentKey === 'knowledge' ? (
+          <div className="markdown-body max-w-3xl">
+            <Suspense fallback={null}>
+              <MarkdownRenderer>{art('knowledge_graph') ?? ''}</MarkdownRenderer>
             </Suspense>
           </div>
         ) : (

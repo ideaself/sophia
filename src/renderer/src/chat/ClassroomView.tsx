@@ -1,16 +1,18 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useChatStream } from './useChatStream'
 import { ChatMessage, type MessageHighlight } from './ChatMessage'
 import { ThinkingBlock } from '../components/ThinkingBlock'
-import { EpubReaderView } from '../reader/EpubReaderView'
-import { PdfReaderView } from '../reader/PdfReaderView'
 import { stopTTS } from '../hooks/useTTS'
 import { loadTabs, saveTabs, serializeTabs } from '../../../shared/tab-persistence'
 import { useAppStore } from '../stores/useAppStore'
 import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-templates'
 import { detectVoiceTrigger, loadVoiceTriggers } from '../../../shared/voice-trigger'
 import { estimateDailyStudyMinutes } from '../../../shared/study-time'
+
+// PDF/EPUB 阅读器体积大（pdfjs 等），打开阅读分栏时才加载
+const EpubReaderView = lazy(() => import('../reader/EpubReaderView').then((m) => ({ default: m.EpubReaderView })))
+const PdfReaderView = lazy(() => import('../reader/PdfReaderView').then((m) => ({ default: m.PdfReaderView })))
 
 interface Companion {
   id: string
@@ -1607,21 +1609,23 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
               className="flex min-w-0 flex-shrink-0 flex-col border-l border-surface-border bg-bg-deep"
               style={{ width: readerWidth }}
             >
-              {textbook.format === 'epub' ? (
-                <EpubReaderView
-                  textbookId={textbook.id}
-                  title={textbook.title}
-                  onClose={() => setReaderOpen(false)}
-                  embedded
-                />
-              ) : (
-                <PdfReaderView
-                  textbookId={textbook.id}
-                  title={textbook.title}
-                  onClose={() => setReaderOpen(false)}
-                  embedded
-                />
-              )}
+              <Suspense fallback={<div className="flex flex-1 items-center justify-center text-xs text-text-muted">阅读器加载中...</div>}>
+                {textbook.format === 'epub' ? (
+                  <EpubReaderView
+                    textbookId={textbook.id}
+                    title={textbook.title}
+                    onClose={() => setReaderOpen(false)}
+                    embedded
+                  />
+                ) : (
+                  <PdfReaderView
+                    textbookId={textbook.id}
+                    title={textbook.title}
+                    onClose={() => setReaderOpen(false)}
+                    embedded
+                  />
+                )}
+              </Suspense>
             </div>
           </>
         )}
