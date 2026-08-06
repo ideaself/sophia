@@ -65,6 +65,9 @@ export function SettingsView(): React.ReactElement {
   const [hideNarration, setHideNarration] = useState(
     () => localStorage.getItem('sophia.hideNarration') === '1'
   )
+  const [dailyGoal, setDailyGoal] = useState(
+    () => localStorage.getItem('sophia.dailyGoal') ?? '0'
+  )
   const [backingUp, setBackingUp] = useState(false)
   const [backupMsg, setBackupMsg] = useState<string | null>(null)
   const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale())
@@ -209,6 +212,13 @@ export function SettingsView(): React.ReactElement {
   const handleToggleHideNarration = (enabled: boolean) => {
     setHideNarration(enabled)
     localStorage.setItem('sophia.hideNarration', enabled ? '1' : '0')
+  }
+
+  const handleDailyGoalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value
+    setDailyGoal(v)
+    localStorage.setItem('sophia.dailyGoal', v)
+    window.dispatchEvent(new Event('sophia:goal-changed'))
   }
 
   const handleExportBackup = async () => {
@@ -661,6 +671,23 @@ export function SettingsView(): React.ReactElement {
             onChange={(e) => handleToggleThinking(e.target.checked)}
             className="h-4 w-4 flex-shrink-0"
           />
+        </label>
+        <label className="mt-2 flex cursor-pointer items-center justify-between rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
+          <div className="pr-4">
+            <p className="text-sm font-medium">每日学习目标</p>
+            <p className="mt-0.5 text-xs text-text-muted">课堂顶栏显示当日学习进度环（0 = 关闭）</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={600}
+              value={dailyGoal}
+              onChange={handleDailyGoalChange}
+              className="w-20 rounded border border-surface-border-strong bg-bg-deep px-2 py-1 text-right text-sm text-text-primary focus:border-accent-border focus:outline-none"
+            />
+            <span className="text-xs text-text-muted">分钟</span>
+          </div>
         </label>
         <label className="mt-2 flex cursor-pointer items-center justify-between rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
           <div className="pr-4">

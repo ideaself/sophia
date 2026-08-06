@@ -10,6 +10,7 @@ import { loadTabs, saveTabs, serializeTabs } from '../../../shared/tab-persisten
 import { useAppStore } from '../stores/useAppStore'
 import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-templates'
 import { detectVoiceTrigger, loadVoiceTriggers } from '../../../shared/voice-trigger'
+import { estimateDailyStudyMinutes } from '../../../shared/study-time'
 
 interface Companion {
   id: string
@@ -72,6 +73,51 @@ type MessageRow =
 
 const WORLD_ID = 'world_default'
 const MAX_INPUT_LENGTH = 20000
+
+/**
+ * 今日已学习时长（分钟）。挂载、窗口聚焦时刷新，另每 5 分钟轮询一次，
+ * 供顶栏「每日目标」进度环使用（估算口径与统计页一致）。
+ */
+function useTodayStudyMinutes(): number {
+  const [minutes, setMinutes] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const convs = await window.sophia.data.listConversations(WORLD_ID) as Array<{ id: string }>
+        const start = new Date()
+        start.setHours(0, 0, 0, 0)
+        const startMs = start.getTime()
+        let total = 0
+        await Promise.all(convs.map(async (c) => {
+          try {
+            const msgs = await window.sophia.data.listMessages(c.id)
+            const times = msgs
+              .map((m) => new Date(m.createdAt).getTime())
+              .filter((t) => Number.isFinite(t) && t >= startMs)
+            for (const v of estimateDailyStudyMinutes(times).values()) total += v
+          } catch {
+            // 单个会话读取失败不影响整体
+          }
+        }))
+        if (!cancelled) setMinutes(Math.round(total / 60000))
+      } catch {
+        // 保留上次值
+      }
+    }
+    load()
+    window.addEventListener('focus', load)
+    const timer = setInterval(load, 5 * 60_000)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', load)
+      clearInterval(timer)
+    }
+  }, [])
+
+  return minutes
+}
 
 const MATH_SYMBOL_GROUPS: Array<{ id: string; label: string; items: string[] }> = [
   {
@@ -165,6 +211,21 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const mathRef = useRef<HTMLDivElement>(null)
   // Shortcut cheat sheet (Ctrl+/)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  // 每日学习目标（分钟，0 = 关闭）——设置页修改后通过事件同步
+  const [dailyGoal, setDailyGoal] = useState(() => {
+    const n = parseInt(localStorage.getItem('sophia.dailyGoal') ?? '', 10)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  })
+  const todayMinutes = useTodayStudyMinutes()
+
+  useEffect(() => {
+    const onChange = () => {
+      const n = parseInt(localStorage.getItem('sophia.dailyGoal') ?? '', 10)
+      setDailyGoal(Number.isFinite(n) && n > 0 ? n : 0)
+    }
+    window.addEventListener('sophia:goal-changed', onChange)
+    return () => window.removeEventListener('sophia:goal-changed', onChange)
+  }, [])
   // Scroll behavior: stick to the bottom unless the user scrolls up
   const [stickToBottom, setStickToBottom] = useState(true)
   // Mirror of `tabs` for async callbacks — the render-closure `tabs` goes
@@ -1151,6 +1212,23 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             )}
             {chatStream.state.isStreaming && (
               <span className="text-xs text-amber-400 animate-pulse">正在思考...</span>
+            )}
+            {dailyGoal > 0 && (
+              <div
+                className="flex items-center gap-1.5"
+                title={`今日已学习 ${todayMinutes}/${dailyGoal} 分钟`}
+              >
+                <svg width="26" height="26" viewBox="0 0 36 36">
+                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--bg-elevated)" strokeWidth="4" />
+                  <circle
+                    cx="18" cy="18" r="15.5" fill="none" stroke="var(--accent)" strokeWidth="4"
+                    strokeLinecap="round" pathLength={100}
+                    strokeDasharray={`${Math.min(100, Math.round((todayMinutes / dailyGoal) * 100))} 100`}
+                    transform="rotate(-90 18 18)"
+                  />
+                </svg>
+                <span className="text-xs tabular-nums text-text-muted">{todayMinutes}/{dailyGoal}m</span>
+              </div>
             )}
             {activeTab.conversationId && (
               <button
