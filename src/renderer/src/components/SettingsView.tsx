@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ThemeSwitcher } from './ThemeSwitcher'
+import { CollapsibleSection } from './CollapsibleSection'
 import { WebDavSyncView } from './WebDavSyncView'
 import {
   FONT_SCALE_OPTIONS,
@@ -492,8 +493,7 @@ export function SettingsView(): React.ReactElement {
         </div>
       </div>
 
-      <div className="mb-8">
-        <h3 className="mb-3 text-lg font-semibold">常用文本模板</h3>
+      <CollapsibleSection title="常用文本模板" badge={`${templates.length}/${MAX_TEXT_TEMPLATES}`}>
         <p className="mb-3 text-xs text-text-muted">
           设置常用文字片段（最多 {MAX_TEXT_TEMPLATES} 条，每条 ≤ {MAX_TEMPLATE_LENGTH} 字）。
           在课堂输入框点「☰」按钮或按 Alt+1..9 插入。
@@ -530,10 +530,9 @@ export function SettingsView(): React.ReactElement {
             </button>
           )}
         </div>
-      </div>
+      </CollapsibleSection>
 
-      <div className="mb-8">
-        <h3 className="mb-3 text-lg font-semibold">语音输入触发词</h3>
+      <CollapsibleSection title="语音输入触发词">
         <p className="mb-3 text-xs text-text-muted">
           用系统或第三方语音输入（macOS 听写、Windows 系统语音、讯飞输入法等）说话时，
           说完设定好的触发短语即可免手发送或清空消息。
@@ -564,10 +563,9 @@ export function SettingsView(): React.ReactElement {
             <span className="flex-shrink-0 text-xs text-text-muted">在输入末尾说出即清空输入</span>
           </div>
         </div>
-      </div>
+      </CollapsibleSection>
 
-      <div className="mb-8">
-        <h3 className="mb-3 text-lg font-semibold">在线词典</h3>
+      <CollapsibleSection title="在线词典" defaultOpen>
         <p className="mb-3 text-xs text-text-muted">
           在教材阅读器（EPUB）中选中英文单词时，自动弹出词典查询。可自定义词典网址模板。
         </p>
@@ -612,7 +610,7 @@ export function SettingsView(): React.ReactElement {
             <span className="text-xs text-text-muted">示例：{buildDictUrl(dictConfig.template, 'hello')}</span>
           </div>
         </div>
-      </div>
+      </CollapsibleSection>
 
       <div className="mb-8">
         <h3 className="mb-3 text-lg font-semibold">数据备份</h3>
@@ -650,8 +648,7 @@ export function SettingsView(): React.ReactElement {
         </div>
       </div>
 
-      <div className="mb-8">
-        <h3 className="mb-3 text-lg font-semibold">历史归档（回收站）</h3>
+      <CollapsibleSection title="历史归档（回收站）" badge={archiveItems.length > 0 ? `${archiveItems.length} 项` : undefined}>
         <p className="mb-3 text-xs text-text-muted">
           删除课堂、教材或伙伴时，数据会先移入此处，可随时恢复或彻底删除。
         </p>
@@ -713,7 +710,7 @@ export function SettingsView(): React.ReactElement {
             ))}
           </ul>
         )}
-      </div>
+      </CollapsibleSection>
 
       <div className="mb-8">
         <h3 className="mb-3 text-lg font-semibold">档案锁</h3>
@@ -856,9 +853,8 @@ export function SettingsView(): React.ReactElement {
         </div>
       </div>
 
-      <h2 className="mb-6 text-2xl font-bold">模型服务设置</h2>
-
-      {error && (
+      <CollapsibleSection title="模型服务设置" badge={providers.length > 0 ? `${providers.length} 个服务` : undefined} defaultOpen>
+        {error && (
         <div className="mb-4 rounded border border-red-800 bg-red-900/30 px-4 py-2 text-sm text-red-300">
           {error}
         </div>
@@ -952,6 +948,7 @@ export function SettingsView(): React.ReactElement {
       >
         + 添加模型服务
       </button>
+      </CollapsibleSection>
 
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
