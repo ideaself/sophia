@@ -1,17 +1,17 @@
 import { useState } from 'react'
 import { useCompanionStore } from '../stores/useCompanionStore'
-import { useAppStore } from '../stores/useAppStore'
 import type { Companion } from '../types/models'
 
-export function CompanionsManageView(): React.ReactElement {
+interface CompanionsManageViewProps {
+  /** 「开始对话」：带着该角色打开新建课堂弹窗（继续选教材）。 */
+  onStartConversation: (c: Companion) => void
+}
+
+export function CompanionsManageView({ onStartConversation }: CompanionsManageViewProps): React.ReactElement {
   const companions = useCompanionStore((s) => s.companions)
   const startEdit = useCompanionStore((s) => s.startEdit)
   const startCreate = useCompanionStore((s) => s.startCreate)
   const fetchCompanions = useCompanionStore((s) => s.fetch)
-  const setSelectedCompanion = useCompanionStore((s) => s.select)
-  const setView = useAppStore((s) => s.setView)
-  const setLoadConversationId = useAppStore((s) => s.setLoadConversationId)
-  const incrementResetKey = useAppStore((s) => s.incrementResetKey)
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
@@ -19,16 +19,6 @@ export function CompanionsManageView(): React.ReactElement {
     await window.sophia.companions.delete(id)
     setDeleteConfirmId(null)
     fetchCompanions()
-  }
-
-  const handleStartConversation = async (c: Companion) => {
-    const full = await window.sophia.companions.get(c.id)
-    if (full) {
-      setSelectedCompanion({ id: full.id, name: full.name, identity: full.identity, personalityKeywords: full.personalityKeywords })
-    }
-    setLoadConversationId(null)
-    incrementResetKey()
-    setView('classroom')
   }
 
   return (
@@ -64,7 +54,7 @@ export function CompanionsManageView(): React.ReactElement {
             </button>
             <div className="mt-3 flex items-center justify-between">
               <button
-                onClick={() => handleStartConversation(c)}
+                onClick={() => onStartConversation(c)}
                 className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
               >开始对话</button>
               {deleteConfirmId === c.id ? (

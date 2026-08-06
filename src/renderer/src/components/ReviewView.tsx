@@ -174,7 +174,7 @@ export function ReviewView(): React.ReactElement {
     }
     setReviewScope(null)
     setLoadConversationId(null)
-    useAppStore.getState().incrementResetKey()
+    useAppStore.getState().beginNewClassroom()
     setView('classroom')
   }
 

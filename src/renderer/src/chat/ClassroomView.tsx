@@ -30,6 +30,8 @@ interface ClassroomViewProps {
   chatStream: ReturnType<typeof useChatStream>
   loadConversationId?: string | null
   onConversationLoaded?: () => void
+  /** > 0 表示这是「新建课堂」的启动：忽略持久化的旧标签页，从空白对话开始。 */
+  freshStartNonce?: number
 }
 
 interface DisplayMessage {
@@ -114,8 +116,8 @@ function makeTab(conversationId?: string, title?: string): TabState {
   }
 }
 
-export function ClassroomView({ companion, textbook, chatStream, loadConversationId, onConversationLoaded }: ClassroomViewProps): React.ReactElement {
-  const [initialTabs] = useState(() => loadTabs(localStorage))
+export function ClassroomView({ companion, textbook, chatStream, loadConversationId, onConversationLoaded, freshStartNonce = 0 }: ClassroomViewProps): React.ReactElement {
+  const [initialTabs] = useState(() => freshStartNonce > 0 ? null : loadTabs(localStorage))
   const [tabs, setTabs] = useState<TabState[]>(() =>
     initialTabs
       ? initialTabs.tabs.map((t) => ({

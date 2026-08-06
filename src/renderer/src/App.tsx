@@ -5,6 +5,7 @@ import { useChatStream } from './chat/useChatStream'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
 import { useDueFlashcardCount } from './hooks/useFlashcards'
 import { CompanionEditModal } from './components/CompanionEditModal'
+import { NewClassroomModal } from './components/NewClassroomModal'
 import { SettingsView } from './components/SettingsView'
 import { CompanionsManageView } from './components/CompanionsManageView'
 import { StatsView } from './components/StatsView'
@@ -12,7 +13,7 @@ import { useAppStore } from './stores/useAppStore'
 import { useCompanionStore } from './stores/useCompanionStore'
 import { useTextbookStore } from './stores/useTextbookStore'
 import { useConversationStore } from './stores/useConversationStore'
-import { WORLD_ID, type ActiveConversation, type Companion } from './types/models'
+import { WORLD_ID, type ActiveConversation, type Companion, type Textbook } from './types/models'
 import { applyFontScale } from '../../shared/font-scale'
 import { applyTheme, getStoredTheme } from './lib/theme'
 
@@ -31,7 +32,11 @@ function App(): React.ReactElement {
   const loadConversationId = useAppStore((s) => s.loadConversationId)
   const setLoadConversationId = useAppStore((s) => s.setLoadConversationId)
   const classroomResetKey = useAppStore((s) => s.classroomResetKey)
-  const incrementResetKey = useAppStore((s) => s.incrementResetKey)
+  const freshClassroomNonce = useAppStore((s) => s.freshClassroomNonce)
+  const newClassroomOpen = useAppStore((s) => s.newClassroomOpen)
+  const newClassroomPreselect = useAppStore((s) => s.newClassroomPreselect)
+  const setNewClassroomOpen = useAppStore((s) => s.setNewClassroomOpen)
+  const setNewClassroomPreselect = useAppStore((s) => s.setNewClassroomPreselect)
   const flashcardScope = useAppStore((s) => s.flashcardScope)
   const setFlashcardScope = useAppStore((s) => s.setFlashcardScope)
 
@@ -137,15 +142,20 @@ function App(): React.ReactElement {
     setShowClassroomDropdown(false)
   }
 
-  const handleNewClassroom = (comp?: Companion) => {
-    if (comp) {
-      setSelectedCompanion(comp)
-      setLoadConversationId(null)
-      incrementResetKey()
-      setView('classroom')
-    } else {
-      setView('companions')
-    }
+  const handleNewClassroomConfirm = (comp: Companion, textbook: Textbook | null) => {
+    setSelectedCompanion(comp)
+    setSelectedTextbook(textbook)
+    setLoadConversationId(null)
+    useAppStore.getState().beginNewClassroom()
+    setView('classroom')
+    setShowClassroomDropdown(false)
+    setNewClassroomOpen(false)
+    setNewClassroomPreselect(null)
+  }
+
+  const openNewClassroomModal = (preselect: Companion | null = null) => {
+    setNewClassroomPreselect(preselect)
+    setNewClassroomOpen(true)
     setShowClassroomDropdown(false)
   }
 
@@ -192,7 +202,7 @@ function App(): React.ReactElement {
                   <h3 className="text-sm font-semibold">选择课堂</h3>
                 </div>
                 <div className="max-h-80 overflow-auto p-2">
-                  <button onClick={() => handleNewClassroom()}
+                  <button onClick={() => openNewClassroomModal()}
                     className="mb-1 w-full rounded-md border border-dashed border-surface-border-strong px-3 py-2 text-left text-sm text-text-secondary hover:border-accent-border hover:text-accent-hover">
                     + 新建课堂
                   </button>
@@ -267,7 +277,7 @@ function App(): React.ReactElement {
         <ErrorBoundary>
           <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-text-muted">加载中...</div>}>
             {view === 'settings' && <SettingsView />}
-            {view === 'companions' && <CompanionsManageView />}
+            {view === 'companions' && <CompanionsManageView onStartConversation={(c) => openNewClassroomModal(c)} />}
             {view === 'textbooks' && <TextbooksView />}
             {view === 'history' && <HistoryView />}
             {view === 'review' && <ReviewView />}
@@ -278,7 +288,8 @@ function App(): React.ReactElement {
             {view === 'classroom' && (
               <div key={classroomResetKey} className="h-full">
                 <ClassroomView companion={selectedCompanion} textbook={selectedTextbook} chatStream={chatStream}
-                  loadConversationId={loadConversationId} onConversationLoaded={onConversationLoaded} />
+                  loadConversationId={loadConversationId} onConversationLoaded={onConversationLoaded}
+                  freshStartNonce={freshClassroomNonce} />
               </div>
             )}
           </Suspense>
@@ -289,6 +300,14 @@ function App(): React.ReactElement {
         <CompanionEditModal companion={editingCompanion} isCreating={isCreatingCompanion}
           onSave={saveCompanion} onDelete={!isCreatingCompanion ? removeCompanion : undefined}
           onClose={closeEditCompanion} />
+      )}
+
+      {newClassroomOpen && (
+        <NewClassroomModal
+          initialCompanion={newClassroomPreselect}
+          onConfirm={handleNewClassroomConfirm}
+          onCancel={() => { setNewClassroomOpen(false); setNewClassroomPreselect(null) }}
+        />
       )}
     </div>
   )

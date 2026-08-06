@@ -178,8 +178,7 @@ export function HistoryView(): React.ReactElement {
   // --- 操作 ---
 
   const handleNewClassroom = () => {
-    useAppStore.getState().incrementResetKey()
-    setView('classroom')
+    useAppStore.getState().setNewClassroomOpen(true)
   }
 
   const handleResume = async (convId: string) => {
@@ -209,7 +208,7 @@ export function HistoryView(): React.ReactElement {
       setSelectedTextbook(null)
     }
     setLoadConversationId(null)
-    useAppStore.getState().incrementResetKey()
+    useAppStore.getState().beginNewClassroom()
     setView('classroom')
   }
 
