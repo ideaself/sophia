@@ -36,7 +36,7 @@ export async function maybeAutoBackup(dataRoot: string): Promise<void> {
     const stamp = new Date().toISOString().slice(0, 10)
     await createBackupZip(dataRoot, join(dir, `auto-${stamp}.zip`))
 
-    // Prune: keep the newest AUTO_BACKUP_KEEP backups
+    // Prune: keep 4 newest old backups + the one just created = 5 total
     const timed = (
       await Promise.all(
         files.map(async (f) => {
@@ -49,7 +49,7 @@ export async function maybeAutoBackup(dataRoot: string): Promise<void> {
       )
     ).filter((x): x is { f: string; t: number } => x !== null)
     timed.sort((a, b) => b.t - a.t)
-    for (const old of timed.slice(AUTO_BACKUP_KEEP)) {
+    for (const old of timed.slice(AUTO_BACKUP_KEEP - 1)) {
       await unlink(join(dir, old.f)).catch(() => {})
     }
   } catch (err) {
