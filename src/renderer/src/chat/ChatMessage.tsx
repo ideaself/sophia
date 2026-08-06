@@ -1,9 +1,9 @@
 import { useMemo, useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { useTTS, stripMarkdown } from '../hooks/useTTS'
 import { TTSControlPanel } from '../components/TTSControlPanel'
+import { MermaidBlock } from '../components/MermaidBlock'
 import { normalizeMathDelimiters } from '../../../shared/math-delimiters'
 import { handleCopyMathSource } from '../lib/mathCopy'
-import { loadMermaid } from '../lib/mermaid'
 
 const MarkdownRenderer = lazy(() => import('../lib/MarkdownRenderer'))
 
@@ -23,36 +23,6 @@ interface ChatMessageProps {
   onRegenerate?: (id: string) => void
   /** Rewind the conversation to this message (drop everything after it). */
   onRewind?: (id: string) => void
-}
-
-function MermaidBlock({ code }: { code: string }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [error, setError] = useState<string | null>(null)
-  const id = useRef(`mermaid-${Math.random().toString(36).slice(2, 10)}`)
-
-  useEffect(() => {
-    if (!ref.current) return
-    let cancelled = false
-    loadMermaid()
-      .then((m) => m.default.render(id.current, code))
-      .then(({ svg }) => {
-        if (!cancelled && ref.current) {
-          ref.current.innerHTML = svg
-          setError(null)
-        }
-      })
-      .catch((e) => {
-        if (!cancelled) setError(String(e))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [code])
-
-  if (error) {
-    return <pre className="text-xs text-red-400 overflow-auto"><code>{code}</code></pre>
-  }
-  return <div ref={ref} className="my-2 flex justify-center" />
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -293,7 +263,7 @@ export function ChatMessage({
         </Suspense>
       </div>
     )
-  }, [content, id, isUser])
+  }, [content, isUser, textbookId])
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} group`}>

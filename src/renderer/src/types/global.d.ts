@@ -98,7 +98,7 @@ declare global {
   interface ArtifactDTO {
     id: string
     conversationId: string
-    type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note'
+    type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note' | 'knowledge_graph'
     content: string
     createdAt: string
   }
@@ -181,7 +181,7 @@ declare global {
     deleteTextbook: (textbookId: string, worldId?: string) => Promise<boolean>
     createArtifact: (input: {
       conversationId: string
-      type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note'
+      type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note' | 'knowledge_graph'
       content: string
       worldId?: string
     }) => Promise<ArtifactDTO>

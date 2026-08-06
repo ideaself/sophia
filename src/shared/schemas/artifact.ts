@@ -21,7 +21,8 @@ const artifactTypeSchema = z.enum([
   ArtifactType.PalMoments,
   ArtifactType.Relation,
   ArtifactType.CompanionNote,
-  ArtifactType.FeynmanNote
+  ArtifactType.FeynmanNote,
+  ArtifactType.KnowledgeGraph
 ])
 
 const isoDatetime = z.string().datetime({ offset: true })

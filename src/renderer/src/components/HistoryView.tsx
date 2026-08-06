@@ -376,7 +376,8 @@ export function HistoryView(): React.ReactElement {
     pal_moments: '💭 互动备忘',
     relation: '💞 关系状态',
     companion_note: '🤔 伙伴独白',
-    feynman_note: '🥚 费曼知识蛋'
+    feynman_note: '🥚 费曼知识蛋',
+    knowledge_graph: '🧠 知识点图谱'
   }
 
   return (

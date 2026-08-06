@@ -55,7 +55,8 @@ export const ArtifactType = {
   PalMoments: 'pal_moments',
   Relation: 'relation',
   CompanionNote: 'companion_note',
-  FeynmanNote: 'feynman_note'
+  FeynmanNote: 'feynman_note',
+  KnowledgeGraph: 'knowledge_graph'
 } as const
 export type ArtifactType = (typeof ArtifactType)[keyof typeof ArtifactType]
 

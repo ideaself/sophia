@@ -6,7 +6,7 @@ import { artifactsDir, artifactPath } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
 import { atomicWriteFile } from './atomic-write'
 
-type ArtifactTypeValue = 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note'
+type ArtifactTypeValue = 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note' | 'knowledge_graph'
 
 let idCounter = 0
 
