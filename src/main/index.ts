@@ -182,6 +182,12 @@ if (!app.requestSingleInstanceLock()) {
         }
       }
 
+      const devUrl = process.env['ELECTRON_RENDERER_URL']
+      if (devUrl && details.url.startsWith(devUrl)) {
+        callback({})
+        return
+      }
+
       callback({
         responseHeaders: {
           ...details.responseHeaders,
