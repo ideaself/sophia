@@ -689,7 +689,9 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         }
       }
 
-      inputRef.current?.focus()
+      // 流式结束后恢复输入框焦点（rAF 等 React 完成状态刷新，避免
+      // 在禁用态切换的间隙聚焦失败）
+      requestAnimationFrame(() => inputRef.current?.focus())
     } catch (e) {
       setSendError(e instanceof Error ? e.message : '发送失败，请重试')
     } finally {
@@ -1577,8 +1579,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             }}
             rows={1}
             placeholder="输入你的问题... (Enter 发送，Shift+Enter 换行)"
-            disabled={chatStream.state.isStreaming || sendingRef.current}
-            className="flex-1 resize-none overflow-y-auto rounded border border-surface-border-strong bg-bg-deep px-4 py-2 text-sm leading-relaxed text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none disabled:opacity-50"
+            className="flex-1 resize-none overflow-y-auto rounded border border-surface-border-strong bg-bg-deep px-4 py-2 text-sm leading-relaxed text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
           />
           {chatStream.state.isStreaming ? (
             <button
