@@ -9,7 +9,7 @@ import { readWorldData } from '../storage/world-store'
 import { TextbookStore } from '../storage/textbook-store'
 import { ConversationStore } from '../storage/conversation-store'
 import { ArtifactStore } from '../storage/artifact-store'
-import { companionDir, palMomentsPath, relationPath, handoffMetaPath } from '../storage/app-data'
+import { companionDir, palMomentsPath, palMomentsPathForTextbook, relationPath, handoffMetaPath } from '../storage/app-data'
 import { IpcChatPromptMessagesInputSchema, IpcAiComposeInputSchema } from '../../shared/schemas/ipc'
 import { compressMessages, splitCompressionWindowByTokens } from '../prompt/message-compressor'
 import { analyzeTeaching, shouldAnalyze, formatAssessment } from '../prompt/teaching-coach'
@@ -105,12 +105,10 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
     )
     const handoffTail = handoff.tail
 
-    // 4b. Load pal moments (cross-session teaching interaction notes)
-    let palMoments: string | undefined
-    try {
-      const raw = await readFile(palMomentsPath(dataRoot, params.worldId), 'utf-8')
-      palMoments = raw.trim() || undefined
-    } catch { /* file doesn't exist yet */ }
+    // 4b. Load pal moments (cross-session teaching interaction notes).
+    //     按教材隔离：有教材的课堂只读该教材专属的备忘文件，避免上一门
+    //     课（如傅里叶光学）的互动内容串进新教材（微积分）课堂。
+    const palMoments = await loadPalMoments(dataRoot, params.worldId, params.textbookId ?? null)
 
     // 4c. Load relationship state for this companion
     let relationState: string | undefined
@@ -300,6 +298,23 @@ async function loadCompanion(dataRoot: string, companionId: string): Promise<Com
     return companions.find((c) => c.id === companionId) ?? null
   } catch {
     return null
+  }
+}
+
+/** 读取教学互动备忘：有教材读专属文件，无教材读全局文件。 */
+export async function loadPalMoments(
+  dataRoot: string,
+  worldId: string,
+  textbookId: string | null
+): Promise<string | undefined> {
+  const filePath = textbookId
+    ? palMomentsPathForTextbook(dataRoot, textbookId, worldId)
+    : palMomentsPath(dataRoot, worldId)
+  try {
+    const raw = await readFile(filePath, 'utf-8')
+    return raw.trim() || undefined
+  } catch {
+    return undefined
   }
 }
 

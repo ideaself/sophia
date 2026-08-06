@@ -150,7 +150,11 @@ function buildLearnerSegment(learnerInfo: string): string {
   return [
     '## 关于学习者',
     '',
-    wrapUserContent(learnerInfo.trim())
+    wrapUserContent(learnerInfo.trim()),
+    '',
+    '这份档案可能包含学习者过去在**其他学科**上的表现（如具体公式、章节、题目）。',
+    '只参考其中的通用学习特征（习惯、风格、认知倾向）；如果档案内容与本节课教材主题不符，',
+    '一律视为历史背景，**不得延续那些学科主题**，也不要主动提起或回顾。'
   ].join('\n')
 }
 
@@ -158,7 +162,11 @@ function buildTextbookSegment(content: string): string {
   return [
     '## 本节课教材',
     '',
-    wrapUserContent(content.trim())
+    wrapUserContent(content.trim()),
+    '',
+    '【主题权威】本节课只围绕这本教材展开教学：课堂主题、内容推进、提问与作业都以此为准。',
+    '如果其他上下文（学习者档案、互动备忘、上次课堂接力等）中出现了与这本教材无关的历史学科内容，',
+    '一律忽略，不得延续、回顾或混入本课。'
   ].join('\n')
 }
 
@@ -253,7 +261,9 @@ function buildPalMomentsSegment(content: string): string {
   return [
     '## 教学互动备忘',
     '',
-    '以下是以往课堂中记录的关键教学互动，帮助你了解学习者的历史表现：',
+    '以下是以往课堂中记录的关键教学互动，帮助你了解学习者的历史表现。',
+    '其中可能包含历史学科的具体内容，只用于参考学习者的习惯与风格，',
+    '**不要延续备忘里不属于本节课教材主题的内容**。',
     '',
     wrapUserContent(content.trim())
   ].join('\n')

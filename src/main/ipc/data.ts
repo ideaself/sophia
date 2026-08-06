@@ -21,6 +21,7 @@ import { createBackupZip } from '../backup/backup'
 import {
   learnerPath,
   palMomentsPath,
+  palMomentsPathForTextbook,
   relationPath,
   handoffMetaPath,
   textbookDir,
@@ -911,10 +912,13 @@ async function runArtifactPipeline(
     }
   }
 
-  // Writeback: prepend pal moments entry to pal_moments.md
+  // Writeback: prepend pal moments entry. 有教材课堂写入按教材隔离的文件
+  //（pal_moments_{textbookId}.md），避免串到其他教材的新课堂。
   if (palMomentsContent) {
     try {
-      const filePath = palMomentsPath(dataRoot, worldId)
+      const filePath = conv?.textbookId
+        ? palMomentsPathForTextbook(dataRoot, conv.textbookId, worldId)
+        : palMomentsPath(dataRoot, worldId)
       let existing = ''
       try { existing = await readFile(filePath, 'utf-8') } catch { /* file doesn't exist yet */ }
       const merged = palMomentsContent + (existing ? '\n\n---\n\n' + existing : '')

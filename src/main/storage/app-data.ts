@@ -72,6 +72,20 @@ export function palMomentsPath(
   return join(worldDir(dataRoot, worldId, profileId), 'pal_moments.md')
 }
 
+/**
+ * 按教材隔离的教学互动备忘文件：有教材的课堂读写
+ * pal_moments_{textbookId}.md，无教材课堂读写全局 pal_moments.md。
+ * 避免上一门课（如傅里叶光学）的互动内容串进新教材（微积分）课堂。
+ */
+export function palMomentsPathForTextbook(
+  dataRoot: string,
+  textbookId: string,
+  worldId: string = DEFAULT_WORLD_ID,
+  profileId: string = DEFAULT_PROFILE_ID
+): string {
+  return join(worldDir(dataRoot, worldId, profileId), `pal_moments_${textbookId}.md`)
+}
+
 export function relationPath(
   dataRoot: string,
   companionId: string,
