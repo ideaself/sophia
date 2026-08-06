@@ -1381,16 +1381,16 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                     </>
                   )}
                   {row.kind === 'error' && (
-                    <div className="rounded border border-red-800 bg-red-900/30 px-4 py-3 text-sm text-red-300">
+                    <div className="rounded border border-red-700/50 bg-red-900/20 px-4 py-3 text-sm text-red-500">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-medium">发送失败</p>
-                          <p className="mt-1 text-xs text-red-400">{sendError ?? chatStream.state.error?.message}</p>
+                          <p className="mt-1 text-xs text-red-500/80">{sendError ?? chatStream.state.error?.message}</p>
                         </div>
                         {activeTab.retryMessage && (
                           <button
                             onClick={() => handleSend(activeTab.retryMessage!.input)}
-                            className="rounded bg-red-800 px-3 py-1 text-xs text-red-200 hover:bg-red-700"
+                            className="rounded bg-red-700 px-3 py-1 text-xs text-white hover:bg-red-600"
                           >
                             重试
                           </button>
@@ -1402,12 +1402,12 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                     <div className="rounded border border-surface-border bg-bg-elevated px-4 py-3 text-sm text-text-primary">
                       <p className="font-medium">课程已结束</p>
                       {activeTab.endResult.pending && (
-                        <p className="mt-2 text-xs text-amber-300 animate-pulse">
+                        <p className="mt-2 text-xs text-text-secondary animate-pulse">
                           学习摘要后台生成中，完成后自动显示…
                         </p>
                       )}
                       {activeTab.endResult.generationError && (
-                        <p className="mt-2 text-xs text-red-400">
+                        <p className="mt-2 text-xs text-red-500">
                           后台生成失败：{activeTab.endResult.generationError}
                         </p>
                       )}
@@ -1438,8 +1438,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                         </>
                       )}
             {activeTab.endResult.failures && activeTab.endResult.failures.length > 0 && (
-              <div className="mt-3 flex items-center justify-between gap-3 rounded border border-amber-800 bg-amber-900/20 px-3 py-2">
-                <p className="text-xs text-amber-300">
+              <div className="mt-3 flex items-center justify-between gap-3 rounded border border-amber-700/50 bg-amber-900/20 px-3 py-2">
+                <p className="text-xs text-text-secondary">
                   有 {activeTab.endResult.failures.length} 项学习摘要生成失败（可能是网络中断），可只补齐缺失项。
                 </p>
                 <button
