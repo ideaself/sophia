@@ -181,7 +181,7 @@ export function StatsView(): React.ReactElement {
           <p className="mt-1 text-sm text-text-muted">总消息数</p>
         </div>
         <div className="rounded-xl border border-surface-border bg-bg-surface p-4">
-          <p className="text-3xl font-bold text-cyan-400">{totalArtifacts}</p>
+          <p className="text-3xl font-bold text-emerald-400">{totalArtifacts}</p>
           <p className="mt-1 text-sm text-text-muted">学习产物</p>
         </div>
       </div>

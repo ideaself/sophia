@@ -16,7 +16,7 @@ import { useAppStore } from './stores/useAppStore'
 import { useCompanionStore } from './stores/useCompanionStore'
 import { useTextbookStore } from './stores/useTextbookStore'
 import { useConversationStore } from './stores/useConversationStore'
-import { WORLD_ID, type ActiveConversation, type Companion, type Textbook } from './types/models'
+import { WORLD_ID, THEMES, type ActiveConversation, type Companion, type Textbook } from './types/models'
 import { applyFontScale } from '../../shared/font-scale'
 
 function App(): React.ReactElement {
@@ -86,8 +86,9 @@ function App(): React.ReactElement {
   }, [])
 
   useEffect(() => {
-    const saved = localStorage.getItem('sophia-theme') || 'dark'
-    document.documentElement.setAttribute('data-theme', saved)
+    const saved = localStorage.getItem('sophia-theme')
+    const theme = saved && THEMES.some((t) => t.id === saved) ? saved : 'dark'
+    document.documentElement.setAttribute('data-theme', theme)
   }, [])
 
   // Global UI font scale (1.0.7 / 3.2.0)

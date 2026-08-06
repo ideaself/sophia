@@ -638,7 +638,7 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
                 </button>
                 <button
                   onClick={() => handleRate('easy')}
-                  className="rounded bg-blue-700 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600"
+                  className="rounded bg-accent px-5 py-2 text-sm font-medium text-white hover:bg-accent-hover"
                 >
                   简单
                 </button>

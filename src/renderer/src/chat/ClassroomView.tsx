@@ -1295,7 +1295,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                     </div>
                   )}
                   {row.kind === 'end' && activeTab.endResult && (
-                    <div className="rounded border border-green-800 bg-green-900/30 px-4 py-3 text-sm text-green-300">
+                    <div className="rounded border border-surface-border bg-bg-elevated px-4 py-3 text-sm text-text-primary">
                       <p className="font-medium">课程已结束</p>
                       {activeTab.endResult.pending && (
                         <p className="mt-2 text-xs text-amber-300 animate-pulse">
@@ -1308,11 +1308,11 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                         </p>
                       )}
                       {activeTab.endResult.farewell && (
-                        <p className="mt-2 text-sm text-green-200 italic">{activeTab.endResult.farewell}</p>
+                        <p className="mt-2 text-sm text-text-secondary italic">{activeTab.endResult.farewell}</p>
                       )}
                       {!activeTab.endResult.pending && (
                         <>
-                          <p className="mt-1 text-xs text-green-400">
+                          <p className="mt-1 text-xs text-text-muted">
                             已自动生成 {activeTab.endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
                           </p>
                           <div className="mt-3 flex items-center gap-2">

@@ -17,7 +17,7 @@ export function ThemeSwitcher(): React.ReactElement {
   return (
     <div className="rounded-lg border border-surface-border bg-bg-surface p-6">
       <h3 className="mb-4 text-lg font-semibold text-text-primary">Theme</h3>
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {THEMES.map((t) => (
           <button
             key={t.id}

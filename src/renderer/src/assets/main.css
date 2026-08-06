@@ -24,54 +24,36 @@
    ============================================ */
 :root,
 [data-theme="dark"] {
-  --bg-deep: #111827;
-  --bg-surface: #1f2937;
-  --bg-elevated: #374151;
-  --text-primary: #f3f4f6;
-  --text-secondary: #d1d5db;
-  --text-muted: #9ca3af;
-  --accent: #2563eb;
-  --accent-hover: #3b82f6;
-  --accent-subtle: rgba(37, 99, 235, 0.2);
-  --accent-border: #3b82f6;
-  --surface-border: #374151;
-  --surface-border-strong: #4b5563;
+  --bg-deep: #191a1d;
+  --bg-surface: #212226;
+  --bg-elevated: #2a2b30;
+  --text-primary: #f0f1f3;
+  --text-secondary: #c8cacf;
+  --text-muted: #90939b;
+  --accent: #6b7280;
+  --accent-hover: #858d99;
+  --accent-subtle: rgba(107, 114, 128, 0.16);
+  --accent-border: #858d99;
+  --surface-border: #2e3035;
+  --surface-border-strong: #3d4047;
 }
 
 /* ============================================
-   Theme: 午夜蓝 (Midnight Blue)
-   ============================================ */
-[data-theme="midnight"] {
-  --bg-deep: #0a0e1a;
-  --bg-surface: #111832;
-  --bg-elevated: #1e2d52;
-  --text-primary: #f0f4ff;
-  --text-secondary: #c0c9e0;
-  --text-muted: #7a86a8;
-  --accent: #3b82f6;
-  --accent-hover: #60a5fa;
-  --accent-subtle: rgba(59, 130, 246, 0.18);
-  --accent-border: #60a5fa;
-  --surface-border: #1e2d52;
-  --surface-border-strong: #2a3f6e;
-}
-
-/* ============================================
-   Theme: 森林 (Forest)
+   Theme: 护眼 (Eye-Care Green, 豆沙绿)
    ============================================ */
 [data-theme="emerald"] {
-  --bg-deep: #11130f;
-  --bg-surface: #1a1e16;
-  --bg-elevated: #252b1f;
-  --text-primary: #e8ebe4;
-  --text-secondary: #b8bca8;
-  --text-muted: #7d826e;
-  --accent: #84cc16;
-  --accent-hover: #a3e635;
-  --accent-subtle: rgba(132, 204, 22, 0.12);
-  --accent-border: #a3e635;
-  --surface-border: #2a3020;
-  --surface-border-strong: #3a4230;
+  --bg-deep: #d6eace;
+  --bg-surface: #e2f1e3;
+  --bg-elevated: #ecf5ed;
+  --text-primary: #2d2d2d;
+  --text-secondary: #4c4c4c;
+  --text-muted: #747474;
+  --accent: #3d7a4e;
+  --accent-hover: #4a8f5c;
+  --accent-subtle: rgba(61, 122, 78, 0.14);
+  --accent-border: #4a8f5c;
+  --surface-border: #bfdcc3;
+  --surface-border-strong: #a3c9a9;
 }
 
 /* ============================================
@@ -212,5 +194,5 @@
    本身的字形（斜体、特殊字体等与页面完全一致）。复制/查词不受影响。 */
 .textLayer :is(span, br)::selection {
   color: transparent;
-  background: rgba(37, 99, 235, 0.35);
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
 }

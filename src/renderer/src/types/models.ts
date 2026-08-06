@@ -33,9 +33,8 @@ export interface ThemeOption {
 }
 
 export const THEMES: ThemeOption[] = [
-  { id: 'dark', name: '暗夜', preview: { bg: '#111827', surface: '#1f2937', accent: '#2563eb', text: '#f3f4f6' } },
-  { id: 'midnight', name: '午夜蓝', preview: { bg: '#0a0e1a', surface: '#111832', accent: '#3b82f6', text: '#f0f4ff' } },
-  { id: 'emerald', name: '森林', preview: { bg: '#11130f', surface: '#1a1e16', accent: '#84cc16', text: '#e8ebe4' } },
+  { id: 'dark', name: '暗夜', preview: { bg: '#191a1d', surface: '#212226', accent: '#6b7280', text: '#f0f1f3' } },
+  { id: 'emerald', name: '护眼', preview: { bg: '#d6eace', surface: '#e2f1e3', accent: '#3d7a4e', text: '#2d2d2d' } },
   { id: 'light', name: '暖光', preview: { bg: '#fafaf9', surface: '#ffffff', accent: '#b45309', text: '#1c1917' } }
 ]
 
