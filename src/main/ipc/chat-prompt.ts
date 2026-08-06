@@ -91,14 +91,17 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
       textbookContent = extractRegionAroundProgress(textbookContent, progressFraction, 2200)
     }
 
-    // 4. Load handoff tail from the most recent ended conversation with the same companion
+    // 4. Load handoff tail from the most recent ended conversation with the
+    //    same companion AND the same textbook — 接力尾巴按教材隔离，换教材
+    //    上新课时绝不能延续旧教材的课堂内容（旧实现只按伙伴 id 取）。
     const handoff = await loadHandoffTail(
       dataRoot,
       conversationStore,
       artifactStore,
       params.companionId,
       params.worldId,
-      params.conversationId
+      params.conversationId,
+      params.textbookId ?? null
     )
     const handoffTail = handoff.tail
 
@@ -300,21 +303,28 @@ async function loadCompanion(dataRoot: string, companionId: string): Promise<Com
   }
 }
 
-async function loadHandoffTail(
+export async function loadHandoffTail(
   dataRoot: string,
   conversationStore: ConversationStore,
   artifactStore: ArtifactStore,
   companionId: string,
   worldId: string,
-  excludeConversationId: string
+  excludeConversationId: string,
+  textbookId: string | null
 ): Promise<{ tail?: string; meta?: HandoffMetaInfo }> {
   // 1. Prefer structured metadata from handoff_meta.json — locate the
   //    exact previous conversation instead of guessing by endedAt.
+  //    接力尾巴必须来自同一教材的上一课；meta 无 textbookId 字段的旧记录
+  //    视为不匹配，回退到下面的按教材过滤的 legacy 搜索。
   try {
     const metaRaw = await readFile(handoffMetaPath(dataRoot, worldId), 'utf-8')
-    const meta = JSON.parse(metaRaw) as Record<string, HandoffMetaInfo & { prevConvId: string }>
+    const meta = JSON.parse(metaRaw) as Record<string, (HandoffMetaInfo & { prevConvId: string; textbookId?: string | null })>
     const entry = meta[companionId]
-    if (entry?.prevConvId && entry.prevConvId !== excludeConversationId) {
+    if (
+      entry?.prevConvId &&
+      entry.prevConvId !== excludeConversationId &&
+      entry.textbookId === textbookId
+    ) {
       const artifacts = await artifactStore.list(entry.prevConvId, worldId)
       const handoff = artifacts.find((a) => a.type === 'handoff_tail')
       if (handoff?.content) {
@@ -328,11 +338,17 @@ async function loadHandoffTail(
     // No metadata yet — fall through to the legacy search below.
   }
 
-  // 2. Legacy fallback: most recent ended conversation with same companion.
+  // 2. Legacy fallback: most recent ended conversation with same companion
+  //    and the same textbook.
   try {
     const conversations = await conversationStore.list(worldId)
     const ended = conversations
-      .filter((c) => c.endedAt && c.companionId === companionId && c.id !== excludeConversationId)
+      .filter((c) =>
+        c.endedAt &&
+        c.companionId === companionId &&
+        c.id !== excludeConversationId &&
+        (c.textbookId ?? null) === textbookId
+      )
       .sort((a, b) => (b.endedAt ?? '').localeCompare(a.endedAt ?? ''))
 
     for (const conv of ended) {

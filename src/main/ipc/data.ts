@@ -91,6 +91,8 @@ interface HandoffMetaEntry {
   companionName: string
   companionSlot: 'a' | 'b' | 'c' | null
   endingPage: number | null
+  /** 该课堂使用的教材 —— 接力尾巴按教材隔离，避免新教材课堂延续旧教材内容。 */
+  textbookId: string | null
 }
 
 export function registerConversationIpc(
@@ -957,7 +959,8 @@ async function runArtifactPipeline(
         prevConvId: conversationId,
         companionName,
         companionSlot: slot,
-        endingPage
+        endingPage,
+        textbookId: conv.textbookId ?? null
       }
       await mkdir(dirname(filePath), { recursive: true })
       await atomicWriteFile(filePath, JSON.stringify(meta, null, 2), 'utf-8')
