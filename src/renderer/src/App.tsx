@@ -75,6 +75,21 @@ function App(): React.ReactElement {
   const dueFlashcardCount = useDueFlashcardCount()
   const classroomDropdownRef = useRef<HTMLDivElement>(null)
 
+  // 到期卡片提醒：每天只提醒一次（本地记录当天已提醒），避免打扰。
+  useEffect(() => {
+    if (dueFlashcardCount <= 0) return
+    const today = new Date().toDateString()
+    if (localStorage.getItem('sophia.dueReminderDate') === today) return
+    localStorage.setItem('sophia.dueReminderDate', today)
+    try {
+      new Notification('记忆卡片待复习', {
+        body: `今天有 ${dueFlashcardCount} 张记忆卡片到期，去「复习」看看吧`
+      })
+    } catch {
+      // 系统通知不可用时静默跳过
+    }
+  }, [dueFlashcardCount])
+
   useEffect(() => {
     (async () => {
       const convs = await window.sophia.data.listConversations(WORLD_ID)
