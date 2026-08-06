@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, access, readdir, rm, copyFile } from 'node:fs/promises'
+import { mkdir, readFile, access, readdir, rm, copyFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { Textbook } from '../../shared/schemas/textbook'

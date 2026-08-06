@@ -235,7 +235,7 @@ describe('StreamChatSession — AbortSignal (true cancellation)', () => {
   })
 
   it('cancel() aborts the signal passed to the adapter', async () => {
-    let cancelFn!: () => void
+    let cancelFn: () => void = () => { throw new Error('cancelFn not wired') }
 
     const adapter: DeepSeekStreamAdapter & { lastParams: DeepSeekStreamParams | null } = {
       lastParams: null,
@@ -265,7 +265,7 @@ describe('StreamChatSession — AbortSignal (true cancellation)', () => {
   })
 
   it('cancelled stream emits ABORTED error event (not end)', async () => {
-    let cancelFn!: () => void
+    let cancelFn: () => void = () => { throw new Error('cancelFn not wired') }
 
     const adapter: DeepSeekStreamAdapter = {
       streamChat: async function* () {

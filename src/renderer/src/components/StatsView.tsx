@@ -30,12 +30,6 @@ interface ArtifactDTO {
   createdAt: string
 }
 
-interface CompanionDTO {
-  id: string
-  name: string
-  identity: string
-}
-
 function perDay(map: Map<string, number>, key: string): number {
   return map.get(key) ?? 0
 }

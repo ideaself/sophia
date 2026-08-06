@@ -41,7 +41,7 @@ const ARCHIVE_KIND_LABEL: Record<string, string> = {
 
 export function SettingsView(): React.ReactElement {
   const [providers, setProviders] = useState<ProviderDTO[]>([])
-  const [activeId, setActiveId] = useState<string | null>(null)
+  const [, setActiveId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)

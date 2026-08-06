@@ -1,11 +1,10 @@
-import { mkdir, writeFile, readFile, access, readdir, rm, appendFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile, access, readdir, rm, appendFile } from 'node:fs/promises'
 import { z } from 'zod'
 import type { Conversation } from '../../shared/schemas/conversation'
 import { ConversationSchema } from '../../shared/schemas/conversation'
 import type { Message } from '../../shared/schemas/message'
 import { MessageSchema } from '../../shared/schemas/message'
-import type { ConversationId, WorldId, CompanionId, TextbookId, MessageId } from '../../shared/types/ids'
+import type { ConversationId, WorldId, MessageId } from '../../shared/types/ids'
 import {
   conversationsDir,
   conversationDir,
@@ -26,7 +25,6 @@ export interface CreateConversationInput {
 
 let idCounter = 0
 
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-constraint
 function generateId(): ConversationId {
   idCounter += 1
   return `conv_${Date.now()}_${idCounter}` as ConversationId

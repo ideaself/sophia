@@ -77,7 +77,7 @@ export function estimateDailyStudyMinutes(
 export function computeStreak(perDay: Map<string, number>): number {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  let cursor = new Date(today)
+  const cursor = new Date(today)
   if ((perDay.get(dayKey(cursor)) ?? 0) === 0) {
     cursor.setDate(cursor.getDate() - 1)
   }

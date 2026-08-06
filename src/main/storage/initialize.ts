@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, copyFile } from 'node:fs/promises'
+import { mkdir, writeFile, readFile } from 'node:fs/promises'
 import type { Profile } from '../../shared/schemas/profile'
 import type { World } from '../../shared/schemas/world'
 import type { ProfileId, WorldId } from '../../shared/types/ids'

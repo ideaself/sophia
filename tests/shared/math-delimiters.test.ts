@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { normalizeMathDelimiters } from '../../src/shared/math-delimiters'
 
 describe('normalizeMathDelimiters', () => {
-  it('converts inline \(...\) to $...$', () => {
+  it('converts inline (...) to $...$', () => {
     expect(normalizeMathDelimiters('比如 \\(\\nabla\\cdot E=0\\) 这一条'))
       .toBe('比如 $\\nabla\\cdot E=0$ 这一条')
   })
 
-  it('converts display \[...\] to $$...$$', () => {
+  it('converts display [...] to $$...$$', () => {
     expect(normalizeMathDelimiters('\\[F = ma\\]')).toBe('$$F = ma$$')
   })
 

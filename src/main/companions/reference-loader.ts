@@ -1,4 +1,4 @@
-import { readdir, readFile, copyFile, writeFile, mkdir } from 'node:fs/promises'
+import { readdir, readFile, copyFile, mkdir } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import type { Companion } from '../../shared/schemas/companion'
 import { CompanionSchema } from '../../shared/schemas/companion'

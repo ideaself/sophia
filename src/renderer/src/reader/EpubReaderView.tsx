@@ -334,7 +334,6 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
     }
     const rect = range.getBoundingClientRect()
     const x = rect.left + rect.width / 2
-    const y = rect.top + rect.height / 2
     // 选中单个英文单词：启用词典时自动弹出查词，否则照常显示选区菜单。
     if (isEnglishWord(text) && loadDictConfig().enabled) {
       setSelMenu(null)

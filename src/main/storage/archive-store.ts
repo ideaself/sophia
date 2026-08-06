@@ -8,7 +8,7 @@
  */
 
 import { join, dirname, relative } from 'node:path'
-import { readFile, writeFile, mkdir, rm, rename, access } from 'node:fs/promises'
+import { readFile, mkdir, rm, rename, access } from 'node:fs/promises'
 import { atomicWriteFile } from './atomic-write'
 
 export type ArchiveKind = 'conversation' | 'textbook' | 'companion' | 'other'

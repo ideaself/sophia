@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, readdir, unlink } from 'node:fs/promises'
+import { mkdir, readFile, readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { ReadingNoteId } from '../../shared/types/ids'

@@ -1,6 +1,6 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { join, dirname } from 'node:path'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, mkdir } from 'node:fs/promises'
 import { CompanionSchema } from '../../shared/schemas/companion'
 import { readWorldData } from '../storage/world-store'
 import { ConversationStore } from '../storage/conversation-store'
@@ -29,10 +29,8 @@ import {
 import { archiveItem } from '../storage/archive-store'
 import {
   IpcCreateConversationInputSchema,
-  IpcGetConversationInputSchema,
   IpcGetConversationWithWorldInputSchema,
   IpcListConversationsInputSchema,
-  IpcDeleteConversationInputSchema,
   IpcDeleteConversationWithWorldInputSchema,
   IpcUpdateTitleInputSchema,
   IpcEndClassInputSchema,
@@ -357,8 +355,8 @@ export function registerConversationIpc(
     const parsed = IpcCreateTextbookFullInputSchema.parse(input)
 
     let content = parsed.content ?? ''
-    let author = parsed.author ?? ''
-    let description = parsed.description ?? ''
+    const author = parsed.author ?? ''
+    const description = parsed.description ?? ''
 
     if ((parsed.format === 'pdf' || parsed.format === 'epub') && parsed.sourceFile) {
       if (!pickedFiles.has(parsed.sourceFile)) {
@@ -369,7 +367,7 @@ export function registerConversationIpc(
         content = result.content
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        throw new Error(`Failed to parse ${parsed.format.toUpperCase()} file: ${message}`)
+        throw new Error(`Failed to parse ${parsed.format.toUpperCase()} file: ${message}`, { cause: err })
       }
     }
 

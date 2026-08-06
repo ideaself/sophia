@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import type { Companion } from '../types/models'
-import { WORLD_ID } from '../types/models'
 
 interface CompanionForm {
   name: string

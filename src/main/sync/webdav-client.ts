@@ -1,5 +1,4 @@
 import { createClient, type WebDAVClient } from 'webdav'
-import type { FileStat } from 'webdav'
 import { createWriteStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import { runPool } from './async-pool'

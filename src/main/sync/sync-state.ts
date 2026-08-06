@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isNotFoundError, warnReadFailure } from '../storage/fs-errors'
 import { atomicWriteFile } from '../storage/atomic-write'

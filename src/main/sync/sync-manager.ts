@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, rm, stat, readdir, rmdir, rename, copyFile 
 import { createReadStream } from 'node:fs'
 import { dirname, join, extname, resolve, sep } from 'node:path'
 import { SyncWebDavClient, type WebDavConfig, type WebDavRemoteFile } from './webdav-client'
-import { collectSyncableFiles, isSyncableRelPath, type SyncableFile } from './file-walker'
+import { collectSyncableFiles, isSyncableRelPath } from './file-walker'
 import { runPool } from './async-pool'
 import {
   loadSyncState,

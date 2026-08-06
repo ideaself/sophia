@@ -10,10 +10,9 @@ import { TextbookStore } from '../storage/textbook-store'
 import { ConversationStore } from '../storage/conversation-store'
 import { ArtifactStore } from '../storage/artifact-store'
 import { companionDir, palMomentsPath, relationPath, handoffMetaPath } from '../storage/app-data'
-import type { WorldId } from '../../shared/types/ids'
 import { IpcChatPromptMessagesInputSchema, IpcAiComposeInputSchema } from '../../shared/schemas/ipc'
 import { compressMessages, splitCompressionWindowByTokens } from '../prompt/message-compressor'
-import { analyzeTeaching, shouldAnalyze, formatAssessment, type TeachingCoachAssessment } from '../prompt/teaching-coach'
+import { analyzeTeaching, shouldAnalyze, formatAssessment } from '../prompt/teaching-coach'
 import {
   retrievePassages,
   formatPassages,

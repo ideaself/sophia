@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { readFile, writeFile, access, mkdir } from 'node:fs/promises'
+import { readFile, access, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CompanionSchema } from '../../shared/schemas/companion'
 import type { z } from 'zod'

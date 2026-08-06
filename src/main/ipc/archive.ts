@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { readFile, writeFile, mkdir, access, rm } from 'node:fs/promises'
+import { readFile, mkdir, access, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   archiveDir,

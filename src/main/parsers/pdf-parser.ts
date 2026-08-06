@@ -1,15 +1,18 @@
 import { readFile } from 'node:fs/promises'
 import { findBodyStartPage } from './pdf-front-matter'
 
+// unpdf/pdfjs in Node expects a handful of browser globals; polyfill them.
+const g = globalThis as unknown as Record<string, unknown>
+
 if (typeof globalThis.DOMMatrix === 'undefined') {
-  ;(globalThis as any).DOMMatrix = class DOMMatrix {
+  g.DOMMatrix = class DOMMatrix {
     a = 1
     b = 0
     c = 0
     d = 1
     e = 0
     f = 0
-    constructor(init?: any) {
+    constructor(init?: number[] | null) {
       if (Array.isArray(init) && init.length === 6) {
         this.a = init[0]
         this.b = init[1]
@@ -44,7 +47,7 @@ if (typeof globalThis.DOMMatrix === 'undefined') {
 }
 
 if (typeof globalThis.Path2D === 'undefined') {
-  ;(globalThis as any).Path2D = class Path2D {
+  g.Path2D = class Path2D {
     constructor() {}
     addPath() {}
     closePath() {}
@@ -60,11 +63,11 @@ if (typeof globalThis.Path2D === 'undefined') {
 }
 
 if (typeof globalThis.ImageData === 'undefined') {
-  ;(globalThis as any).ImageData = class ImageData {
+  g.ImageData = class ImageData {
     data: Uint8ClampedArray
     width: number
     height: number
-    constructor(dataOrWidth: any, heightOrData?: any, height?: any) {
+    constructor(dataOrWidth: Uint8ClampedArray | number, heightOrData?: number, height?: number) {
       if (typeof dataOrWidth === 'number') {
         this.width = dataOrWidth
         this.height = heightOrData ?? height ?? 0

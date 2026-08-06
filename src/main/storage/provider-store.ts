@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
+import { readFile, mkdir, access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { configDir } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'

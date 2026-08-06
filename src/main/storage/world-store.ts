@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import type { World } from '../../shared/schemas/world'
 import { WorldSchema } from '../../shared/schemas/world'
-import type { WorldId, ProfileId } from '../../shared/types/ids'
 import {
   worldPath,
   storyPath,
