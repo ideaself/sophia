@@ -26,7 +26,21 @@ interface HighlightRect {
   height: number
 }
 
+/** 持久化批注在当前页渲染出的高亮矩形（与搜索高亮区分颜色）。 */
+interface NoteHighlight {
+  rect: HighlightRect
+  className: string
+}
+
 const PROGRESS_KEY = (id: string) => `pdf-progress-${id}`
+
+/** 批注在页面位图上的高亮样式（页面是白色位图，用半透明暖色）。 */
+const NOTE_HIGHLIGHT_CLASS: Record<string, string> = {
+  highlight: 'bg-yellow-300/50',
+  underline: 'bg-blue-300/40 border-b-2 border-blue-500/60',
+  note: 'bg-yellow-300/50',
+  bookmark: 'bg-amber-300/40'
+}
 
 export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReaderViewProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -40,6 +54,16 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
   const [scale, setScale] = useState(1.5)
   const [error, setError] = useState('')
   const [highlights, setHighlights] = useState<HighlightRect[]>([])
+  // 持久化批注（与 EPUB 阅读器同一套 ReadingNote 数据）
+  const [notes, setNotes] = useState<ReadingNoteDTO[]>([])
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [noteHighlights, setNoteHighlights] = useState<NoteHighlight[]>([])
+  // 选中文本后的小工具条（高亮 / 笔记）
+  const [selMenu, setSelMenu] = useState<{ x: number; y: number; text: string } | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [noteDraftOpen, setNoteDraftOpen] = useState(false)
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [editingNoteText, setEditingNoteText] = useState('')
   // 在线词典浮层（选中英文单词自动弹出）
   const [dictPopup, setDictPopup] = useState<{ word: string } | null>(null)
   // In-page search (Ctrl+F)
@@ -73,6 +97,13 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
     }
     goToPage(n)
   }
+
+  // Load persisted reading notes for this textbook
+  useEffect(() => {
+    window.sophia.data.listReadingNotes(textbookId)
+      .then(setNotes)
+      .catch(() => setNotes([]))
+  }, [textbookId])
 
   // Restore last page from textbook store / localStorage
   useEffect(() => {
@@ -187,20 +218,100 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
       } else {
         setHighlights([])
       }
+
+      // 持久化批注高亮：在当前页文本中定位每条批注的矩形
+      const pageNotes = notes.filter((n) => n.position === String(pageNum))
+      const noteRects: NoteHighlight[] = []
+      for (const n of pageNotes) {
+        try {
+          const rs = await computeHighlights(page, viewport, n.content)
+          if (rs.length > 0) {
+            noteRects.push({
+              rect: rs[0],
+              className: NOTE_HIGHLIGHT_CLASS[n.type] ?? NOTE_HIGHLIGHT_CLASS.highlight
+            })
+          }
+        } catch {
+          // 定位失败（跨行/跨块选区）——仍可从笔记面板跳转查看
+        }
+      }
+      if (!cancelled) setNoteHighlights(noteRects)
     })()
     return () => {
       cancelled = true
     }
-  }, [doc, pageNum, scale]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [doc, pageNum, scale, notes]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 选中英文单词 → 自动弹出在线词典（与 EPUB 阅读器一致）
-  const handleContentMouseUp = () => {
+  // 选中英文单词 → 自动弹出在线词典；其他选区 → 显示批注工具条
+  const handleContentMouseUp = (e: React.MouseEvent) => {
     const sel = window.getSelection()
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) return
     const text = sel.toString().trim()
-    if (!text || text.length > 200) return
+    if (!text || text.length > 500) return
     if (isEnglishWord(text) && loadDictConfig().enabled) {
       setDictPopup({ word: text })
+      setSelMenu(null)
+      return
+    }
+    setDictPopup(null)
+    setSelMenu({ x: e.clientX, y: e.clientY, text })
+  }
+
+  // 选区工具条关闭（点击页面其他地方 / Esc）
+  const clearSelMenu = () => {
+    setSelMenu(null)
+    setNoteDraftOpen(false)
+  }
+
+  const createNote = async (type: 'highlight' | 'note', readerNote = '') => {
+    const text = (selMenu?.text ?? '').trim()
+    if (!text) return
+    try {
+      await window.sophia.data.createReadingNote({
+        textbookId,
+        content: text,
+        position: String(pageNum),
+        chapter: `第 ${pageNum} 页`,
+        type,
+        readerNote
+      })
+      window.getSelection()?.removeAllRanges()
+      clearSelMenu()
+      setNoteDraft('')
+      const updated = await window.sophia.data.listReadingNotes(textbookId)
+      setNotes(updated)
+    } catch {
+      // 创建失败——保持选中，用户可重试
+    }
+  }
+
+  const jumpToNote = (note: ReadingNoteDTO) => {
+    const p = parseInt(note.position, 10)
+    if (Number.isFinite(p) && p > 0) goToPage(p)
+  }
+
+  const startEditNote = (note: ReadingNoteDTO) => {
+    setEditingNoteId(note.id)
+    setEditingNoteText(note.readerNote)
+  }
+
+  const saveEditNote = async (note: ReadingNoteDTO) => {
+    const text = editingNoteText
+    setEditingNoteId(null)
+    try {
+      await window.sophia.data.updateReadingNote(note.id, textbookId, { readerNote: text })
+      setNotes((prev) => prev.map((n) => (n.id === note.id ? { ...n, readerNote: text } : n)))
+    } catch {
+      // best-effort
+    }
+  }
+
+  const deleteNote = async (note: ReadingNoteDTO) => {
+    try {
+      await window.sophia.data.deleteReadingNote(note.id, textbookId)
+      setNotes((prev) => prev.filter((n) => n.id !== note.id))
+    } catch {
+      // best-effort
     }
   }
 
@@ -235,6 +346,11 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
       }
       if (e.key === 'Escape' && searchOpen) {
         setSearchOpen(false)
+        return
+      }
+      if (e.key === 'Escape') {
+        setSelMenu(null)
+        setNoteDraftOpen(false)
         return
       }
       // Arrow keys page through the document when not typing
@@ -395,6 +511,15 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
             </div>
           )}
           <button
+            onClick={() => setNotesOpen((v) => !v)}
+            className={`rounded border px-2 py-1 text-xs ${
+              notesOpen ? 'border-accent text-accent' : 'border-surface-border-strong hover:bg-bg-elevated'
+            }`}
+            title="阅读批注（选中文本后可用高亮 / 笔记）"
+          >
+            📌 笔记{notes.length > 0 && ` (${notes.length})`}
+          </button>
+          <button
             onClick={() => setScale((s) => Math.max(0.5, s - 0.25))}
             className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
           >
@@ -420,7 +545,7 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
           </button>
         </div>
       </div>
-      <div ref={containerRef} onMouseUp={handleContentMouseUp} className="flex-1 overflow-auto p-4">
+      <div ref={containerRef} onMouseUp={handleContentMouseUp} onMouseDown={clearSelMenu} className="flex-1 overflow-auto p-4">
         {error ? (
           <p className="mt-8 text-sm text-red-400">{error}</p>
         ) : (
@@ -439,6 +564,18 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
                 }}
               />
             ))}
+            {noteHighlights.map((nh, i) => (
+              <div
+                key={`note-${i}`}
+                className={`pointer-events-none absolute ${nh.className}`}
+                style={{
+                  left: nh.rect.x,
+                  top: nh.rect.y,
+                  width: nh.rect.width,
+                  height: nh.rect.height
+                }}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -449,6 +586,157 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
           word={dictPopup.word}
           onClose={() => setDictPopup(null)}
         />
+      )}
+
+      {/* 选区批注工具条 */}
+      {selMenu && !noteDraftOpen && (
+        <div
+          className="fixed z-50 flex items-center gap-1 rounded-lg border border-surface-border bg-bg-surface px-1.5 py-1 shadow-xl"
+          style={{ left: selMenu.x, top: Math.max(4, selMenu.y - 38) }}
+        >
+          <button
+            onClick={() => void createNote('highlight')}
+            className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
+            title="高亮这段文字"
+          >
+            🖍️ 高亮
+          </button>
+          <button
+            onClick={() => setNoteDraftOpen(true)}
+            className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-bg-elevated"
+            title="为这段文字写一条笔记"
+          >
+            📝 笔记
+          </button>
+          <button
+            onClick={clearSelMenu}
+            className="rounded px-1.5 py-1 text-xs text-text-muted hover:bg-bg-elevated"
+            title="取消 (Esc)"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* 笔记草稿输入 */}
+      {selMenu && noteDraftOpen && (
+        <div
+          className="fixed z-50 w-72 rounded-lg border border-surface-border bg-bg-surface p-3 shadow-xl"
+          style={{ left: selMenu.x, top: Math.max(4, selMenu.y - 38) }}
+        >
+          <textarea
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            rows={3}
+            autoFocus
+            placeholder={`笔记（第 ${pageNum} 页）：${selMenu.text.slice(0, 30)}${selMenu.text.length > 30 ? '…' : ''}`}
+            className="w-full resize-none rounded border border-surface-border-strong bg-bg-deep px-2 py-1.5 text-xs text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
+          />
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              onClick={() => { setNoteDraftOpen(false); setNoteDraft('') }}
+              className="rounded px-2 py-1 text-xs text-text-muted hover:bg-bg-elevated"
+            >
+              取消
+            </button>
+            <button
+              onClick={() => void createNote('note', noteDraft.trim())}
+              className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover"
+            >
+              保存笔记
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 批注面板 */}
+      {notesOpen && (
+        <div className="absolute bottom-0 right-0 top-0 z-30 flex w-72 flex-col border-l border-surface-border bg-bg-surface">
+          <div className="flex items-center justify-between border-b border-surface-border px-3 py-2">
+            <span className="text-sm font-semibold">阅读批注</span>
+            <button
+              onClick={() => setNotesOpen(false)}
+              className="rounded p-1 text-xs text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto p-2">
+            {notes.length === 0 ? (
+              <p className="px-2 py-4 text-xs text-text-muted">
+                还没有批注。选中 PDF 中的文字后，用「🖍️ 高亮」或「📝 笔记」添加。
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {notes.map((note) => (
+                  <li key={note.id} className="rounded-lg border border-surface-border bg-bg-deep p-2.5">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] text-text-muted">
+                        {note.type === 'underline'
+                          ? '〰️ 下划线'
+                          : note.type === 'note'
+                            ? '📝 笔记'
+                            : '🖍️ 高亮'} · {note.chapter}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => jumpToNote(note)}
+                          className="rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
+                          title="跳到该页"
+                        >
+                          跳转
+                        </button>
+                        <button
+                          onClick={() => startEditNote(note)}
+                          className="rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => void deleteNote(note)}
+                          className="rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:bg-bg-elevated hover:text-red-400"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">{note.content}</p>
+                    {editingNoteId === note.id ? (
+                      <div className="mt-1.5">
+                        <textarea
+                          value={editingNoteText}
+                          onChange={(e) => setEditingNoteText(e.target.value)}
+                          rows={2}
+                          autoFocus
+                          className="w-full resize-none rounded border border-surface-border-strong bg-bg-surface px-2 py-1 text-xs text-text-primary focus:border-accent-border focus:outline-none"
+                          placeholder="写点想法..."
+                        />
+                        <div className="mt-1 flex justify-end gap-2">
+                          <button
+                            onClick={() => setEditingNoteId(null)}
+                            className="text-[10px] text-text-muted hover:text-text-secondary"
+                          >
+                            取消
+                          </button>
+                          <button
+                            onClick={() => void saveEditNote(note)}
+                            className="rounded bg-accent px-2 py-0.5 text-[10px] text-white hover:bg-accent-hover"
+                          >
+                            保存
+                          </button>
+                        </div>
+                      </div>
+                    ) : note.readerNote ? (
+                      <p className="mt-1.5 border-l-2 border-accent-border pl-2 text-xs leading-relaxed text-text-muted">
+                        {note.readerNote}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Bottom-right pager */}
