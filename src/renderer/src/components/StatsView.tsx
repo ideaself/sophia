@@ -32,7 +32,8 @@ interface ArtifactDTO {
 }
 
 interface WeekStats {
-  minutes: number
+  /** 学习时长（毫秒，与 estimateDailyStudyMinutes 返回值单位一致）。 */
+  ms: number
   messages: number
   artifacts: number
   companion: Record<string, number>
@@ -130,16 +131,16 @@ export function StatsView(): React.ReactElement {
           })
         )
 
-        let wkMinutes = 0
+        let weekMs = 0
         for (const [key, ms] of perDay) {
-          if (key >= weekStartKey) wkMinutes += ms
+          if (key >= weekStartKey) weekMs += ms
         }
 
         setTotalMessages(msgCount)
         setTotalArtifacts(artCount)
         setCompanionUsage(usage)
         setDailyMinutes(perDay)
-        setWeekStats({ minutes: wkMinutes, messages: wkMsgs, artifacts: wkArts, companion: wkCompanion, textbook: wkTextbook })
+        setWeekStats({ ms: weekMs, messages: wkMsgs, artifacts: wkArts, companion: wkCompanion, textbook: wkTextbook })
 
         // Load textbook titles for the weekly report distribution
         try {
@@ -229,7 +230,7 @@ export function StatsView(): React.ReactElement {
     const lines = [
       `# 学习周报（${weekLabel}）`,
       '',
-      `- 学习时长：${formatDuration(weekStats.minutes * 60000)}`,
+      `- 学习时长：${formatDuration(weekStats.ms)}`,
       `- 消息数：${weekStats.messages}`,
       `- 学习产物：${weekStats.artifacts}`,
       `- 连续学习天数：${streak}`,
@@ -292,7 +293,7 @@ export function StatsView(): React.ReactElement {
           </div>
           <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
             <div>
-              <p className="text-2xl font-bold text-accent">{formatDuration(weekStats.minutes * 60000)}</p>
+              <p className="text-2xl font-bold text-accent">{formatDuration(weekStats.ms)}</p>
               <p className="mt-0.5 text-xs text-text-muted">学习时长</p>
             </div>
             <div>
