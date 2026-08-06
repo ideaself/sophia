@@ -142,6 +142,7 @@ export interface ChatAPI {
 export interface DataAPI {
     writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>
     exportBackup: (filePath: string) => Promise<{ fileCount: number }>
+    restoreBackup: (zipPath: string) => Promise<{ success: boolean; preRestore?: string; error?: string }>
   createConversation: (input: {
     worldId: string
     companionId: string
@@ -383,6 +384,7 @@ export interface SyncAPI {
 export interface AppAPI {
   minimizeToTray: () => Promise<void>
   openExternal: (url: string) => Promise<{ success: boolean }>
+  openDataDir: () => Promise<{ success: boolean; error?: string }>
   /** Subscribe to "dictionary site refuses iframe embedding" events. */
   onDictFrameBlocked: (callback: (payload: { url: string }) => void) => () => void
 }
@@ -446,6 +448,7 @@ const sophia: SophiaAPI = {
   app: {
     minimizeToTray: () => ipcRenderer.invoke('app:minimize-to-tray'),
     openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
+    openDataDir: () => ipcRenderer.invoke('app:open-data-dir'),
     onDictFrameBlocked: (callback) => {
       const handler = (_event: Electron.IpcRendererEvent, payload: { url: string }) => {
         callback(payload)
@@ -509,6 +512,7 @@ const sophia: SophiaAPI = {
   data: {
     writeTextFile: (filePath, content) => ipcRenderer.invoke('file:writeText', { filePath, content }),
     exportBackup: (filePath) => ipcRenderer.invoke('data:export-backup', { filePath }),
+    restoreBackup: (zipPath) => ipcRenderer.invoke('data:restore-backup', zipPath),
     createConversation: (input) =>
       ipcRenderer.invoke('conversation:create', input),
     getConversation: (conversationId, worldId = 'world_default') =>

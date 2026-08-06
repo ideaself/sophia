@@ -10,6 +10,7 @@ import { ReadingNoteStore } from '../storage/reading-note-store'
 import { DiaryStore } from '../storage/diary-store'
 import type { ProviderStore } from '../storage/provider-store'
 import { generateArtifacts } from '../artifacts/generate'
+import { restoreFromBackup } from '../backup/restore'
 import { parseFlashcards, rebuildArtifactContent } from '../../shared/flashcard-utils'
 import { extractText, getEpubChapters, epubChaptersToText } from '../parsers'
 import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
@@ -678,6 +679,15 @@ export function registerConversationIpc(
       throw new Error('Target file must be selected through the save dialog')
     }
     return createBackupZip(dataRoot, parsed.filePath)
+  })
+
+  // Restore from a backup zip (validated path from the open dialog)
+  ipcMain.handle('data:restore-backup', async (_event, input: unknown) => {
+    const zipPath = typeof input === 'string' ? input : ''
+    if (!zipPath || !pickedFiles.has(zipPath)) {
+      return { success: false, error: '请通过文件选择框选择备份文件' }
+    }
+    return restoreFromBackup(dataRoot, zipPath)
   })
 
   // --- Flashcard SRS State (persisted for WebDAV sync) ---

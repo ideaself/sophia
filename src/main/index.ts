@@ -302,6 +302,10 @@ if (!app.requestSingleInstanceLock()) {
       await shell.openExternal(url)
       return { success: true }
     })
+    ipcMain.handle('app:open-data-dir', async () => {
+      const error = await shell.openPath(dataRoot)
+      return { success: !error, error: error || undefined }
+    })
     const keyStore = registerSettingsIpc(dataRoot, safeStorage)
     const providerStore = registerProviderIpc(dataRoot, safeStorage)
     registerSyncIpc(dataRoot, safeStorage)

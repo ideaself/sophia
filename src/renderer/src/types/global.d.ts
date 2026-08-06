@@ -139,6 +139,7 @@ declare global {
   interface DataAPI {
     writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>
     exportBackup: (filePath: string) => Promise<{ fileCount: number }>
+    restoreBackup: (zipPath: string) => Promise<{ success: boolean; preRestore?: string; error?: string }>
     createConversation: (input: {
       worldId: string
       companionId: string
@@ -345,6 +346,7 @@ declare global {
   interface AppAPI {
     minimizeToTray: () => Promise<void>
     openExternal: (url: string) => Promise<{ success: boolean }>
+    openDataDir: () => Promise<{ success: boolean; error?: string }>
     onDictFrameBlocked: (callback: (payload: { url: string }) => void) => () => void
   }
 
