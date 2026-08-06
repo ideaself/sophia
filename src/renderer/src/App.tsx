@@ -105,7 +105,7 @@ function App(): React.ReactElement {
         setLoadConversationId(last.id)
       }
     })()
-  }, [])
+  }, [setLoadConversationId, setSelectedCompanion, setSelectedTextbook])
 
   useEffect(() => {
     const theme = getStoredTheme()
@@ -125,7 +125,7 @@ function App(): React.ReactElement {
   useEffect(() => {
     fetchCompanions()
     fetchTextbooks()
-  }, [])
+  }, [fetchCompanions, fetchTextbooks])
 
   useEffect(() => {
     if (!showClassroomDropdown) return
@@ -143,7 +143,7 @@ function App(): React.ReactElement {
       document.removeEventListener('mousedown', clickHandler)
       document.removeEventListener('keydown', keyHandler)
     }
-  }, [showClassroomDropdown])
+  }, [showClassroomDropdown, setShowClassroomDropdown])
 
   const handleResumeConversation = async (conv: ActiveConversation) => {
     const comp = await window.sophia.companions.get(conv.companionId)
@@ -195,7 +195,7 @@ function App(): React.ReactElement {
 
   const onConversationLoaded = useCallback(() => {
     setLoadConversationId(null)
-  }, [])
+  }, [setLoadConversationId])
 
   return (
     <div className="flex h-screen flex-col bg-bg-deep text-text-primary">

@@ -31,17 +31,15 @@ describe('estimateTokens', () => {
   })
 
   it('does not double-count surrogate pairs (emoji)', () => {
-    // 😀 = U+1F600, UTF-16: [0xD83D, 0xDE00] — 2 code units, 1 code point
+    // 😀 = U+1F600, UTF-16: [0xD83D, 0xDE00] → 2 code units, 1 code point
     // If code incorrectly iterates over code units, it counts low surrogate
     // as separate char → inflates token count
-    const singleEmoji = '😀'
-    const tokens = estimateTokens(singleEmoji)
     // Emoji is non-CJK → 0.25 tokens per code point → ceil(0.25) = 1
     // Bug would yield ceil(0.25 + 0.25) = 1 too, so check with multiple
     const fourEmoji = '😀😀😀😀'
     const tokens4 = estimateTokens(fourEmoji)
-    // 4 code points × 0.25 = 1.0 → ceil(1.0) = 1
-    // Bug (double-counting surrogates): 8 code units × 0.25 = 2.0 → ceil = 2
+    // 4 code points → 0.25 = 1.0 → ceil(1.0) = 1
+    // Bug (double-counting surrogates): 8 code units → 0.25 = 2.0 → ceil = 2
     expect(tokens4).toBe(1)
   })
 

@@ -347,7 +347,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       })
     })
     return () => { cancelled = true }
-  }, [loadConversationId])
+  }, [loadConversationId, onConversationLoaded])
 
   // Reset loadedIdRef when no tabs have a conversation
   useEffect(() => {
@@ -365,6 +365,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       streamOwnerIdxRef.current = null
     }
     prevCompanionIdRef.current = id
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅监听伙伴 id 变化；chatStream 每次渲染都是新对象，不应作为依赖
   }, [companion?.id])
 
   // Focus input on mount/companion change
@@ -372,6 +373,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     if (companion) {
       requestAnimationFrame(() => inputRef.current?.focus())
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- companion 对象每次渲染可能变化，仅按 id 聚焦一次
   }, [companion?.id, activeIdx])
 
   // Stop any TTS playback when leaving the classroom view.
@@ -490,6 +492,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleAiAnswer 每次渲染重建，快捷键只需最新值，无需重挂监听
   }, [tabs, activeIdx])
 
   // Quick text templates: Alt+1..9 inserts a saved snippet at the caret
@@ -934,14 +937,17 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const streamingHere =
     chatStream.state.isStreaming &&
     streamOwnerIdxRef.current === activeIdx
-  const allMessages = [...activeTab.messages]
-  if (streamingHere && chatStream.state.assistantContent) {
-    allMessages.push({
-      id: 'streaming',
-      role: 'assistant',
-      content: chatStream.state.assistantContent
-    })
-  }
+  const allMessages = useMemo(() => {
+    const out = [...activeTab.messages]
+    if (streamingHere && chatStream.state.assistantContent) {
+      out.push({
+        id: 'streaming',
+        role: 'assistant',
+        content: chatStream.state.assistantContent
+      })
+    }
+    return out
+  }, [activeTab.messages, streamingHere, chatStream.state.assistantContent])
 
   // ---- In-conversation search (Ctrl+F) ----
   const searchMatches = useMemo(() => {
@@ -999,6 +1005,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     searchQuery,
     searchMatches,
     matchIndex,
+    streamingHere,
     chatStream.state.reasoningContent,
     chatStream.state.error,
     sendError,
@@ -1034,6 +1041,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     const target = searchMatches[Math.min(matchIndex, searchMatches.length - 1)]
     setStickToBottom(false)
     virtualizer.scrollToIndex(target, { align: 'center' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在匹配项变化时跳转；virtualizer 实例随 rows 变化，加入会打断贴底滚动
   }, [matchIndex, searchMatches])
 
   // Pin to the bottom when a new stream starts.

@@ -8,7 +8,7 @@ import { CompanionSource } from '../../../src/shared/types/ids'
 
 // We import the yet-to-be-implemented modules.
 // Tests will fail (RED) until implementation exists.
-import { loadReferenceCompanions, type LoadCompanionsOptions } from '../../../src/main/companions/reference-loader'
+import { loadReferenceCompanions } from '../../../src/main/companions/reference-loader'
 
 const TEST_ID = `sophia-loader-${randomUUID()}`
 const tempDir = join(tmpdir(), TEST_ID)
@@ -88,7 +88,7 @@ describe('loadReferenceCompanions', () => {
   })
 
   it('writes index.json to companionDir with valid companion data', async () => {
-    const result = await loadReferenceCompanions({
+    await loadReferenceCompanions({
       candidatesDir,
       companionDir: tempDir
     })

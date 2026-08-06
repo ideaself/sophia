@@ -108,7 +108,6 @@ export function DictionaryPopup({ word, onClose }: DictionaryPopupProps): React.
       wv.removeEventListener('dom-ready', onReady)
       wv.removeEventListener('did-fail-load', onFail)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url])
 
   const changeZoom = (delta: number) => {

@@ -129,7 +129,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
     return () => {
       cancelled = true
     }
-  }, [textbookId])
+  }, [textbookId, saved])
 
   // ---- Restore scroll position after chapter loads / changes ----
   useEffect(() => {
@@ -140,7 +140,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
       const timer = setTimeout(() => { el.scrollTop = target }, 80)
       return () => clearTimeout(timer)
     }
-  }, [chapters, chapterIndex])
+  }, [chapters, chapterIndex, saved])
 
   // ---- Persist progress (debounced via rAF) ----
   useEffect(() => {
@@ -182,6 +182,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
     setSelMenu(null)
     setNoteDraftOpen(false)
     setDictPopup(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tts 对象每次渲染重建，仅需在章节变化时停止朗读
   }, [chapterIndex])
 
   // ---- Stop TTS when leaving the reader ----

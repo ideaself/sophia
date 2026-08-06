@@ -71,18 +71,6 @@ function mockStreamAdapter(
   }
 }
 
-function collectEvents(
-  session: StreamChatSession
-): { events: StreamEvent[]; start: () => Promise<void> } {
-  const events: StreamEvent[] = []
-  const start = () => session.start()
-
-  // We need to inject the event collector. Create a new session wrapper.
-  throw new Error(
-    'Internal: collectEvents not used. Use createSessionWithEvents instead.'
-  )
-}
-
 function createSessionWithEvents(
   messages: DeepSeekChatMessage[],
   adapter: DeepSeekStreamAdapter

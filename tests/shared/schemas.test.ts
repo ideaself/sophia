@@ -155,7 +155,7 @@ describe('ProfileSchema', () => {
   })
 
   it('rejects a profile missing id', () => {
-    const { id, ...rest } = validProfile()
+    const { id: _id, ...rest } = validProfile()
     const result = ProfileSchema.safeParse(rest)
     expect(result.success).toBe(false)
   })
@@ -181,7 +181,7 @@ describe('WorldSchema', () => {
   })
 
   it('rejects a world missing companionSlots', () => {
-    const { companionSlots, ...rest } = validWorld()
+    const { companionSlots: _companionSlots, ...rest } = validWorld()
     const result = WorldSchema.safeParse(rest)
     expect(result.success).toBe(false)
   })
@@ -314,7 +314,7 @@ describe('ConversationSchema', () => {
   })
 
   it('rejects a conversation missing worldId', () => {
-    const { worldId, ...rest } = validConversation()
+    const { worldId: _worldId, ...rest } = validConversation()
     const result = ConversationSchema.safeParse(rest)
     expect(result.success).toBe(false)
   })

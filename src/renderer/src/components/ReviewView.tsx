@@ -124,7 +124,7 @@ export function ReviewView(): React.ReactElement {
     } finally {
       setLoading(false)
     }
-  }, [scope?.conversationId])
+  }, [scope])
 
   useEffect(() => {
     load()
