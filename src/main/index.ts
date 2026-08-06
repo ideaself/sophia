@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, nativeImage, session, webContents } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, nativeImage, session, webContents, screen } from 'electron'
 import trayIconDataUrl from '../../build/icon.png?inline'
 import { join } from 'path'
+import { readFile, writeFile } from 'node:fs/promises'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerChatStreamIpc } from './ipc/chat-stream'
 import { registerConversationIpc } from './ipc/data'
@@ -31,54 +32,113 @@ function makeIcon(size: number): Electron.NativeImage {
   return nativeImage.createFromBuffer(buf, { width: size, height: size })
 }
 
-function createWindow(): void {
-  const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    show: true,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      // 在线词典浮层使用 <webview> 加载词典站点（不受 X-Frame-Options 限制）。
-      // 安全由 will-attach-webview 强制约束，见下方 web-contents-created。
-      webviewTag: true
+interface WindowState {
+  x?: number
+  y?: number
+  width: number
+  height: number
+  maximized: boolean
+}
+
+function windowStatePath(): string {
+  return join(app.getPath('userData'), 'window-state.json')
+}
+
+async function loadWindowState(): Promise<WindowState | null> {
+  try {
+    const raw = await readFile(windowStatePath(), 'utf-8')
+    const s = JSON.parse(raw) as Partial<WindowState>
+    if (typeof s.width !== 'number' || typeof s.height !== 'number') return null
+    if (s.width < 200 || s.height < 200) return null
+    let x = s.x
+    let y = s.y
+    if (typeof x === 'number' && typeof y === 'number') {
+      // 丢弃完全落在所有显示器工作区之外的坐标（如外接屏拔掉后）
+      const onScreen = screen.getAllDisplays().some((d) => {
+        const wa = d.workArea
+        return x! < wa.x + wa.width && x! + s.width! > wa.x &&
+          y! < wa.y + wa.height && y! + s.height! > wa.y
+      })
+      if (!onScreen) { x = undefined; y = undefined }
     }
-  })
-
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
-    console.error(`Renderer failed to load: ${errorCode} - ${errorDescription}`)
-  })
-
-  mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error(`Renderer process gone: ${details.reason}`)
-  })
-
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.focus()
-  })
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
-  if (process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    return { x, y, width: s.width, height: s.height, maximized: s.maximized === true }
+  } catch {
+    return null
   }
+}
 
-  // System tray
-  setupTray(mainWindow)
+function saveWindowState(win: BrowserWindow): void {
+  const bounds = win.getBounds()
+  const state: WindowState = { ...bounds, maximized: win.isMaximized() }
+  void writeFile(windowStatePath(), JSON.stringify(state), 'utf-8').catch(() => {})
+}
 
-  // Hide to tray instead of closing
-  mainWindow.on('close', (event) => {
-    if (!isQuitting) {
-      event.preventDefault()
-      mainWindow.hide()
+function createWindow(): void {
+  void loadWindowState().then((state) => {
+    const mainWindow = new BrowserWindow({
+      x: state?.x,
+      y: state?.y,
+      width: state?.width ?? 1200,
+      height: state?.height ?? 800,
+      show: true,
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        // 在线词典浮层使用 <webview> 加载词典站点（不受 X-Frame-Options 限制）。
+        // 安全由 will-attach-webview 强制约束，见下方 web-contents-created。
+        webviewTag: true
+      }
+    })
+
+    if (state?.maximized) mainWindow.maximize()
+
+    // 记忆窗口位置/大小/最大化状态（拖动与缩放防抖保存，退出时兜底保存）
+    let saveTimer: NodeJS.Timeout | null = null
+    const scheduleSave = () => {
+      if (saveTimer) clearTimeout(saveTimer)
+      saveTimer = setTimeout(() => saveWindowState(mainWindow), 500)
     }
+    mainWindow.on('resize', scheduleSave)
+    mainWindow.on('move', scheduleSave)
+    mainWindow.on('close', () => {
+      if (isQuitting) saveWindowState(mainWindow)
+    })
+
+    mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+      console.error(`Renderer failed to load: ${errorCode} - ${errorDescription}`)
+    })
+
+    mainWindow.webContents.on('render-process-gone', (_event, details) => {
+      console.error(`Renderer process gone: ${details.reason}`)
+    })
+
+    mainWindow.on('ready-to-show', () => {
+      mainWindow.focus()
+    })
+
+    mainWindow.webContents.setWindowOpenHandler((details) => {
+      shell.openExternal(details.url)
+      return { action: 'deny' }
+    })
+
+    if (process.env['ELECTRON_RENDERER_URL']) {
+      mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    } else {
+      mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    }
+
+    // System tray
+    setupTray(mainWindow)
+
+    // Hide to tray instead of closing
+    mainWindow.on('close', (event) => {
+      if (!isQuitting) {
+        event.preventDefault()
+        mainWindow.hide()
+      }
+    })
   })
 }
 
