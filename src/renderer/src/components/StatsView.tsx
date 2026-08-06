@@ -75,12 +75,19 @@ export function StatsView(): React.ReactElement {
   // 年度热力图：默认滚动到最右端（最近日期），想看历史再向左拖
   const heatmapRef = useRef<HTMLDivElement>(null)
 
-  // 年度热力图：数据加载完成后默认滚动到最右端（最近日期），想看历史再向左拖。
+  // 年度热力图：默认滚动到最右端（最近日期），想看历史再向左拖。
+  // 依赖 loading 而非 dailyMinutes：数据加载的多次 setState 可能被拆成
+  // 多个提交，只有 loading 翻转为 false 的提交里热力图才真正挂载，
+  // 此时再滚动才有效。rAF 等待布局完全稳定。
   // 注意：必须放在任何条件 return 之前，保证 hook 调用顺序稳定。
   useEffect(() => {
+    if (loading) return
     const el = heatmapRef.current
-    if (el) el.scrollLeft = el.scrollWidth
-  }, [dailyMinutes])
+    if (!el) return
+    requestAnimationFrame(() => {
+      el.scrollLeft = el.scrollWidth
+    })
+  }, [loading, dailyMinutes])
 
   useEffect(() => {
     (async () => {
