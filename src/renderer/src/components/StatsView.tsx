@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { WORLD_ID } from '../types/models'
 import {
   estimateDailyStudyMinutes,
@@ -72,22 +72,6 @@ export function StatsView(): React.ReactElement {
   const [companionNames, setCompanionNames] = useState<Record<string, string>>({})
   const [textbookTitles, setTextbookTitles] = useState<Record<string, string>>({})
   const [weekStats, setWeekStats] = useState<WeekStats | null>(null)
-  // 年度热力图：默认滚动到最右端（最近日期），想看历史再向左拖
-  const heatmapRef = useRef<HTMLDivElement>(null)
-
-  // 年度热力图：默认滚动到最右端（最近日期），想看历史再向左拖。
-  // 依赖 loading 而非 dailyMinutes：数据加载的多次 setState 可能被拆成
-  // 多个提交，只有 loading 翻转为 false 的提交里热力图才真正挂载，
-  // 此时再滚动才有效。rAF 等待布局完全稳定。
-  // 注意：必须放在任何条件 return 之前，保证 hook 调用顺序稳定。
-  useEffect(() => {
-    if (loading) return
-    const el = heatmapRef.current
-    if (!el) return
-    requestAnimationFrame(() => {
-      el.scrollLeft = el.scrollWidth
-    })
-  }, [loading, dailyMinutes])
 
   useEffect(() => {
     (async () => {
@@ -391,26 +375,26 @@ export function StatsView(): React.ReactElement {
         {/* Yearly heatmap */}
         <div className="rounded-xl border border-surface-border bg-bg-surface p-6">
           <h3 className="mb-4 text-lg font-semibold">年度学习热力图</h3>
-          <div ref={heatmapRef} className="overflow-x-auto">
-            <div
-              className="grid gap-[3px]"
-              style={{
-                gridTemplateRows: 'repeat(7, 12px)',
-                gridAutoFlow: 'column',
-                gridAutoColumns: '12px'
-              }}
-            >
-              {heatmapWeeks.flatMap((week, wi) =>
-                week.map((cell, di) => (
-                  <div
-                    key={`${wi}-${di}`}
-                    className="h-3 w-3 rounded-[2px]"
-                    style={{ background: heatColor(cell.minutes) }}
-                    title={`${cell.key}: ${formatDuration(cell.minutes)}`}
-                  />
-                ))
-              )}
-            </div>
+          <div
+            className="grid gap-[3px]"
+            style={{
+              gridTemplateRows: 'repeat(7, minmax(0, 1fr))',
+              gridAutoFlow: 'column',
+              gridAutoColumns: 'minmax(0, 1fr)',
+              // 宽高比 = 周数 / 7，让每格保持正方形并刚好铺满容器（无需滚动条）
+              aspectRatio: `${heatmapWeeks.length} / 7`
+            }}
+          >
+            {heatmapWeeks.flatMap((week, wi) =>
+              week.map((cell, di) => (
+                <div
+                  key={`${wi}-${di}`}
+                  className="h-full w-full rounded-[2px]"
+                  style={{ background: heatColor(cell.minutes) }}
+                  title={`${cell.key}: ${formatDuration(cell.minutes)}`}
+                />
+              ))
+            )}
           </div>
           <p className="mt-3 text-xs text-text-muted">
             颜色越深表示当天学习越久（基于消息时间估算，跨天会话按天拆分）
