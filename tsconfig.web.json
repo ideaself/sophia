@@ -35,6 +35,7 @@
     "src/shared/voice-trigger.ts",
     "src/shared/dict.ts",
     "src/shared/math-delimiters.ts",
+    "src/shared/thinking.ts",
     "src/shared/types/ids.ts"
   ]
 }
