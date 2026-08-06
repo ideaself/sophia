@@ -75,6 +75,13 @@ export function StatsView(): React.ReactElement {
   // 年度热力图：默认滚动到最右端（最近日期），想看历史再向左拖
   const heatmapRef = useRef<HTMLDivElement>(null)
 
+  // 年度热力图：数据加载完成后默认滚动到最右端（最近日期），想看历史再向左拖。
+  // 注意：必须放在任何条件 return 之前，保证 hook 调用顺序稳定。
+  useEffect(() => {
+    const el = heatmapRef.current
+    if (el) el.scrollLeft = el.scrollWidth
+  }, [dailyMinutes])
+
   useEffect(() => {
     (async () => {
       setLoading(true)
@@ -193,12 +200,6 @@ export function StatsView(): React.ReactElement {
 
   const maxDaily = Math.max(...last14.map((d) => d.minutes), 1)
   const heatmapWeeks = buildHeatmapWeeks(dailyMinutes)
-
-  // 数据加载完成后把热力图滚动到最右端（最近日期）
-  useEffect(() => {
-    const el = heatmapRef.current
-    if (el) el.scrollLeft = el.scrollWidth
-  }, [heatmapWeeks.length])
 
   const sortedCompanions = Object.entries(companionUsage)
     .sort((a, b) => b[1] - a[1])
