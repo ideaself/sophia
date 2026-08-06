@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { FirstRunGuide } from './components/FirstRunGuide'
 import { ClassroomView } from './chat/ClassroomView'
 import { useChatStream } from './chat/useChatStream'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
@@ -42,6 +43,15 @@ function App(): React.ReactElement {
 
   // Profile lock (3.0.0) — startup gate + re-lock via window event.
   const [lockState, setLockState] = useState<'checking' | 'locked' | 'unlocked'>('checking')
+  // 首次启动引导（完成一次后不再显示）
+  const [showGuide, setShowGuide] = useState(
+    () => localStorage.getItem('sophia.onboardingDone') !== '1'
+  )
+
+  const finishGuide = () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    setShowGuide(false)
+  }
 
   useEffect(() => {
     window.sophia.data.lock.has().then((has) => {
@@ -323,6 +333,10 @@ function App(): React.ReactElement {
           onConfirm={handleNewClassroomConfirm}
           onCancel={() => { setNewClassroomOpen(false); setNewClassroomPreselect(null) }}
         />
+      )}
+
+      {showGuide && lockState === 'unlocked' && (
+        <FirstRunGuide onFinish={finishGuide} />
       )}
     </div>
   )

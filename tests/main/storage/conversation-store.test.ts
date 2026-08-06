@@ -112,3 +112,60 @@ describe('ConversationStore truncateAfter', () => {
     expect(await store.truncateAfter(conv.id, WORLD_ID, m1.id)).toBe(false)
   })
 })
+
+describe('ConversationStore write path', () => {
+  it('create → get round-trips with default fields', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ worldId: WORLD_ID, companionId: 'comp_a', textbookId: 'tb_1', title: '07-01 测试' })
+    expect(conv.id).toBeTruthy()
+    expect(conv.endedAt).toBeNull()
+    const got = await store.get(conv.id, WORLD_ID)
+    expect(got?.title).toBe('07-01 测试')
+    expect(got?.textbookId).toBe('tb_1')
+  })
+
+  it('addMessage appends a message', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ worldId: WORLD_ID, companionId: 'comp_a', textbookId: null, title: 't' })
+    const msg = await store.addMessage(conv.id, WORLD_ID, 'user', '你好')
+    expect(msg.role).toBe('user')
+    expect(msg.content).toBe('你好')
+    const msgs = await store.getMessages(conv.id, WORLD_ID)
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0].id).toBe(msg.id)
+  })
+
+  it('endConversation sets endedAt', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ worldId: WORLD_ID, companionId: 'comp_a', textbookId: null, title: 't' })
+    expect(await store.endConversation(conv.id, WORLD_ID)).toBe(true)
+    expect((await store.get(conv.id, WORLD_ID))?.endedAt).toBeTruthy()
+  })
+
+  it('updateTitle / updateMessage / deleteMessage / delete', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ worldId: WORLD_ID, companionId: 'comp_a', textbookId: null, title: '旧标题' })
+    const msg = await store.addMessage(conv.id, WORLD_ID, 'assistant', '旧内容')
+
+    await store.updateTitle(conv.id, WORLD_ID, '新标题')
+    expect((await store.get(conv.id, WORLD_ID))?.title).toBe('新标题')
+
+    await store.updateMessage(conv.id, WORLD_ID, msg.id, '新内容')
+    expect((await store.getMessages(conv.id, WORLD_ID))[0].content).toBe('新内容')
+
+    expect(await store.deleteMessage(conv.id, WORLD_ID, msg.id)).toBe(true)
+    expect(await store.getMessages(conv.id, WORLD_ID)).toHaveLength(0)
+
+    expect(await store.delete(conv.id, WORLD_ID)).toBe(true)
+    expect(await store.get(conv.id, WORLD_ID)).toBeNull()
+  })
+
+  it('list returns both conversations', async () => {
+    const store = new ConversationStore(dataRoot)
+    const a = await store.create({ worldId: WORLD_ID, companionId: 'comp_a', textbookId: null, title: 'a' })
+    const b = await store.create({ worldId: WORLD_ID, companionId: 'comp_a', textbookId: null, title: 'b' })
+    await store.addMessage(a.id, WORLD_ID, 'user', 'x')
+    const list = await store.list(WORLD_ID)
+    expect(list.map((c) => c.id).sort()).toEqual([a.id, b.id].sort())
+  })
+})

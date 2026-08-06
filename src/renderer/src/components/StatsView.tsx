@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { WORLD_ID } from '../types/models'
 import {
   estimateDailyStudyMinutes,
@@ -72,6 +72,8 @@ export function StatsView(): React.ReactElement {
   const [companionNames, setCompanionNames] = useState<Record<string, string>>({})
   const [textbookTitles, setTextbookTitles] = useState<Record<string, string>>({})
   const [weekStats, setWeekStats] = useState<WeekStats | null>(null)
+  // 年度热力图：默认滚动到最右端（最近日期），想看历史再向左拖
+  const heatmapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     (async () => {
@@ -191,6 +193,12 @@ export function StatsView(): React.ReactElement {
 
   const maxDaily = Math.max(...last14.map((d) => d.minutes), 1)
   const heatmapWeeks = buildHeatmapWeeks(dailyMinutes)
+
+  // 数据加载完成后把热力图滚动到最右端（最近日期）
+  useEffect(() => {
+    const el = heatmapRef.current
+    if (el) el.scrollLeft = el.scrollWidth
+  }, [heatmapWeeks.length])
 
   const sortedCompanions = Object.entries(companionUsage)
     .sort((a, b) => b[1] - a[1])
@@ -375,7 +383,7 @@ export function StatsView(): React.ReactElement {
         {/* Yearly heatmap */}
         <div className="rounded-xl border border-surface-border bg-bg-surface p-6">
           <h3 className="mb-4 text-lg font-semibold">年度学习热力图</h3>
-          <div className="overflow-x-auto">
+          <div ref={heatmapRef} className="overflow-x-auto">
             <div
               className="grid gap-[3px]"
               style={{
