@@ -1,12 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useAppStore } from '../stores/useAppStore'
 import { useCompanionStore } from '../stores/useCompanionStore'
 import { useTextbookStore } from '../stores/useTextbookStore'
-import { WORLD_ID } from '../types/models'
 import { parseSelfTestQuestions, type SelfTestQuestion } from '../../../shared/self-test-utils'
 import { FlashcardReviewView } from './FlashcardReviewView'
+
+const MarkdownRenderer = lazy(() => import('../lib/MarkdownRenderer'))
 
 interface MessageDTO {
   id: string
@@ -232,7 +231,9 @@ export function ReviewView(): React.ReactElement {
           <p className="text-text-muted">加载中...</p>
         ) : currentKey === 'summary' ? (
           <div className="markdown-body max-w-3xl">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{art('lesson_summary') ?? ''}</ReactMarkdown>
+            <Suspense fallback={null}>
+              <MarkdownRenderer>{art('lesson_summary') ?? ''}</MarkdownRenderer>
+            </Suspense>
           </div>
         ) : currentKey === 'selftest' ? (
           <div className="max-w-3xl">
@@ -245,15 +246,21 @@ export function ReviewView(): React.ReactElement {
           />
         ) : currentKey === 'diary' ? (
           <div className="markdown-body max-w-3xl">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{art('diary') ?? ''}</ReactMarkdown>
+            <Suspense fallback={null}>
+              <MarkdownRenderer>{art('diary') ?? ''}</MarkdownRenderer>
+            </Suspense>
           </div>
         ) : currentKey === 'progress' ? (
           <div className="markdown-body max-w-3xl">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{art('progress') ?? ''}</ReactMarkdown>
+            <Suspense fallback={null}>
+              <MarkdownRenderer>{art('progress') ?? ''}</MarkdownRenderer>
+            </Suspense>
           </div>
         ) : (
           <div className="markdown-body max-w-3xl">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{art('feynman_note') ?? ''}</ReactMarkdown>
+            <Suspense fallback={null}>
+              <MarkdownRenderer>{art('feynman_note') ?? ''}</MarkdownRenderer>
+            </Suspense>
           </div>
         )}
       </div>

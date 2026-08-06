@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ClassroomView } from './chat/ClassroomView'
 import { useChatStream } from './chat/useChatStream'
@@ -7,17 +7,21 @@ import { useDueFlashcardCount } from './hooks/useFlashcards'
 import { CompanionEditModal } from './components/CompanionEditModal'
 import { SettingsView } from './components/SettingsView'
 import { CompanionsManageView } from './components/CompanionsManageView'
-import { TextbooksView } from './components/TextbooksView'
-import { HistoryView } from './components/HistoryView'
-import { FlashcardReviewView } from './components/FlashcardReviewView'
 import { StatsView } from './components/StatsView'
-import { ReviewView } from './components/ReviewView'
 import { useAppStore } from './stores/useAppStore'
 import { useCompanionStore } from './stores/useCompanionStore'
 import { useTextbookStore } from './stores/useTextbookStore'
 import { useConversationStore } from './stores/useConversationStore'
-import { WORLD_ID, THEMES, type ActiveConversation, type Companion, type Textbook } from './types/models'
+import { WORLD_ID, type ActiveConversation, type Companion } from './types/models'
 import { applyFontScale } from '../../shared/font-scale'
+import { applyTheme, getStoredTheme } from './lib/theme'
+
+// Heavy views are code-split: they pull in the markdown/math vendor stack,
+// so they only load (and execute) once the user actually opens them.
+const TextbooksView = lazy(() => import('./components/TextbooksView').then((m) => ({ default: m.TextbooksView })))
+const HistoryView = lazy(() => import('./components/HistoryView').then((m) => ({ default: m.HistoryView })))
+const FlashcardReviewView = lazy(() => import('./components/FlashcardReviewView').then((m) => ({ default: m.FlashcardReviewView })))
+const ReviewView = lazy(() => import('./components/ReviewView').then((m) => ({ default: m.ReviewView })))
 
 function App(): React.ReactElement {
   const view = useAppStore((s) => s.view)
@@ -51,8 +55,6 @@ function App(): React.ReactElement {
   const editingCompanion = useCompanionStore((s) => s.editingCompanion)
   const isCreatingCompanion = useCompanionStore((s) => s.isCreating)
   const fetchCompanions = useCompanionStore((s) => s.fetch)
-  const startEditCompanion = useCompanionStore((s) => s.startEdit)
-  const startCreateCompanion = useCompanionStore((s) => s.startCreate)
   const closeEditCompanion = useCompanionStore((s) => s.closeEdit)
   const saveCompanion = useCompanionStore((s) => s.save)
   const removeCompanion = useCompanionStore((s) => s.remove)
@@ -86,9 +88,13 @@ function App(): React.ReactElement {
   }, [])
 
   useEffect(() => {
-    const saved = localStorage.getItem('sophia-theme')
-    const theme = saved && THEMES.some((t) => t.id === saved) ? saved : 'dark'
-    document.documentElement.setAttribute('data-theme', theme)
+    const theme = getStoredTheme()
+    applyTheme(theme)
+    if (theme !== 'auto') return
+    const mql = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => applyTheme('auto')
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
   }, [])
 
   // Global UI font scale (1.0.7 / 3.2.0)
@@ -158,11 +164,6 @@ function App(): React.ReactElement {
       await fetchActiveConversations()
       setShowClassroomDropdown(true)
     }
-  }
-
-  const handleEditCompanionFromDropdown = async (c: Companion) => {
-    const full = await window.sophia.companions.get(c.id)
-    if (full) startEditCompanion(full)
   }
 
   const activeConversations = useConversationStore((s) => s.activeConversations)
@@ -264,21 +265,23 @@ function App(): React.ReactElement {
 
       <main className="flex-1 overflow-auto">
         <ErrorBoundary>
-          {view === 'settings' && <SettingsView />}
-          {view === 'companions' && <CompanionsManageView />}
-          {view === 'textbooks' && <TextbooksView />}
-          {view === 'history' && <HistoryView />}
-          {view === 'review' && <ReviewView />}
-          {view === 'flashcards' && (
-            <FlashcardReviewView scope={flashcardScope} onClearScope={() => setFlashcardScope(null)} />
-          )}
-          {view === 'stats' && <StatsView />}
-          {view === 'classroom' && (
-            <div key={classroomResetKey} className="h-full">
-              <ClassroomView companion={selectedCompanion} textbook={selectedTextbook} chatStream={chatStream}
-                loadConversationId={loadConversationId} onConversationLoaded={onConversationLoaded} />
-            </div>
-          )}
+          <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-text-muted">加载中...</div>}>
+            {view === 'settings' && <SettingsView />}
+            {view === 'companions' && <CompanionsManageView />}
+            {view === 'textbooks' && <TextbooksView />}
+            {view === 'history' && <HistoryView />}
+            {view === 'review' && <ReviewView />}
+            {view === 'flashcards' && (
+              <FlashcardReviewView scope={flashcardScope} onClearScope={() => setFlashcardScope(null)} />
+            )}
+            {view === 'stats' && <StatsView />}
+            {view === 'classroom' && (
+              <div key={classroomResetKey} className="h-full">
+                <ClassroomView companion={selectedCompanion} textbook={selectedTextbook} chatStream={chatStream}
+                  loadConversationId={loadConversationId} onConversationLoaded={onConversationLoaded} />
+              </div>
+            )}
+          </Suspense>
         </ErrorBoundary>
       </main>
 

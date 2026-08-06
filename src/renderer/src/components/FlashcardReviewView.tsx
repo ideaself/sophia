@@ -1,6 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import {
   parseFlashcards,
   rebuildArtifactContent,
@@ -19,6 +17,8 @@ import {
   loadAllFavorites,
   toggleFavorite
 } from '../hooks/useFlashcards'
+
+const MarkdownRenderer = lazy(() => import('../lib/MarkdownRenderer'))
 
 // ---------------------------------------------------------------------------
 // Component
@@ -505,7 +505,9 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
                   />
                   <div className="min-w-0 flex-1">
                     <div className="markdown-body line-clamp-2 text-sm text-text-primary">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{c.question}</ReactMarkdown>
+                      <Suspense fallback={null}>
+                        <MarkdownRenderer>{c.question}</MarkdownRenderer>
+                      </Suspense>
                     </div>
                     <p className="mt-1 text-xs text-text-muted truncate">
                       来源：{c.conversationTitle} · {c.createdAt.slice(0, 10)}
@@ -586,11 +588,13 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
                     </span>
                   </div>
                   <div className="markdown-body text-text-primary">
-                    {isFlipped ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{currentCard.answer}</ReactMarkdown>
-                    ) : (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{currentCard.question}</ReactMarkdown>
-                    )}
+                    <Suspense fallback={null}>
+                      {isFlipped ? (
+                        <MarkdownRenderer>{currentCard.answer}</MarkdownRenderer>
+                      ) : (
+                        <MarkdownRenderer>{currentCard.question}</MarkdownRenderer>
+                      )}
+                    </Suspense>
                   </div>
                   <p className="mt-6 text-xs text-text-muted">
                     来源：{currentCard.conversationTitle}

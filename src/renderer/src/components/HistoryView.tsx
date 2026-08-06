@@ -1,18 +1,15 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import { normalizeMathDelimiters } from '../../../shared/math-delimiters'
-import { rehypeTexSource, handleCopyMathSource } from '../lib/mathCopy'
+import { handleCopyMathSource } from '../lib/mathCopy'
 import { useAppStore } from '../stores/useAppStore'
 import { useCompanionStore } from '../stores/useCompanionStore'
 import { useTextbookStore } from '../stores/useTextbookStore'
 import { WORLD_ID } from '../types/models'
 import { ArtifactType } from '../../../shared/types/ids'
 import { parseSelfTestQuestions } from '../../../shared/self-test-utils'
-import { markdownToHtml } from '../lib/markdownToHtml'
 import { SelfTestModal } from './SelfTestModal'
+
+const MarkdownRenderer = lazy(() => import('../lib/MarkdownRenderer'))
 
 /** Artifact types persisted as standalone artifacts (redo-able from history). */
 const STORED_ARTIFACT_TYPES = [
@@ -142,8 +139,6 @@ export function HistoryView(): React.ReactElement {
     list.sort((a, b) => (a.key === 'none' ? 1 : 0) - (b.key === 'none' ? 1 : 0) || a.title.localeCompare(b.title, 'zh'))
     return list
   }, [conversations, textbookTitleMap])
-
-  const activeCount = conversations.filter((c) => !c.endedAt).length
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups((prev) => {
@@ -277,6 +272,9 @@ export function HistoryView(): React.ReactElement {
     await window.sophia.data.exportPdf(html, result.filePath)
   }
 
+  /** Markdown → HTML for PDF export (markdownToHtml is code-split; PDF export is rare). */
+  const renderHtml = (md: string) => import('../lib/markdownToHtml').then((m) => m.markdownToHtml(md))
+
   const handleExportPdf = async (conv: ConversationDTO) => {
     const msgs = await window.sophia.data.listMessages(conv.id)
     if (msgs.length === 0) return
@@ -288,13 +286,13 @@ export function HistoryView(): React.ReactElement {
     for (const msg of msgs) {
       const label = msg.role === 'user' ? '你' : msg.role === 'assistant' ? compName : '系统'
       parts.push(`<h3>${escapeHtml(label)} — ${escapeHtml(new Date(msg.createdAt).toLocaleString())}</h3>`)
-      parts.push(markdownToHtml(msg.content))
+      parts.push(await renderHtml(msg.content))
     }
     await savePdf(parts.join('\n'), conv.title)
   }
 
   const handleExportArtifactPdf = async (conv: ConversationDTO, content: string) => {
-    const html = `<h1>${escapeHtml(conv.title)} · 课后笔记</h1>\n` + markdownToHtml(content)
+    const html = `<h1>${escapeHtml(conv.title)} · 课后笔记</h1>\n` + await renderHtml(content)
     await savePdf(html, `${conv.title}_笔记`)
   }
 
@@ -531,9 +529,11 @@ export function HistoryView(): React.ReactElement {
                   <p className="text-xs text-text-muted">加载中...</p>
                 ) : diaryMonthContent ? (
                   <div className="markdown-body text-sm text-text-secondary" onCopy={handleCopyMathSource}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeTexSource, rehypeKatex]}>
-                      {normalizeMathDelimiters(diaryMonthContent)}
-                    </ReactMarkdown>
+                    <Suspense fallback={null}>
+                      <MarkdownRenderer>
+                        {normalizeMathDelimiters(diaryMonthContent)}
+                      </MarkdownRenderer>
+                    </Suspense>
                   </div>
                 ) : (
                   <p className="text-xs text-text-muted">该月暂无日记。</p>
@@ -686,12 +686,11 @@ export function HistoryView(): React.ReactElement {
                             </div>
                           ) : (
                             <div className="markdown-body max-h-48 overflow-auto text-xs text-text-secondary" onCopy={handleCopyMathSource}>
-                              <ReactMarkdown
-                                remarkPlugins={[remarkGfm, remarkMath]}
-                                rehypePlugins={[rehypeTexSource, rehypeKatex]}
-                              >
-                                {normalizeMathDelimiters(art.content)}
-                              </ReactMarkdown>
+                              <Suspense fallback={null}>
+                                <MarkdownRenderer>
+                                  {normalizeMathDelimiters(art.content)}
+                                </MarkdownRenderer>
+                              </Suspense>
                             </div>
                           )}
                         </div>
@@ -718,12 +717,11 @@ export function HistoryView(): React.ReactElement {
                               {msg.role === 'user' ? '你' : msg.role === 'assistant' ? 'AI' : '系统'} · {new Date(msg.createdAt).toLocaleTimeString()}
                             </p>
                             <div className={msg.role === 'user' ? 'whitespace-pre-wrap text-text-secondary' : 'markdown-body text-text-secondary'} onCopy={handleCopyMathSource}>
-                              <ReactMarkdown
-                                remarkPlugins={[remarkGfm, remarkMath]}
-                                rehypePlugins={[rehypeTexSource, rehypeKatex]}
-                              >
-                                {normalizeMathDelimiters(msg.content)}
-                              </ReactMarkdown>
+                              <Suspense fallback={null}>
+                                <MarkdownRenderer>
+                                  {normalizeMathDelimiters(msg.content)}
+                                </MarkdownRenderer>
+                              </Suspense>
                             </div>
                           </div>
                         ))}

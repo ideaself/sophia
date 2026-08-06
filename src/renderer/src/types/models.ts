@@ -33,6 +33,7 @@ export interface ThemeOption {
 }
 
 export const THEMES: ThemeOption[] = [
+  { id: 'auto', name: '跟随系统', preview: { bg: '#191a1d', surface: '#fafaf9', accent: '#6b7280', text: '#d4d4d4' } },
   { id: 'dark', name: '暗夜', preview: { bg: '#191a1d', surface: '#212226', accent: '#6b7280', text: '#f0f1f3' } },
   { id: 'emerald', name: '护眼', preview: { bg: '#d6eace', surface: '#e2f1e3', accent: '#3d7a4e', text: '#2d2d2d' } },
   { id: 'light', name: '暖光', preview: { bg: '#fafaf9', surface: '#ffffff', accent: '#b45309', text: '#1c1917' } }

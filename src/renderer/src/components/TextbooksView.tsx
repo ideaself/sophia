@@ -1,10 +1,10 @@
-import { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { useState, lazy, Suspense } from 'react'
 import { PdfReaderView } from '../reader/PdfReaderView'
 import { EpubReaderView } from '../reader/EpubReaderView'
 import { useTextbookStore } from '../stores/useTextbookStore'
 import { WORLD_ID, type Textbook } from '../types/models'
+
+const MarkdownRenderer = lazy(() => import('../lib/MarkdownRenderer'))
 
 export function TextbooksView(): React.ReactElement {
   const textbooks = useTextbookStore((s) => s.textbooks)
@@ -388,9 +388,11 @@ export function TextbooksView(): React.ReactElement {
                 <p className="text-sm text-text-muted">加载中...</p>
               ) : (
                 <div className="markdown-body text-sm leading-relaxed text-text-secondary">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {viewingContent}
-                  </ReactMarkdown>
+                  <Suspense fallback={null}>
+                    <MarkdownRenderer>
+                      {viewingContent}
+                    </MarkdownRenderer>
+                  </Suspense>
                 </div>
               )}
             </div>

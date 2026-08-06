@@ -1,5 +1,4 @@
 @import 'tailwindcss';
-@import 'katex/dist/katex.min.css';
 
 /* ============================================
    Theme Design Tokens (Tailwind v4 @theme)
@@ -72,6 +71,21 @@
   --accent-border: #d97706;
   --surface-border: #e7e5e4;
   --surface-border-strong: #d6d3d1;
+}
+
+/* ============================================
+   Theme switch transition — active only briefly
+   while a theme change is applied (see lib/theme.ts)
+   ============================================ */
+[data-theme-transition] *,
+[data-theme-transition] *::before,
+[data-theme-transition] *::after {
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    fill 0.2s ease,
+    stroke 0.2s ease !important;
 }
 
 /* ============================================

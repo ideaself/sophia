@@ -1,20 +1,11 @@
-import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
-import rehypeHighlight from 'rehype-highlight'
-import mermaid from 'mermaid'
+import { useMemo, useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { useTTS, stripMarkdown } from '../hooks/useTTS'
 import { TTSControlPanel } from '../components/TTSControlPanel'
 import { normalizeMathDelimiters } from '../../../shared/math-delimiters'
-import { rehypeTexSource, handleCopyMathSource } from '../lib/mathCopy'
+import { handleCopyMathSource } from '../lib/mathCopy'
+import { loadMermaid } from '../lib/mermaid'
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'dark',
-  securityLevel: 'loose'
-})
+const MarkdownRenderer = lazy(() => import('../lib/MarkdownRenderer'))
 
 export type MessageHighlight = 'none' | 'match' | 'current'
 
@@ -41,14 +32,21 @@ function MermaidBlock({ code }: { code: string }) {
 
   useEffect(() => {
     if (!ref.current) return
-    mermaid.render(id.current, code).then(({ svg }) => {
-      if (ref.current) {
-        ref.current.innerHTML = svg
-        setError(null)
-      }
-    }).catch((e) => {
-      setError(String(e))
-    })
+    let cancelled = false
+    loadMermaid()
+      .then((m) => m.default.render(id.current, code))
+      .then(({ svg }) => {
+        if (!cancelled && ref.current) {
+          ref.current.innerHTML = svg
+          setError(null)
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e))
+      })
+    return () => {
+      cancelled = true
+    }
   }, [code])
 
   if (error) {
@@ -255,44 +253,44 @@ export function ChatMessage({
         className={isUser
           ? 'text-sm leading-relaxed whitespace-pre-wrap'
           : 'markdown-body text-sm leading-relaxed'}>
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeTexSource, rehypeKatex, rehypeHighlight]}
-          components={{
-            code({ className, children, ...props }) {
-              const match = /language-(\w+)/.exec(className ?? '')
-              const code = String(children).replace(/\n$/, '')
-              if (match?.[1] === 'mermaid') {
-                return <MermaidBlock code={code} />
-              }
-              return <code className={className} {...props}>{children}</code>
-            },
-            pre({ children }) {
-              const codeText = extractText(children)
-              return (
-                <div className="group relative">
-                  <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    <CopyButton text={codeText} />
+        <Suspense fallback={<span className="text-xs text-text-muted">渲染中…</span>}>
+          <MarkdownRenderer
+            components={{
+              code({ className, children, ...props }) {
+                const match = /language-(\w+)/.exec(className ?? '')
+                const code = String(children).replace(/\n$/, '')
+                if (match?.[1] === 'mermaid') {
+                  return <MermaidBlock code={code} />
+                }
+                return <code className={className} {...props}>{children}</code>
+              },
+              pre({ children }) {
+                const codeText = extractText(children)
+                return (
+                  <div className="group relative">
+                    <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <CopyButton text={codeText} />
+                    </div>
+                    <pre>{children}</pre>
                   </div>
-                  <pre>{children}</pre>
-                </div>
-              )
-            },
-            blockquote({ children }) {
-              const text = extractText(children)
-              const m = /【教材出处 · 《([^】]+)》 · ([^】]+)】/.exec(text)
-              if (!m) return <blockquote>{children}</blockquote>
-              return (
-                <blockquote>
-                  <CitationChip textbookId={textbookId} chapter={m[2].trim()} />
-                  {children}
-                </blockquote>
-              )
-            }
-          }}
-        >
-          {normalizeMathDelimiters(content)}
-        </ReactMarkdown>
+                )
+              },
+              blockquote({ children }) {
+                const text = extractText(children)
+                const m = /【教材出处 · 《([^】]+)》 · ([^】]+)】/.exec(text)
+                if (!m) return <blockquote>{children}</blockquote>
+                return (
+                  <blockquote>
+                    <CitationChip textbookId={textbookId} chapter={m[2].trim()} />
+                    {children}
+                  </blockquote>
+                )
+              }
+            }}
+          >
+            {normalizeMathDelimiters(content)}
+          </MarkdownRenderer>
+        </Suspense>
       </div>
     )
   }, [content, id, isUser])
@@ -402,7 +400,8 @@ function extractText(node: React.ReactNode): string {
   if (typeof node === 'string') return node
   if (Array.isArray(node)) return node.map(extractText).join('')
   if (node && typeof node === 'object' && 'props' in node) {
-    return extractText((node as any).props.children)
+    const props = (node as { props?: { children?: React.ReactNode } }).props
+    return extractText(props?.children)
   }
   return ''
 }

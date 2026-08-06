@@ -1,15 +1,12 @@
 import { useState } from 'react'
 import { THEMES } from '../types/models'
+import { applyTheme, getStoredTheme, withThemeTransition } from '../lib/theme'
 
 export function ThemeSwitcher(): React.ReactElement {
-  const [current, setCurrent] = useState(() => localStorage.getItem('sophia-theme') || 'dark')
+  const [current, setCurrent] = useState(() => getStoredTheme())
 
   const handleSelect = (themeId: string) => {
-    if (themeId === 'dark') {
-      document.documentElement.removeAttribute('data-theme')
-    } else {
-      document.documentElement.setAttribute('data-theme', themeId)
-    }
+    withThemeTransition(() => applyTheme(themeId))
     localStorage.setItem('sophia-theme', themeId)
     setCurrent(themeId)
   }
