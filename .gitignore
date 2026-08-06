@@ -18,3 +18,4 @@ Thumbs.db
 /diag-*.mjs
 /diag-*.js
 /.codex-write-test.tmp
+coverage/
