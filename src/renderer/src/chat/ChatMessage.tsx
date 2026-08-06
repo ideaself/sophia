@@ -13,6 +13,8 @@ interface ChatMessageProps {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  /** 消息时间（本地乐观消息可能为空）。 */
+  createdAt?: string
   showActions?: boolean
   /** In-conversation search highlight state. */
   highlight?: MessageHighlight
@@ -182,6 +184,7 @@ export function ChatMessage({
   id,
   role,
   content,
+  createdAt,
   showActions,
   highlight = 'none',
   textbookId,
@@ -312,6 +315,11 @@ export function ChatMessage({
               </div>
             ) : (
               rendered
+            )}
+            {createdAt && !editing && (
+              <p className={`mt-1 text-[10px] leading-none ${isUser ? 'text-right text-white/50' : 'text-text-muted'}`}>
+                {new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </p>
             )}
           </div>
               {showActions && !editing && (

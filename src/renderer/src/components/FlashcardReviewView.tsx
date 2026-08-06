@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense, useRef } from 'react'
 import {
   parseFlashcards,
   rebuildArtifactContent,
@@ -51,6 +51,8 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
   const [loading, setLoading] = useState(true)
   const [sessionReviewed, setSessionReviewed] = useState(0)
   const [sessionCorrect, setSessionCorrect] = useState(0)
+  // 键盘连答：handleRate 每次渲染重建，用 ref 保证按键处理器拿到最新闭包
+  const handleRateRef = useRef<(rating: Rating) => void>(() => {})
   const [editing, setEditing] = useState(false)
   const [editQuestion, setEditQuestion] = useState('')
   const [editAnswer, setEditAnswer] = useState('')
@@ -148,6 +150,33 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
       setIsFlipped(false)
     }
   }
+
+  useEffect(() => {
+    handleRateRef.current = handleRate
+  }, [handleRate])
+
+  // 键盘连答：空格翻面，数字 1-4 评分（1=再看 2=困难 3=良好 4=简单）
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const isTyping = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      if (isTyping) return
+      if (e.key === ' ') {
+        e.preventDefault()
+        setIsFlipped((v) => !v)
+        return
+      }
+      if (!isFlipped) return
+      const map: Record<string, Rating> = { '1': 'again', '2': 'hard', '3': 'good', '4': 'easy' }
+      const rating = map[e.key]
+      if (rating) {
+        e.preventDefault()
+        handleRateRef.current(rating)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [isFlipped])
 
   const handleNext = () => {
     if (currentIndex < displayList.length - 1) {
@@ -658,6 +687,9 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
               跳过
             </button>
           </div>
+          <p className="mt-2 text-center text-[10px] text-text-muted">
+            键盘连答：空格翻面 · 1 再看 / 2 困难 / 3 良好 / 4 简单
+          </p>
         </>
       )}
     </div>

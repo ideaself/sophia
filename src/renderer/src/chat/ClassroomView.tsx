@@ -41,6 +41,8 @@ interface DisplayMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  /** 消息时间（仅持久化消息有；本地乐观消息为空则不显示）。 */
+  createdAt?: string
 }
 
 interface TabState {
@@ -277,7 +279,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             const next = [...prev]
             next[i] = {
               ...next[i],
-              messages: msgs.map((m) => ({ id: m.id, role: m.role, content: m.content }))
+              messages: msgs.map((m) => ({ id: m.id, role: m.role, content: m.content, createdAt: m.createdAt }))
             }
             return next
           })
@@ -339,7 +341,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       window.sophia.data.listMessages(loadConversationId).then((msgs) => {
         if (cancelled) return
         const loaded: DisplayMessage[] = msgs.map((m) => ({
-          id: m.id, role: m.role, content: m.content
+          id: m.id, role: m.role, content: m.content, createdAt: m.createdAt
         }))
         const newTab = makeTab(loadConversationId, conv.title)
         newTab.messages = loaded
@@ -617,7 +619,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
       const updatedMessages: DisplayMessage[] = [
         ...tab.messages,
-        { id: `local-${Date.now()}`, role: 'user', content: userMessage }
+        { id: `local-${Date.now()}`, role: 'user', content: userMessage, createdAt: new Date().toISOString() }
       ]
       updateTab(activeIdx, { messages: updatedMessages, input: '', retryMessage: null })
       setStickToBottom(true)
@@ -662,7 +664,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             setTabs((prev) => {
               const next = [...prev]
               const t = next[targetIdx]
-              if (t) t.messages = [...t.messages, { id: `assistant-${Date.now()}`, role: 'assistant', content }]
+              if (t) t.messages = [...t.messages, { id: `assistant-${Date.now()}`, role: 'assistant', content, createdAt: new Date().toISOString() }]
               return next
             })
           }
@@ -1350,6 +1352,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                         id={row.msg.id}
                         role={row.msg.role}
                         content={row.msg.content}
+                        createdAt={row.msg.createdAt}
                         showActions={!chatStream.state.isStreaming && row.msg.role !== 'system'}
                         highlight={row.highlight}
                         textbookId={textbook?.id ?? null}
