@@ -12,7 +12,7 @@ import { ArtifactStore } from '../storage/artifact-store'
 import { companionDir, palMomentsPath, palMomentsPathForTextbook, relationPath, handoffMetaPath } from '../storage/app-data'
 import { IpcChatPromptMessagesInputSchema, IpcAiComposeInputSchema } from '../../shared/schemas/ipc'
 import { compressMessages, splitCompressionWindowByTokens } from '../prompt/message-compressor'
-import { analyzeTeaching, shouldAnalyze, formatAssessment } from '../prompt/teaching-coach'
+import { analyzeTeaching, shouldAnalyze, formatAssessment, ANALYSIS_INTERVAL } from '../prompt/teaching-coach'
 import {
   retrievePassages,
   formatPassages,
@@ -47,6 +47,8 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
   // persists between turns until the next analysis interval triggers.
   // { formatted segment string, round number }
   const coachCache = new Map<string, { segment: string; round: number; contentProgress: string }>()
+  // 防止异步教练分析叠加（同一会话同时只跑一个）
+  const coachAnalysisInFlight = new Set<string>()
 
   // Cache compressed summaries per conversation to avoid re-calling the
   // LLM on every turn.  Keyed by the number of messages in the compression
@@ -171,35 +173,38 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
       }
     }
 
-    // 7. Teaching-coach analysis (every ANALYSIS_INTERVAL user messages)
+    // 7. Teaching-coach analysis (every ANALYSIS_INTERVAL user messages).
+    //    异步执行，不阻塞本次发送：结果写入 coachCache，从后续轮次注入。
+    //    （教练分析是建议性的，晚一两轮到达无副作用；同步等待会让
+    //    发送按钮长时间卡住——旧实现每第 4 条消息卡一次发送。）
     const userMsgCount = history.filter((m) => m.role === 'user').length + 1 // +1 for the current message
-    if (shouldAnalyze(userMsgCount) && providerStore) {
-      try {
-        const active = await providerStore.getActive()
-        if (active) {
-          const apiKey = await providerStore.readApiKey(active.id)
-          if (apiKey) {
-            let textbookTitle: string | undefined
-            if (params.textbookId) {
-              const tb = await textbookStore.get(params.textbookId, params.worldId)
-              textbookTitle = tb?.title
-            }
-            const assessment = await analyzeTeaching(history, companion, textbookTitle, {
-              apiKey,
-              baseUrl: active.baseUrl || 'https://api.deepseek.com',
-              model: active.selectedModel || 'deepseek-v4-flash'
-            })
-            if (assessment) {
-              const round = userMsgCount / 4 // 4 = ANALYSIS_INTERVAL
-              const segment = formatAssessment(assessment, round)
-              coachCache.set(params.conversationId, { segment, round, contentProgress: assessment.contentProgress })
-              console.log(`[teaching-coach] Analysis injected for ${params.conversationId} (round ${round})`)
+    if (shouldAnalyze(userMsgCount) && providerStore && !coachAnalysisInFlight.has(params.conversationId)) {
+      coachAnalysisInFlight.add(params.conversationId)
+      void (async () => {
+        try {
+          const active = await providerStore!.getActive()
+          if (active) {
+            const apiKey = await providerStore!.readApiKey(active.id)
+            if (apiKey) {
+              const assessment = await analyzeTeaching(history, companion, textbookTitle, {
+                apiKey,
+                baseUrl: active.baseUrl || 'https://api.deepseek.com',
+                model: active.selectedModel || 'deepseek-v4-flash'
+              })
+              if (assessment) {
+                const round = userMsgCount / ANALYSIS_INTERVAL
+                const segment = formatAssessment(assessment, round)
+                coachCache.set(params.conversationId, { segment, round, contentProgress: assessment.contentProgress })
+                console.log(`[teaching-coach] Analysis injected for ${params.conversationId} (round ${round})`)
+              }
             }
           }
+        } catch (err) {
+          console.warn('[teaching-coach] Analysis failed (non-fatal):', err instanceof Error ? err.message : String(err))
+        } finally {
+          coachAnalysisInFlight.delete(params.conversationId)
         }
-      } catch (err) {
-        console.warn('[teaching-coach] Analysis failed (non-fatal):', err instanceof Error ? err.message : String(err))
-      }
+      })()
     }
 
     // Retrieve cached assessment (from this turn or a previous one)
