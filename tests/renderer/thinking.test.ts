@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shouldUseThinking } from '../../src/renderer/src/lib/thinking'
+import { shouldUseThinking } from '../../src/shared/thinking'
 
 describe('shouldUseThinking（auto 模式启发式）', () => {
   it('on / off 直接决定', () => {

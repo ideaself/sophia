@@ -24,7 +24,7 @@ import {
   saveDictConfig,
   buildDictUrl
 } from '../../../shared/dict'
-import { loadThinkingMode, saveThinkingMode, type ThinkingMode } from '../lib/thinking'
+import { loadThinkingMode, saveThinkingMode, type ThinkingMode } from '../../../shared/thinking'
 
 /** 可导出/导入的界面设置（localStorage key 白名单，不含密钥等敏感数据）。 */
 const UI_SETTINGS_KEYS = [

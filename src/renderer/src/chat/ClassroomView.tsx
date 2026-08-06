@@ -9,7 +9,7 @@ import { useAppStore } from '../stores/useAppStore'
 import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-templates'
 import { detectVoiceTrigger, loadVoiceTriggers } from '../../../shared/voice-trigger'
 import { estimateDailyStudyMinutes } from '../../../shared/study-time'
-import { loadThinkingMode, shouldUseThinking } from '../lib/thinking'
+import { loadThinkingMode, shouldUseThinking } from '../../../shared/thinking'
 
 // PDF/EPUB 阅读器体积大（pdfjs 等），打开阅读分栏时才加载
 const EpubReaderView = lazy(() => import('../reader/EpubReaderView').then((m) => ({ default: m.EpubReaderView })))
