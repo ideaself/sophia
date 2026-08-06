@@ -24,6 +24,7 @@ import {
   saveDictConfig,
   buildDictUrl
 } from '../../../shared/dict'
+import { loadThinkingMode, saveThinkingMode, type ThinkingMode } from '../lib/thinking'
 
 /** 可导出/导入的界面设置（localStorage key 白名单，不含密钥等敏感数据）。 */
 const UI_SETTINGS_KEYS = [
@@ -74,7 +75,7 @@ export function SettingsView(): React.ReactElement {
   const [saving, setSaving] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [thinkingEnabled, setThinkingEnabled] = useState(
-    () => localStorage.getItem('sophia.thinkingEnabled') === '1'
+    () => loadThinkingMode()
   )
   const [hideNarration, setHideNarration] = useState(
     () => localStorage.getItem('sophia.hideNarration') === '1'
@@ -220,9 +221,9 @@ export function SettingsView(): React.ReactElement {
     })
   }
 
-  const handleToggleThinking = (enabled: boolean) => {
-    setThinkingEnabled(enabled)
-    localStorage.setItem('sophia.thinkingEnabled', enabled ? '1' : '0')
+  const handleToggleThinking = (mode: ThinkingMode) => {
+    setThinkingEnabled(mode)
+    saveThinkingMode(mode)
   }
 
   const handleToggleHideNarration = (enabled: boolean) => {
@@ -772,18 +773,31 @@ export function SettingsView(): React.ReactElement {
 
       <div className="mb-8">
         <h3 className="mb-3 text-lg font-semibold">课堂行为</h3>
-        <label className="flex cursor-pointer items-center justify-between rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
+        <div className="flex cursor-pointer items-center justify-between rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
           <div className="pr-4">
-            <p className="text-sm font-medium">课堂追问启用深度思考（Thinking）</p>
-            <p className="mt-0.5 text-xs text-text-muted">让模型先推理再回答，质量更高但响应更慢；课后摘要、闪卡等生成不受影响</p>
+            <p className="text-sm font-medium">思考深度（Thinking）</p>
+            <p className="mt-0.5 text-xs text-text-muted">自动：简单问题快速开口，需要多步分析时再深入思考；课后摘要、闪卡等生成不受影响</p>
           </div>
-          <input
-            type="checkbox"
-            checked={thinkingEnabled}
-            onChange={(e) => handleToggleThinking(e.target.checked)}
-            className="h-4 w-4 flex-shrink-0"
-          />
-        </label>
+          <div className="flex flex-shrink-0 overflow-hidden rounded-full border border-surface-border-strong text-xs">
+            {([
+              ['auto', '自动'],
+              ['on', '开启'],
+              ['off', '关闭']
+            ] as const).map(([mode, label]) => (
+              <button
+                key={mode}
+                onClick={() => handleToggleThinking(mode)}
+                className={`px-3 py-1.5 transition-colors ${
+                  thinkingEnabled === mode
+                    ? 'bg-accent text-white'
+                    : 'text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="mt-2 flex cursor-pointer items-center justify-between rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
           <div className="pr-4">
             <p className="text-sm font-medium">每日学习目标</p>

@@ -21,6 +21,7 @@ import type { DeepSeekChatMessage } from '../llm/types'
 import type { ClassMode } from '../../shared/types/ids'
 import {
   getSocraticRules,
+  getLessonRhythmRules,
   getNarrationRules,
   getEndClassRule,
   getPageNavigationRule,
@@ -338,6 +339,7 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
 
   const segments: string[] = [
     getSocraticRules(),
+    getLessonRhythmRules(),
     buildCharacterSegment(companion),
     buildWorldSegment(worldContext)
   ]

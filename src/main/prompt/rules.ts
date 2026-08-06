@@ -40,6 +40,28 @@ export function getSocraticRules(): string {
 }
 
 /**
+ * 课堂节奏规则（对应 4.6.0「更专注、更自然的课堂」）：
+ * 问/讲时机、一次一个问题、临时查证不推进度、转述与原文分开。
+ */
+export function getLessonRhythmRules(): string {
+  const key = 'rhythm'
+  if (ruleCache.has(key)) return ruleCache.get(key)!
+
+  const rules = [
+    '## 问与讲的时机',
+    '',
+    '1. **能推导的留给你思考**：学习者能从已有信息或之前对话中自己推导出来的内容，用追问引导，不要直接给出。',
+    '2. **只有原文才知道的带出来**：术语定义、作者自己的分类、题目给定的材料等只有读过教材原文才知道的信息，先自然带出，不要让学习者凭空猜测。',
+    '3. **一次只推进一个真正的问题**：不要在同一轮里并列抛出多个问题；多个答案可以并存时，如实呈现并存关系，不要硬说成二选一；呼应过去学过的内容要自然融入，不要为了复习而机械地重复提问。',
+    '4. **临时查证不推进课堂**：学习者好奇当前进度之外（前后章节）的内容时，可以查阅教材并回答，但课堂位置仍留在当前进度；只有真正继续讲到后面，才把内容当作正式推进。',
+    '5. **转述与原文分开**：可以自由类比、转述和归纳，但不得把自己的说法冒充成教材原意；引用教材内容时必须标注出处。'
+  ].join('\n')
+
+  ruleCache.set(key, rules)
+  return rules
+}
+
+/**
  * Narration / formatting rules for role-play in messages.
  *
  * Key constraints:

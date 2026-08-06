@@ -9,6 +9,7 @@ import { useAppStore } from '../stores/useAppStore'
 import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-templates'
 import { detectVoiceTrigger, loadVoiceTriggers } from '../../../shared/voice-trigger'
 import { estimateDailyStudyMinutes } from '../../../shared/study-time'
+import { loadThinkingMode, shouldUseThinking } from '../lib/thinking'
 
 // PDF/EPUB 阅读器体积大（pdfjs 等），打开阅读分栏时才加载
 const EpubReaderView = lazy(() => import('../reader/EpubReaderView').then((m) => ({ default: m.EpubReaderView })))
@@ -642,8 +643,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         return
       }
 
-      const thinkingEnabled = localStorage.getItem('sophia.thinkingEnabled') === '1'
-      await chatStream.send(builtMessages, undefined, thinkingEnabled)
+      const thinkingMode = loadThinkingMode()
+      await chatStream.send(builtMessages, undefined, shouldUseThinking(userMessage, thinkingMode))
 
       const endPromise = chatStream.streamEnd
       if (endPromise) {
@@ -701,6 +702,12 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
   const handleEndClass = async () => {
     if (!activeTab.conversationId) return
+    const ok = await window.sophia.dialog.confirm({
+      message: '确定下课吗？将生成课后总结、记忆卡片和学习日记。输入框中尚未发送的文字会保留。',
+      confirmLabel: '下课',
+      cancelLabel: '取消'
+    })
+    if (!ok) return
     setIsLoading(true)
     try {
       const result = await window.sophia.data.endConversation(
@@ -1225,7 +1232,9 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
               </span>
             )}
             {chatStream.state.isStreaming && (
-              <span className="text-xs text-amber-400 animate-pulse">正在思考...</span>
+              <span className="text-xs text-amber-400 animate-pulse">
+                {chatStream.state.reasoningContent.length > 0 ? '正在推理…' : '正在组织回答…'}
+              </span>
             )}
             {dailyGoal > 0 && (
               <div
