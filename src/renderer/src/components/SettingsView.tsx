@@ -493,124 +493,11 @@ export function SettingsView(): React.ReactElement {
         </div>
       </div>
 
-      <CollapsibleSection title="常用文本模板" badge={`${templates.length}/${MAX_TEXT_TEMPLATES}`}>
-        <p className="mb-3 text-xs text-text-muted">
-          设置常用文字片段（最多 {MAX_TEXT_TEMPLATES} 条，每条 ≤ {MAX_TEMPLATE_LENGTH} 字）。
-          在课堂输入框点「☰」按钮或按 Alt+1..9 插入。
-        </p>
-        <div className="space-y-2">
-          {templates.map((t, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <kbd className="flex-shrink-0 rounded border border-surface-border-strong bg-bg-elevated px-2 py-1.5 font-mono text-xs text-text-muted">
-                Alt+{i + 1}
-              </kbd>
-              <input
-                type="text"
-                value={t}
-                maxLength={MAX_TEMPLATE_LENGTH}
-                onChange={(e) => updateTemplate(i, e.target.value)}
-                placeholder={`第 ${i + 1} 条模板（点击后可在输入框插入）`}
-                className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
-              />
-              <button
-                onClick={() => removeTemplate(i)}
-                className="flex-shrink-0 rounded border border-surface-border-strong px-3 py-2 text-sm text-red-400 hover:bg-red-900/30"
-                title="删除此模板"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-          {templates.length < MAX_TEXT_TEMPLATES && (
-            <button
-              onClick={addTemplate}
-              className="w-full rounded-lg border border-dashed border-surface-border-strong px-4 py-2.5 text-sm text-text-muted hover:border-accent-border hover:text-accent-hover transition-colors"
-            >
-              + 添加模板
-            </button>
-          )}
-        </div>
-      </CollapsibleSection>
+      
 
-      <CollapsibleSection title="语音输入触发词">
-        <p className="mb-3 text-xs text-text-muted">
-          用系统或第三方语音输入（macOS 听写、Windows 系统语音、讯飞输入法等）说话时，
-          说完设定好的触发短语即可免手发送或清空消息。
-        </p>
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <label className="w-16 flex-shrink-0 text-xs text-text-muted">发送</label>
-            <input
-              type="text"
-              value={voiceTriggers.send}
-              maxLength={20}
-              onChange={(e) => handleVoiceTriggerChange('send', e.target.value)}
-              placeholder={`默认：${DEFAULT_VOICE_TRIGGERS.send}`}
-              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
-            />
-            <span className="flex-shrink-0 text-xs text-text-muted">在输入末尾说出即自动发送</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="w-16 flex-shrink-0 text-xs text-text-muted">清空</label>
-            <input
-              type="text"
-              value={voiceTriggers.clear}
-              maxLength={20}
-              onChange={(e) => handleVoiceTriggerChange('clear', e.target.value)}
-              placeholder={`默认：${DEFAULT_VOICE_TRIGGERS.clear}`}
-              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
-            />
-            <span className="flex-shrink-0 text-xs text-text-muted">在输入末尾说出即清空输入</span>
-          </div>
-        </div>
-      </CollapsibleSection>
+      
 
-      <CollapsibleSection title="在线词典" defaultOpen>
-        <p className="mb-3 text-xs text-text-muted">
-          在教材阅读器（EPUB）中选中英文单词时，自动弹出词典查询。可自定义词典网址模板。
-        </p>
-        <label className="flex cursor-pointer items-center justify-between rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
-          <div className="pr-4">
-            <p className="text-sm font-medium">选中英文单词自动查词</p>
-            <p className="mt-0.5 text-xs text-text-muted">关闭后仍可在选区菜单中手动点「查词」</p>
-          </div>
-          <input
-            type="checkbox"
-            checked={dictConfig.enabled}
-            onChange={(e) => handleDictChange({ enabled: e.target.checked })}
-            className="h-4 w-4 flex-shrink-0"
-          />
-        </label>
-        <div className="mt-2 rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
-          <label className="mb-1 block text-xs font-medium text-text-muted">
-            词典网址模板（用 <code className="rounded bg-bg-elevated px-1">{"{word}"}</code> 表示单词位置）
-          </label>
-          <input
-            type="text"
-            value={dictConfig.template}
-            onChange={(e) => handleDictChange({ template: e.target.value })}
-            placeholder={DEFAULT_DICT_TEMPLATE}
-            className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
-          />
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-xs text-text-muted">测试单词</span>
-            <input
-              type="text"
-              value={dictTestWord}
-              onChange={(e) => setDictTestWord(e.target.value)}
-              className="w-32 rounded border border-surface-border-strong bg-bg-deep px-2 py-1 text-sm text-text-primary focus:border-accent-border focus:outline-none"
-            />
-            <button
-              onClick={() => window.open(buildDictUrl(dictConfig.template, dictTestWord), '_blank')}
-              disabled={!dictTestWord.trim()}
-              className="rounded border border-accent px-3 py-1 text-xs text-accent-hover hover:bg-accent-subtle disabled:opacity-50"
-            >
-              在新窗口测试
-            </button>
-            <span className="text-xs text-text-muted">示例：{buildDictUrl(dictConfig.template, 'hello')}</span>
-          </div>
-        </div>
-      </CollapsibleSection>
+      
 
       <div className="mb-8">
         <h3 className="mb-3 text-lg font-semibold">数据备份</h3>
@@ -648,69 +535,7 @@ export function SettingsView(): React.ReactElement {
         </div>
       </div>
 
-      <CollapsibleSection title="历史归档（回收站）" badge={archiveItems.length > 0 ? `${archiveItems.length} 项` : undefined}>
-        <p className="mb-3 text-xs text-text-muted">
-          删除课堂、教材或伙伴时，数据会先移入此处，可随时恢复或彻底删除。
-        </p>
-        {archiveMsg && <p className="mb-2 text-xs text-green-400">{archiveMsg}</p>}
-        {archiveItems.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-surface-border px-4 py-6 text-center text-sm text-text-muted">
-            暂无归档内容
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {archiveItems.map((item) => (
-              <li
-                key={item.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-surface-border bg-bg-surface px-4 py-2.5"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-text-primary">
-                    <span className="mr-2 rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
-                      {ARCHIVE_KIND_LABEL[item.kind] ?? item.kind}
-                    </span>
-                    {item.label}
-                  </p>
-                  <p className="mt-0.5 text-xs text-text-muted">
-                    归档于 {new Date(item.movedAt).toLocaleString()}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => void handleRestoreArchive(item.id)}
-                    className="rounded border border-accent px-3 py-1 text-xs text-accent-hover hover:bg-accent-subtle"
-                  >
-                    恢复
-                  </button>
-                  {purgeConfirmId === item.id ? (
-                    <>
-                      <button
-                        onClick={() => void handlePurgeArchive(item.id)}
-                        className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-500"
-                      >
-                        确认删除
-                      </button>
-                      <button
-                        onClick={() => setPurgeConfirmId(null)}
-                        className="rounded border border-surface-border-strong px-3 py-1 text-xs text-text-muted hover:bg-bg-elevated"
-                      >
-                        取消
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => setPurgeConfirmId(item.id)}
-                      className="rounded border border-surface-border-strong px-3 py-1 text-xs text-red-400 hover:bg-red-900/30"
-                    >
-                      永久删除
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CollapsibleSection>
+      
 
       <div className="mb-8">
         <h3 className="mb-3 text-lg font-semibold">档案锁</h3>
@@ -852,6 +677,189 @@ export function SettingsView(): React.ReactElement {
           </div>
         </div>
       </div>
+
+      <CollapsibleSection title="常用文本模板" badge={`${templates.length}/${MAX_TEXT_TEMPLATES}`}>
+        <p className="mb-3 text-xs text-text-muted">
+          设置常用文字片段（最多 {MAX_TEXT_TEMPLATES} 条，每条 ≤ {MAX_TEMPLATE_LENGTH} 字）。
+          在课堂输入框点「☰」按钮或按 Alt+1..9 插入。
+        </p>
+        <div className="space-y-2">
+          {templates.map((t, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <kbd className="flex-shrink-0 rounded border border-surface-border-strong bg-bg-elevated px-2 py-1.5 font-mono text-xs text-text-muted">
+                Alt+{i + 1}
+              </kbd>
+              <input
+                type="text"
+                value={t}
+                maxLength={MAX_TEMPLATE_LENGTH}
+                onChange={(e) => updateTemplate(i, e.target.value)}
+                placeholder={`第 ${i + 1} 条模板（点击后可在输入框插入）`}
+                className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
+              />
+              <button
+                onClick={() => removeTemplate(i)}
+                className="flex-shrink-0 rounded border border-surface-border-strong px-3 py-2 text-sm text-red-400 hover:bg-red-900/30"
+                title="删除此模板"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {templates.length < MAX_TEXT_TEMPLATES && (
+            <button
+              onClick={addTemplate}
+              className="w-full rounded-lg border border-dashed border-surface-border-strong px-4 py-2.5 text-sm text-text-muted hover:border-accent-border hover:text-accent-hover transition-colors"
+            >
+              + 添加模板
+            </button>
+          )}
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="语音输入触发词">
+        <p className="mb-3 text-xs text-text-muted">
+          用系统或第三方语音输入（macOS 听写、Windows 系统语音、讯飞输入法等）说话时，
+          说完设定好的触发短语即可免手发送或清空消息。
+        </p>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <label className="w-16 flex-shrink-0 text-xs text-text-muted">发送</label>
+            <input
+              type="text"
+              value={voiceTriggers.send}
+              maxLength={20}
+              onChange={(e) => handleVoiceTriggerChange('send', e.target.value)}
+              placeholder={`默认：${DEFAULT_VOICE_TRIGGERS.send}`}
+              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
+            />
+            <span className="flex-shrink-0 text-xs text-text-muted">在输入末尾说出即自动发送</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="w-16 flex-shrink-0 text-xs text-text-muted">清空</label>
+            <input
+              type="text"
+              value={voiceTriggers.clear}
+              maxLength={20}
+              onChange={(e) => handleVoiceTriggerChange('clear', e.target.value)}
+              placeholder={`默认：${DEFAULT_VOICE_TRIGGERS.clear}`}
+              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
+            />
+            <span className="flex-shrink-0 text-xs text-text-muted">在输入末尾说出即清空输入</span>
+          </div>
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="在线词典" defaultOpen>
+        <p className="mb-3 text-xs text-text-muted">
+          在教材阅读器（EPUB）中选中英文单词时，自动弹出词典查询。可自定义词典网址模板。
+        </p>
+        <label className="flex cursor-pointer items-center justify-between rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
+          <div className="pr-4">
+            <p className="text-sm font-medium">选中英文单词自动查词</p>
+            <p className="mt-0.5 text-xs text-text-muted">关闭后仍可在选区菜单中手动点「查词」</p>
+          </div>
+          <input
+            type="checkbox"
+            checked={dictConfig.enabled}
+            onChange={(e) => handleDictChange({ enabled: e.target.checked })}
+            className="h-4 w-4 flex-shrink-0"
+          />
+        </label>
+        <div className="mt-2 rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
+          <label className="mb-1 block text-xs font-medium text-text-muted">
+            词典网址模板（用 <code className="rounded bg-bg-elevated px-1">{"{word}"}</code> 表示单词位置）
+          </label>
+          <input
+            type="text"
+            value={dictConfig.template}
+            onChange={(e) => handleDictChange({ template: e.target.value })}
+            placeholder={DEFAULT_DICT_TEMPLATE}
+            className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-xs text-text-muted">测试单词</span>
+            <input
+              type="text"
+              value={dictTestWord}
+              onChange={(e) => setDictTestWord(e.target.value)}
+              className="w-32 rounded border border-surface-border-strong bg-bg-deep px-2 py-1 text-sm text-text-primary focus:border-accent-border focus:outline-none"
+            />
+            <button
+              onClick={() => window.open(buildDictUrl(dictConfig.template, dictTestWord), '_blank')}
+              disabled={!dictTestWord.trim()}
+              className="rounded border border-accent px-3 py-1 text-xs text-accent-hover hover:bg-accent-subtle disabled:opacity-50"
+            >
+              在新窗口测试
+            </button>
+            <span className="text-xs text-text-muted">示例：{buildDictUrl(dictConfig.template, 'hello')}</span>
+          </div>
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="历史归档（回收站）" badge={archiveItems.length > 0 ? `${archiveItems.length} 项` : undefined}>
+        <p className="mb-3 text-xs text-text-muted">
+          删除课堂、教材或伙伴时，数据会先移入此处，可随时恢复或彻底删除。
+        </p>
+        {archiveMsg && <p className="mb-2 text-xs text-green-400">{archiveMsg}</p>}
+        {archiveItems.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-surface-border px-4 py-6 text-center text-sm text-text-muted">
+            暂无归档内容
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {archiveItems.map((item) => (
+              <li
+                key={item.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-surface-border bg-bg-surface px-4 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-text-primary">
+                    <span className="mr-2 rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] text-text-muted">
+                      {ARCHIVE_KIND_LABEL[item.kind] ?? item.kind}
+                    </span>
+                    {item.label}
+                  </p>
+                  <p className="mt-0.5 text-xs text-text-muted">
+                    归档于 {new Date(item.movedAt).toLocaleString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void handleRestoreArchive(item.id)}
+                    className="rounded border border-accent px-3 py-1 text-xs text-accent-hover hover:bg-accent-subtle"
+                  >
+                    恢复
+                  </button>
+                  {purgeConfirmId === item.id ? (
+                    <>
+                      <button
+                        onClick={() => void handlePurgeArchive(item.id)}
+                        className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-500"
+                      >
+                        确认删除
+                      </button>
+                      <button
+                        onClick={() => setPurgeConfirmId(null)}
+                        className="rounded border border-surface-border-strong px-3 py-1 text-xs text-text-muted hover:bg-bg-elevated"
+                      >
+                        取消
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setPurgeConfirmId(item.id)}
+                      className="rounded border border-surface-border-strong px-3 py-1 text-xs text-red-400 hover:bg-red-900/30"
+                    >
+                      永久删除
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CollapsibleSection>
 
       <CollapsibleSection title="模型服务设置" badge={providers.length > 0 ? `${providers.length} 个服务` : undefined} defaultOpen>
         {error && (
