@@ -13,6 +13,7 @@ import { registerLockIpc } from './ipc/lock'
 import { initDataDir } from './storage/initialize'
 import { resolveReferencePaths } from './storage/resolve-paths'
 import { createDeepSeekStreamAdapter } from './llm/deepseek-stream-adapter'
+import { maybeAutoBackup } from './backup/auto-backup'
 
 function makeIcon(size: number): Electron.NativeImage {
   const buf = Buffer.alloc(size * size * 4)
@@ -221,6 +222,9 @@ if (!app.requestSingleInstanceLock()) {
       // rejection here would skip createWindow() and leave a zombie process.
       console.error('Failed to initialize data directory:', err)
     }
+
+    // 自动备份：每 7 天一次、保留最近 5 份（后台执行，不阻塞启动）
+    void maybeAutoBackup(dataRoot)
 
     // Register IPC handlers that don't need the window
     ipcMain.handle('app:get-version', () => app.getVersion())
