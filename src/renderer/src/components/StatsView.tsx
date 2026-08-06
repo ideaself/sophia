@@ -3,7 +3,8 @@ import { WORLD_ID } from '../types/models'
 import {
   estimateDailyStudyMinutes,
   computeStreak,
-  buildHeatmapWeeks
+  buildHeatmapWeeks,
+  dayKey
 } from '../../../shared/study-time'
 
 interface ConversationDTO {
@@ -28,6 +29,14 @@ interface ArtifactDTO {
   type: string
   content: string
   createdAt: string
+}
+
+interface WeekStats {
+  minutes: number
+  messages: number
+  artifacts: number
+  companion: Record<string, number>
+  textbook: Record<string, number>
 }
 
 function perDay(map: Map<string, number>, key: string): number {
@@ -60,6 +69,8 @@ export function StatsView(): React.ReactElement {
   const [companionUsage, setCompanionUsage] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [companionNames, setCompanionNames] = useState<Record<string, string>>({})
+  const [textbookTitles, setTextbookTitles] = useState<Record<string, string>>({})
+  const [weekStats, setWeekStats] = useState<WeekStats | null>(null)
 
   useEffect(() => {
     (async () => {
@@ -68,10 +79,21 @@ export function StatsView(): React.ReactElement {
         const convs = await window.sophia.data.listConversations(WORLD_ID) as ConversationDTO[]
         setConversations(convs)
 
+        const weekStart = new Date()
+        weekStart.setHours(0, 0, 0, 0)
+        weekStart.setDate(weekStart.getDate() - 6)
+        const weekStartMs = weekStart.getTime()
+        const weekStartKey = dayKey(weekStart)
+
         let msgCount = 0
         let artCount = 0
         const usage: Record<string, number> = {}
         const perDay = new Map<string, number>()
+
+        let wkMsgs = 0
+        let wkArts = 0
+        const wkCompanion: Record<string, number> = {}
+        const wkTextbook: Record<string, number> = {}
 
         for (const conv of convs) {
           usage[conv.companionId] = (usage[conv.companionId] ?? 0) + 1
@@ -87,9 +109,20 @@ export function StatsView(): React.ReactElement {
             msgCount += msgs.length
             artCount += arts.length
 
-            const times = msgs
-              .map((m) => new Date(m.createdAt).getTime())
-              .filter((t) => Number.isFinite(t))
+            const times: number[] = []
+            for (const m of msgs) {
+              const t = new Date(m.createdAt).getTime()
+              if (!Number.isFinite(t)) continue
+              times.push(t)
+              if (t >= weekStartMs) {
+                wkMsgs++
+                wkCompanion[conv.companionId] = (wkCompanion[conv.companionId] ?? 0) + 1
+                const tbKey = conv.textbookId ?? 'none'
+                wkTextbook[tbKey] = (wkTextbook[tbKey] ?? 0) + 1
+              }
+            }
+            wkArts += arts.filter((a) => new Date(a.createdAt).getTime() >= weekStartMs).length
+
             const convPerDay = estimateDailyStudyMinutes(times)
             for (const [key, ms] of convPerDay) {
               perDay.set(key, (perDay.get(key) ?? 0) + ms)
@@ -97,10 +130,24 @@ export function StatsView(): React.ReactElement {
           })
         )
 
+        let wkMinutes = 0
+        for (const [key, ms] of perDay) {
+          if (key >= weekStartKey) wkMinutes += ms
+        }
+
         setTotalMessages(msgCount)
         setTotalArtifacts(artCount)
         setCompanionUsage(usage)
         setDailyMinutes(perDay)
+        setWeekStats({ minutes: wkMinutes, messages: wkMsgs, artifacts: wkArts, companion: wkCompanion, textbook: wkTextbook })
+
+        // Load textbook titles for the weekly report distribution
+        try {
+          const tbs = await window.sophia.data.listTextbooks(WORLD_ID)
+          setTextbookTitles(Object.fromEntries(tbs.map((tb) => [tb.id, tb.title])))
+        } catch {
+          setTextbookTitles({})
+        }
         setTotalMinutes([...perDay.values()].reduce((a, b) => a + b, 0))
         setStreak(computeStreak(perDay))
 
@@ -148,6 +195,54 @@ export function StatsView(): React.ReactElement {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
 
+  // ---- 本周报告 ----
+  const dateLabel = (d: Date): string => `${d.getMonth() + 1}月${d.getDate()}日`
+  const weekStartDate = (() => {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    d.setDate(d.getDate() - 6)
+    return d
+  })()
+  const weekLabel = `${dateLabel(weekStartDate)} ~ ${dateLabel(new Date())}`
+
+  const topDist = (dist: Record<string, number>, nameOf: (key: string) => string, top = 3): Array<[string, number, number]> => {
+    const total = Object.values(dist).reduce((a, b) => a + b, 0)
+    if (total === 0) return []
+    return Object.entries(dist)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, top)
+      .map(([k, n]) => [nameOf(k), n, Math.round((n / total) * 100)] as [string, number, number])
+  }
+  const tbDist = weekStats ? topDist(weekStats.textbook, (k) => k === 'none' ? '未绑定教材' : (textbookTitles[k] ?? '未知教材')) : []
+  const compDist = weekStats ? topDist(weekStats.companion, (k) => companionNames[k] ?? k) : []
+
+  const exportWeeklyReport = async () => {
+    if (!weekStats) return
+    const result = await window.sophia.dialog.saveFile({
+      defaultPath: `学习周报_${new Date().toISOString().slice(0, 10)}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }]
+    })
+    if (result.canceled || !result.filePath) return
+
+    const distLines = (dist: Array<[string, number, number]>): string[] =>
+      dist.map(([name, n, pct]) => `- ${name}：${n} 条（${pct}%）`)
+    const lines = [
+      `# 学习周报（${weekLabel}）`,
+      '',
+      `- 学习时长：${formatDuration(weekStats.minutes * 60000)}`,
+      `- 消息数：${weekStats.messages}`,
+      `- 学习产物：${weekStats.artifacts}`,
+      `- 连续学习天数：${streak}`,
+      '',
+      '## 按教材',
+      ...(tbDist.length > 0 ? distLines(tbDist) : ['（无）']),
+      '',
+      '## 按角色',
+      ...(compDist.length > 0 ? distLines(compDist) : ['（无）'])
+    ]
+    await window.sophia.data.writeTextFile(result.filePath, lines.join('\n'))
+  }
+
   return (
     <div className="p-8">
       <h2 className="mb-6 text-2xl font-bold">学习统计</h2>
@@ -179,6 +274,80 @@ export function StatsView(): React.ReactElement {
           <p className="mt-1 text-sm text-text-muted">学习产物</p>
         </div>
       </div>
+
+      {/* Weekly report */}
+      {weekStats && (
+        <div className="mb-8 rounded-xl border border-surface-border bg-bg-surface p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">本周报告</h3>
+              <p className="mt-0.5 text-xs text-text-muted">{weekLabel} · 近 7 天</p>
+            </div>
+            <button
+              onClick={() => void exportWeeklyReport()}
+              className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
+            >
+              导出 Markdown
+            </button>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div>
+              <p className="text-2xl font-bold text-accent">{formatDuration(weekStats.minutes * 60000)}</p>
+              <p className="mt-0.5 text-xs text-text-muted">学习时长</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{weekStats.messages}</p>
+              <p className="mt-0.5 text-xs text-text-muted">消息数</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{weekStats.artifacts}</p>
+              <p className="mt-0.5 text-xs text-text-muted">学习产物</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-orange-400">{streak}</p>
+              <p className="mt-0.5 text-xs text-text-muted">连续学习天数</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-5 md:grid-cols-2">
+            <div>
+              <p className="mb-2 text-xs font-medium text-text-muted">按教材（消息数）</p>
+              {tbDist.length === 0 ? (
+                <p className="text-xs text-text-muted">本周暂无学习</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {tbDist.map(([name, n, pct]) => (
+                    <div key={name} className="flex items-center gap-2">
+                      <span className="w-32 truncate text-xs text-text-secondary" title={name}>{name}</span>
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-bg-elevated">
+                        <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-16 text-right text-[10px] text-text-muted">{n} 条 · {pct}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-medium text-text-muted">按角色（消息数）</p>
+              {compDist.length === 0 ? (
+                <p className="text-xs text-text-muted">本周暂无学习</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {compDist.map(([name, n, pct]) => (
+                    <div key={name} className="flex items-center gap-2">
+                      <span className="w-32 truncate text-xs text-text-secondary" title={name}>{name}</span>
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-bg-elevated">
+                        <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-16 text-right text-[10px] text-text-muted">{n} 条 · {pct}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {/* Daily activity (minutes) */}
