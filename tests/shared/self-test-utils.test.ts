@@ -41,3 +41,26 @@ describe('parseSelfTestQuestions', () => {
     expect(out[0].answer).toBe('第一行。\n第二行。')
   })
 })
+
+
+describe('parseSelfTestQuestions (课堂测验卡)', () => {
+  it('parses 考考我 quick-action replies with intro prose', () => {
+    const out = parseSelfTestQuestions('好的，出一道题检验你：\n\n**自测 1：复数 z = 3 + 4i 的模长是多少？**\n- 提示 1：勾股定理。\n- 提示 2：模长是 sqrt(a² + b²)。\n- 答案：5。')
+    expect(out).toHaveLength(1)
+    expect(out[0].question).toBe('复数 z = 3 + 4i 的模长是多少？')
+    expect(out[0].hints).toHaveLength(2)
+    expect(out[0].answer).toBe('5。')
+  })
+
+  it('parses two questions in one reply', () => {
+    const out = parseSelfTestQuestions('**自测 1：1+1=？**\n- 答案：2。\n\n**自测 2：2+2=？**\n- 答案：4。')
+    expect(out).toHaveLength(2)
+    expect(out[1].answer).toBe('4。')
+  })
+
+  it('leaves answers in trailing prose out of the questions', () => {
+    const out = parseSelfTestQuestions('**自测 1：什么是导数？**\n- 答案：瞬时变化率。\n\n你都答对了吗？')
+    expect(out).toHaveLength(1)
+    expect(out[0].answer).toBe('瞬时变化率。')
+  })
+})

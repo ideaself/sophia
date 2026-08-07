@@ -2,7 +2,9 @@ import { useMemo, useState, useEffect, useRef, useCallback, lazy, Suspense } fro
 import { useTTS, stripMarkdown } from '../hooks/useTTS'
 import { TTSControlPanel } from '../components/TTSControlPanel'
 import { MermaidBlock } from '../components/MermaidBlock'
+import { SelfTestBlock } from '../components/SelfTestBlock'
 import { normalizeMathDelimiters } from '../../../shared/math-delimiters'
+import { parseSelfTestQuestions } from '../../../shared/self-test-utils'
 import { handleCopyMathSource } from '../lib/mathCopy'
 
 const MarkdownRenderer = lazy(() => import('../lib/MarkdownRenderer'))
@@ -218,52 +220,78 @@ export function ChatMessage({
     }
     setEditing(false)
   }
-
   const rendered = useMemo(() => {
+    // 课堂测验卡片化（里程碑 2）：assistant 回复若含 **自测 N：** 结构化题目，渲染为逐级揭晓卡片
+    const questions = isUser ? [] : parseSelfTestQuestions(content)
+    const quizMode = questions.length > 0
+
+    const intro = (() => {
+      if (!quizMode) return ''
+      const lines = content.split('\n')
+      const first = lines.findIndex((l) => /^\s*[-*]?\s*\*{0,2}自测\s*\d*\s*[：:]/.test(l))
+      return first > 0 ? lines.slice(0, first).join('\n') : ''
+    })()
+
+    const body = quizMode ? (
+      <>
+        {intro.trim() && (
+          <Suspense fallback={null}>
+            <MarkdownRenderer>{normalizeMathDelimiters(intro)}</MarkdownRenderer>
+          </Suspense>
+        )}
+        <div className="mt-2">
+          <SelfTestBlock questions={questions} />
+        </div>
+      </>
+    ) : (
+      <Suspense fallback={<span className="text-xs text-text-muted">渲染中…</span>}>
+        <MarkdownRenderer
+          components={{
+            code({ className, children, ...props }) {
+              const match = /language-(\w+)/.exec(className ?? '')
+              const code = String(children).replace(/\n$/, '')
+              if (match?.[1] === 'mermaid') {
+                return <MermaidBlock code={code} />
+              }
+              return <code className={className} {...props}>{children}</code>
+            },
+            pre({ children }) {
+              const codeText = extractText(children)
+              return (
+                <div className="group relative">
+                  <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+
+                    <CopyButton text={codeText} />
+                  </div>
+                  <pre>{children}</pre>
+                </div>
+              )
+            },
+            blockquote({ children }) {
+              const text = extractText(children)
+              const m = /【教材出处 · 《([^】]+)》 · ([^】]+)】/.exec(text)
+              if (!m) return <blockquote>{children}</blockquote>
+              return (
+                <blockquote>
+                  <CitationChip textbookId={textbookId} chapter={m[2].trim()} />
+                  {children}
+                </blockquote>
+              )
+            }
+          }}
+        >
+          {normalizeMathDelimiters(content)}
+        </MarkdownRenderer>
+      </Suspense>
+    )
+
     return (
       <div
         onCopy={handleCopyMathSource}
         className={isUser
           ? 'text-sm leading-relaxed whitespace-pre-wrap'
           : 'markdown-body text-sm leading-relaxed'}>
-        <Suspense fallback={<span className="text-xs text-text-muted">渲染中…</span>}>
-          <MarkdownRenderer
-            components={{
-              code({ className, children, ...props }) {
-                const match = /language-(\w+)/.exec(className ?? '')
-                const code = String(children).replace(/\n$/, '')
-                if (match?.[1] === 'mermaid') {
-                  return <MermaidBlock code={code} />
-                }
-                return <code className={className} {...props}>{children}</code>
-              },
-              pre({ children }) {
-                const codeText = extractText(children)
-                return (
-                  <div className="group relative">
-                    <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                      <CopyButton text={codeText} />
-                    </div>
-                    <pre>{children}</pre>
-                  </div>
-                )
-              },
-              blockquote({ children }) {
-                const text = extractText(children)
-                const m = /【教材出处 · 《([^】]+)》 · ([^】]+)】/.exec(text)
-                if (!m) return <blockquote>{children}</blockquote>
-                return (
-                  <blockquote>
-                    <CitationChip textbookId={textbookId} chapter={m[2].trim()} />
-                    {children}
-                  </blockquote>
-                )
-              }
-            }}
-          >
-            {normalizeMathDelimiters(content)}
-          </MarkdownRenderer>
-        </Suspense>
+        {body}
       </div>
     )
   }, [content, isUser, textbookId])

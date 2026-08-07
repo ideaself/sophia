@@ -78,6 +78,50 @@ type MessageRow =
 
 const MAX_INPUT_LENGTH = 20000
 
+/** 课堂快捷操作（里程碑 2）：预置教学指令，点击直接发送。 */
+const QUICK_ACTIONS: Array<{ label: string; prompt: string; title: string }> = [
+  {
+    label: '继续追问',
+    prompt: '继续追问：请接着刚才的话题，再问一个更深的问题，检验我的理解。',
+    title: '让导师继续提问'
+  },
+  {
+    label: '给我提示',
+    prompt: '给我一点提示，但不要直接给答案。',
+    title: '请求一个提示'
+  },
+  {
+    label: '换种解释',
+    prompt: '刚才讲得有点抽象，换个角度、用更直观的方式再解释一遍。',
+    title: '换一种解释方式'
+  },
+  {
+    label: '举个例子',
+    prompt: '举个例子说明刚才的内容，越具体越好。',
+    title: '请求一个具体例子'
+  },
+  {
+    label: '考考我',
+    prompt: '考考我：出 1-2 道题检验我是否掌握刚才的内容。格式要求：每道题用 **自测 N：<问题>** 开头，下面依次是 - 提示 1：、- 提示 2：、- 答案：，答案放最后。',
+    title: '导师出题（会以测验卡片呈现）'
+  },
+  {
+    label: '总结本节',
+    prompt: '总结一下刚才讲的内容，列出核心要点。',
+    title: '总结当前进度'
+  },
+  {
+    label: '生成卡片',
+    prompt: '把刚才讲的内容生成 3 张记忆卡片（格式：- 问题：…\n- 答案：…）。',
+    title: '生成记忆卡片'
+  },
+  {
+    label: '加入复习',
+    prompt: '把刚才讲的核心概念加入我的复习计划。',
+    title: '标记概念进入复习'
+  }
+]
+
 /**
  * 今日已学习时长（分钟）。挂载、窗口聚焦时刷新，另每 5 分钟轮询一次，
  * 供顶栏「每日目标」进度环使用（估算口径与统计页一致）。
@@ -1454,6 +1498,20 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
       {/* Input */}
       <div className="border-t border-surface-border bg-bg-surface p-4">
+        {/* 快捷课堂操作（里程碑 2）：预置教学指令，一键发送 */}
+        <div className="mb-2 flex flex-wrap gap-1">
+          {QUICK_ACTIONS.map((a) => (
+            <button
+              key={a.label}
+              onClick={() => handleSendFromContent(a.prompt)}
+              disabled={chatStream.state.isStreaming || !companion}
+              className="rounded-full border border-surface-border-strong px-2.5 py-1 text-[11px] text-text-muted transition-colors hover:border-accent-border hover:text-accent-hover disabled:opacity-40"
+              title={a.title}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
         <div ref={mathRef} className="relative flex gap-3">
           {mathOpen && (
             <div className="absolute bottom-full left-0 z-20 mb-2 w-80 rounded-lg border border-surface-border bg-bg-surface p-3 shadow-lg">
