@@ -2,7 +2,7 @@ import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { join, dirname } from 'node:path'
 import { readFile, mkdir } from 'node:fs/promises'
 import { CompanionSchema } from '../../shared/schemas/companion'
-import { readWorldData } from '../storage/world-store'
+import { readLocalContext } from '../storage/world-store'
 import { ConversationStore } from '../storage/conversation-store'
 import { TextbookStore } from '../storage/textbook-store'
 import { ArtifactStore } from '../storage/artifact-store'
@@ -949,9 +949,6 @@ async function runArtifactPipeline(
       const filePath = handoffMetaPath(dataRoot, worldId)
       let meta: Record<string, HandoffMetaEntry> = {}
       try { meta = JSON.parse(await readFile(filePath, 'utf-8')) } catch { /* no meta yet */ }
-      const worldData = await readWorldData(dataRoot, worldId)
-      const slots = worldData?.world.companionSlots ?? { a: null, b: null, c: null }
-      const slot = (Object.entries(slots).find(([, id]) => id === conv.companionId)?.[0] ?? null) as 'a' | 'b' | 'c' | null
       const companionName = (await readCompanionName(dataRoot, conv.companionId)) ?? conv.companionId
       let endingPage: number | null = null
       if (conv.textbookId) {
@@ -962,7 +959,7 @@ async function runArtifactPipeline(
         savedAt: new Date().toISOString(),
         prevConvId: conversationId,
         companionName,
-        companionSlot: slot,
+        companionSlot: null,
         endingPage,
         textbookId: conv.textbookId ?? null
       }

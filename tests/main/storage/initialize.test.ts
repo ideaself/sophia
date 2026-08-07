@@ -3,15 +3,11 @@ import { readFile, access, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import { ProfileSchema } from '../../../src/shared/schemas/profile'
-import { WorldSchema } from '../../../src/shared/schemas/world'
+
 import { CompanionSchema } from '../../../src/shared/schemas/companion'
 
 import { initDataDir, type InitOptions } from '../../../src/main/storage/initialize'
-import {
-  DEFAULT_PROFILE_ID,
-  DEFAULT_WORLD_ID
-} from '../../../src/main/storage/app-data'
+
 
 const TEST_ID = `sophia-init-${randomUUID()}`
 const tempDir = join(tmpdir(), TEST_ID)
@@ -19,13 +15,8 @@ const projectsRoot = join(__dirname, '..', '..', '..')
 const referenceDir = join(projectsRoot, 'reference', '角色设定', 'candidates')
 const worldPresetPath = join(projectsRoot, 'reference', 'world_preset.md')
 
-// Deterministic clock for tests
-const FIXED_TIME = '2026-07-06T12:00:00.000Z'
-const fixedClock = (): string => FIXED_TIME
 
 // Path helpers matching the flat (single-user) app-data layout
-const profileRel = 'profile.json'
-const worldRel = 'world.json'
 const companionsRel = join('companions')
 
 function buildOptions(overrides?: Partial<InitOptions>): InitOptions {
@@ -33,7 +24,6 @@ function buildOptions(overrides?: Partial<InitOptions>): InitOptions {
     dataRoot: join(tempDir, 'data'),
     referenceDir,
     worldPresetPath,
-    clock: fixedClock,
     ...overrides
   }
 }
@@ -58,82 +48,6 @@ describe('initDataDir', () => {
     const opts = buildOptions()
     await initDataDir(opts)
     await access(join(opts.dataRoot, 'config'))
-  })
-
-  it('creates profile directory structure', async () => {
-    const opts = buildOptions()
-    await initDataDir(opts)
-
-    await access(opts.dataRoot) // 单用户扁平布局：数据直接在根下
-    await access(join(opts.dataRoot, profileRel))
-  })
-
-  it('creates world directory structure', async () => {
-    const opts = buildOptions()
-    await initDataDir(opts)
-
-    await access(join(opts.dataRoot, worldRel))
-    await access(join(opts.dataRoot, worldRel))
-  })
-
-  it('profile.json validates against ProfileSchema', async () => {
-    const opts = buildOptions()
-    await initDataDir(opts)
-
-    const raw = await readFile(
-      join(opts.dataRoot, profileRel),
-      'utf-8'
-    )
-    const parsed = JSON.parse(raw)
-    const result = ProfileSchema.safeParse(parsed)
-
-    expect(result.success).toBe(true)
-  })
-
-  it('profile.json has deterministic content with fixed clock', async () => {
-    const opts = buildOptions()
-    await initDataDir(opts)
-
-    const raw = await readFile(
-      join(opts.dataRoot, profileRel),
-      'utf-8'
-    )
-    const profile = JSON.parse(raw)
-
-    expect(profile.name).toBe('Default')
-    expect(profile.createdAt).toBe(FIXED_TIME)
-    expect(profile.updatedAt).toBe(FIXED_TIME)
-    expect(profile.activeWorldId).toBe(DEFAULT_WORLD_ID)
-  })
-
-  it('world.json validates against WorldSchema', async () => {
-    const opts = buildOptions()
-    await initDataDir(opts)
-
-    const raw = await readFile(
-      join(opts.dataRoot, worldRel),
-      'utf-8'
-    )
-    const parsed = JSON.parse(raw)
-    const result = WorldSchema.safeParse(parsed)
-
-    expect(result.success).toBe(true)
-  })
-
-  it('world.json has correct metadata', async () => {
-    const opts = buildOptions()
-    await initDataDir(opts)
-
-    const raw = await readFile(
-      join(opts.dataRoot, worldRel),
-      'utf-8'
-    )
-    const world = JSON.parse(raw)
-
-    expect(world.name).toBe('苏格拉底实验室')
-    expect(world.profileId).toBe(DEFAULT_PROFILE_ID)
-    expect(world.createdAt).toBe(FIXED_TIME)
-    expect(world.companionSlots).toEqual({ a: null, b: null, c: null })
   })
 
   it('story.md is initialized from world_preset.md', async () => {
@@ -202,22 +116,12 @@ describe('initDataDir', () => {
     expect(result.companionCount).toBe(9)
   })
 
-  it('result includes valid profile and world', async () => {
-    const opts = buildOptions()
-    const result = await initDataDir(opts)
-
-    expect(ProfileSchema.safeParse(result.profile).success).toBe(true)
-    expect(WorldSchema.safeParse(result.world).success).toBe(true)
-  })
-
   it('is idempotent: running twice does not throw and files remain', async () => {
     const opts = buildOptions()
     await initDataDir(opts)
     await initDataDir(opts)
 
     // All files should still exist
-    await access(join(opts.dataRoot, profileRel))
-    await access(join(opts.dataRoot, worldRel))
     await access(join(opts.dataRoot, 'story.md'))
     await access(join(opts.dataRoot, companionsRel, 'index.json'))
   })

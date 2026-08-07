@@ -27,14 +27,6 @@ export type ReadingNoteId = string & { readonly [ReadingNoteIdBrand]: 'ReadingNo
 
 // --- Enums ---
 
-/** Which NPC slot in the world a companion occupies */
-export const CompanionSlot = {
-  A: 'a',
-  B: 'b',
-  C: 'c'
-} as const
-export type CompanionSlot = (typeof CompanionSlot)[keyof typeof CompanionSlot]
-
 /** Role of a message in a conversation */
 export const MessageRole = {
   User: 'user',

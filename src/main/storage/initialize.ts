@@ -1,14 +1,5 @@
 import { mkdir, writeFile, readFile } from 'node:fs/promises'
-import type { Profile } from '../../shared/schemas/profile'
-import type { World } from '../../shared/schemas/world'
-import type { ProfileId, WorldId } from '../../shared/types/ids'
 import {
-  DEFAULT_PROFILE_ID,
-  DEFAULT_PROFILE_NAME,
-  DEFAULT_WORLD_ID,
-  DEFAULT_WORLD_NAME,
-  profilePath,
-  worldPath,
   storyPath,
   learnerPath,
   companionDir,
@@ -26,13 +17,9 @@ export interface InitOptions {
   referenceDir: string
   /** Path to the world_preset.md file */
   worldPresetPath: string
-  /** Optional clock override for deterministic timestamps (injection for tests) */
-  clock?: () => string
 }
 
 export interface InitResult {
-  profile: Profile
-  world: World
   companionCount: number
 }
 
@@ -57,59 +44,23 @@ const LEARNER_TEMPLATE = `# 学习者档案
 `
 
 /**
- * Initialize the local app data directory structure.
+ * Initialize the local app data directory structure (single user, flat).
  *
- * Creates the full default profile, world, story, learner template,
- * and loads/copies all 9 reference companions into the companion pool.
+ * Creates the directory layout, seeds story.md from the world preset and a
+ * learner.md template, and loads/copies all 9 reference companions into the
+ * companion pool.
  *
- * Idempotent: if the data root already exists, this is a no-op
- * (does not overwrite existing files).
+ * Idempotent: if files already exist, they are not overwritten.
  */
 export async function initDataDir(options: InitOptions): Promise<InitResult> {
-  const { dataRoot, referenceDir, worldPresetPath, clock } = options
-  const now = clock ? clock() : new Date().toISOString()
+  const { dataRoot, referenceDir, worldPresetPath } = options
 
-  // --- Create directory structure (single user, flat layout) ---
+  // --- Create directory structure ---
   await mkdir(configDir(dataRoot), { recursive: true })
   await mkdir(companionDir(dataRoot), { recursive: true })
   await mkdir(conversationsDir(dataRoot), { recursive: true })
   await mkdir(textbooksDir(dataRoot), { recursive: true })
   await mkdir(diaryDir(dataRoot), { recursive: true })
-
-  // --- Write profile.json (only if not exists) ---
-  const profile: Profile = {
-    id: DEFAULT_PROFILE_ID as ProfileId,
-    name: DEFAULT_PROFILE_NAME,
-    createdAt: now,
-    updatedAt: now,
-    activeWorldId: DEFAULT_WORLD_ID as WorldId
-  }
-
-  const pfPath = profilePath(dataRoot)
-  try {
-    await writeFile(pfPath, JSON.stringify(profile, null, 2), { flag: 'wx' })
-  } catch {
-    // File exists — skip, preserve existing
-  }
-
-  // --- Write world.json (only if not exists) ---
-  const world: World = {
-    id: DEFAULT_WORLD_ID as WorldId,
-    profileId: DEFAULT_PROFILE_ID as ProfileId,
-    name: DEFAULT_WORLD_NAME,
-    story: '',
-    learnerProfile: '',
-    companionSlots: { a: null, b: null, c: null },
-    createdAt: now,
-    updatedAt: now
-  }
-
-  const wrldPath = worldPath(dataRoot)
-  try {
-    await writeFile(wrldPath, JSON.stringify(world, null, 2), { flag: 'wx' })
-  } catch {
-    // File exists — skip
-  }
 
   // --- Copy world_preset.md as story.md (only if not exists) ---
   const stPath = storyPath(dataRoot)
@@ -135,8 +86,6 @@ export async function initDataDir(options: InitOptions): Promise<InitResult> {
   })
 
   return {
-    profile,
-    world,
     companionCount: result.count
   }
 }

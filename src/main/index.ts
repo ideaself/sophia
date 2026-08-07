@@ -268,7 +268,7 @@ if (!app.requestSingleInstanceLock()) {
     })
 
     // 单用户扁平数据目录：所有数据（config/companions/textbooks/conversations/
-    // diary/profile.json 等）直接放在 LocalData 下，无 profile/world 层级。
+    // diary/story.md/learner.md 等）直接放在 LocalData 下，无 profile/world 层级。
     const dataRoot = join(app.getPath('userData'), 'LocalData')
     const { candidatesDir, worldPresetPath } = resolveReferencePaths(app.getAppPath())
 

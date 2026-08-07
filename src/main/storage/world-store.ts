@@ -1,51 +1,40 @@
 import { readFile } from 'node:fs/promises'
-import type { World } from '../../shared/schemas/world'
-import { WorldSchema } from '../../shared/schemas/world'
-import {
-  worldPath,
-  storyPath,
-  learnerPath,
-  DEFAULT_WORLD_ID,
-  DEFAULT_PROFILE_ID
-} from './app-data'
+import { storyPath, learnerPath, DEFAULT_WORLD_ID, DEFAULT_PROFILE_ID } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
 
-export interface WorldData {
-  world: World
+export interface LocalContext {
   story: string
   learnerProfile: string
 }
 
 /**
- * Read world data (world.json + story.md + learner.md) from disk.
- * Returns null if world.json doesn't exist.
+ * Read the single-user local context: story.md + learner.md straight from
+ * the data root. No world/profile layers — these two markdown files are the
+ * whole world context.
  */
-export async function readWorldData(
+export async function readLocalContext(
   dataRoot: string,
-  worldId: string = DEFAULT_WORLD_ID,
-  profileId: string = DEFAULT_PROFILE_ID
-): Promise<WorldData | null> {
+  _worldId: string = DEFAULT_WORLD_ID,
+  _profileId: string = DEFAULT_PROFILE_ID
+): Promise<LocalContext | null> {
   try {
-    const raw = await readFile(worldPath(dataRoot, worldId, profileId), 'utf-8')
-    const world = WorldSchema.parse(JSON.parse(raw)) as unknown as World
-
     let story = ''
     try {
-      story = await readFile(storyPath(dataRoot, worldId, profileId), 'utf-8')
+      story = await readFile(storyPath(dataRoot), 'utf-8')
     } catch {
       // story.md is optional
     }
 
     let learnerProfile = ''
     try {
-      learnerProfile = await readFile(learnerPath(dataRoot, worldId, profileId), 'utf-8')
+      learnerProfile = await readFile(learnerPath(dataRoot), 'utf-8')
     } catch {
       // learner.md is optional
     }
 
-    return { world, story, learnerProfile }
+    return { story, learnerProfile }
   } catch (err) {
-    if (!isNotFoundError(err)) warnReadFailure(`world ${worldId}`, err)
+    if (!isNotFoundError(err)) warnReadFailure('local context', err)
     return null
   }
 }

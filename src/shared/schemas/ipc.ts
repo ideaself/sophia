@@ -1,20 +1,7 @@
 import { z } from 'zod'
-import { CompanionSlot, TextbookFormat } from '../types/ids'
-
-// --- IPC: World ---
-
-export const IpcCreateWorldInputSchema = z.object({
-  profileId: z.string().min(1),
-  name: z.string().min(1)
-})
+import { TextbookFormat } from '../types/ids'
 
 // --- IPC: Companion ---
-
-export const IpcImportCompanionInputSchema = z.object({
-  worldId: z.string().min(1),
-  sourceFile: z.string().min(1),
-  slot: z.enum([CompanionSlot.A, CompanionSlot.B, CompanionSlot.C])
-})
 
 // --- IPC: Textbook ---
 

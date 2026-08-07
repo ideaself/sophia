@@ -5,7 +5,7 @@ import type { Companion } from '../../shared/schemas/companion'
 import { CompanionSchema } from '../../shared/schemas/companion'
 import type { DeepSeekChatMessage } from '../llm/types'
 import { buildMessages, type HandoffMetaInfo } from '../prompt/prompt-builder'
-import { readWorldData } from '../storage/world-store'
+import { readLocalContext } from '../storage/world-store'
 import { TextbookStore } from '../storage/textbook-store'
 import { ConversationStore } from '../storage/conversation-store'
 import { ArtifactStore } from '../storage/artifact-store'
@@ -64,8 +64,8 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
       throw new Error(`Companion not found: ${params.companionId}`)
     }
 
-    // 2. Load world context
-    const worldData = await readWorldData(dataRoot, params.worldId)
+    // 2. Load local context (story.md + learner.md)
+    const worldData = await readLocalContext(dataRoot)
     const worldContext = worldData?.story ?? ''
     const learnerInfo = worldData?.learnerProfile ?? undefined
 

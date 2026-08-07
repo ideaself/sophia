@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import {
-  CompanionSlot,
   CompanionSource,
   CompanionGender,
   MessageRole,
@@ -18,16 +17,12 @@ import type {
 } from '../../src/shared/types/ids'
 
 // --- Schema imports ---
-import { ProfileSchema, type Profile } from '../../src/shared/schemas/profile'
-import { WorldSchema, type World } from '../../src/shared/schemas/world'
 import { CompanionSchema, type Companion } from '../../src/shared/schemas/companion'
 import { TextbookSchema, type Textbook } from '../../src/shared/schemas/textbook'
 import { ConversationSchema, type Conversation } from '../../src/shared/schemas/conversation'
 import { MessageSchema, type Message } from '../../src/shared/schemas/message'
 import { ArtifactSchema, type Artifact } from '../../src/shared/schemas/artifact'
 import {
-  IpcCreateWorldInputSchema,
-  IpcImportCompanionInputSchema,
   IpcCreateTextbookInputSchema,
   IpcCreateConversationInputSchema,
   IpcSendMessageInputSchema,
@@ -52,29 +47,6 @@ import {
 // ============================================================
 // Helper: build valid objects for each domain type
 // ============================================================
-
-function validProfile(): Profile {
-  return {
-    id: 'prof_test001' as ProfileId,
-    name: 'Test Profile',
-    createdAt: '2026-07-06T12:00:00.000Z',
-    updatedAt: '2026-07-06T12:00:00.000Z',
-    activeWorldId: 'world_abc' as WorldId
-  }
-}
-
-function validWorld(): World {
-  return {
-    id: 'world_test001' as WorldId,
-    profileId: 'prof_test001' as ProfileId,
-    name: 'Default World',
-    story: '# Story\n\nOnce upon a time...',
-    learnerProfile: '# Learner\n\nCurious student.',
-    companionSlots: { a: null, b: null, c: null },
-    createdAt: '2026-07-06T12:00:00.000Z',
-    updatedAt: '2026-07-06T12:00:00.000Z'
-  }
-}
 
 function validCompanion(): Companion {
   return {
@@ -144,69 +116,6 @@ function validArtifact(): Artifact {
     createdAt: '2026-07-06T12:30:00.000Z'
   }
 }
-
-// ============================================================
-// Profile Schema Tests
-// ============================================================
-describe('ProfileSchema', () => {
-  it('accepts a valid profile', () => {
-    const result = ProfileSchema.safeParse(validProfile())
-    expect(result.success).toBe(true)
-  })
-
-  it('rejects a profile missing id', () => {
-    const { id: _id, ...rest } = validProfile()
-    const result = ProfileSchema.safeParse(rest)
-    expect(result.success).toBe(false)
-  })
-
-  it('rejects a profile with empty name', () => {
-    const result = ProfileSchema.safeParse({ ...validProfile(), name: '' })
-    expect(result.success).toBe(false)
-  })
-
-  it('rejects a profile with invalid ISO date', () => {
-    const result = ProfileSchema.safeParse({ ...validProfile(), createdAt: 'not-a-date' })
-    expect(result.success).toBe(false)
-  })
-})
-
-// ============================================================
-// World Schema Tests
-// ============================================================
-describe('WorldSchema', () => {
-  it('accepts a valid world', () => {
-    const result = WorldSchema.safeParse(validWorld())
-    expect(result.success).toBe(true)
-  })
-
-  it('rejects a world missing companionSlots', () => {
-    const { companionSlots: _companionSlots, ...rest } = validWorld()
-    const result = WorldSchema.safeParse(rest)
-    expect(result.success).toBe(false)
-  })
-
-  it('rejects invalid companionSlots structure', () => {
-    const result = WorldSchema.safeParse({ ...validWorld(), companionSlots: { x: null, y: null, z: null } })
-    expect(result.success).toBe(false)
-  })
-
-  it('accepts companionSlots with CompanionSlot values a, b, c', () => {
-    const result = WorldSchema.safeParse({
-      ...validWorld(),
-      companionSlots: { a: 'comp_1', b: null, c: 'comp_2' as Companion['id'] }
-    })
-    expect(result.success).toBe(true)
-  })
-
-  it('rejects companionSlots with extra keys', () => {
-    const result = WorldSchema.safeParse({
-      ...validWorld(),
-      companionSlots: { a: null, b: null, c: null, d: 'extra' }
-    })
-    expect(result.success).toBe(false)
-  })
-})
 
 // ============================================================
 // Companion Schema Tests
@@ -432,57 +341,7 @@ describe('ArtifactSchema', () => {
 // IPC Input Schema Tests
 // ============================================================
 describe('IPC input schemas', () => {
-  describe('IpcCreateWorldInputSchema', () => {
-    it('accepts valid input', () => {
-      const result = IpcCreateWorldInputSchema.safeParse({
-        profileId: 'prof_test001',
-        name: 'My World'
-      })
-      expect(result.success).toBe(true)
-    })
 
-    it('rejects empty name', () => {
-      const result = IpcCreateWorldInputSchema.safeParse({
-        profileId: 'prof_test001',
-        name: ''
-      })
-      expect(result.success).toBe(false)
-    })
-
-    it('rejects missing profileId', () => {
-      const result = IpcCreateWorldInputSchema.safeParse({ name: 'My World' })
-      expect(result.success).toBe(false)
-    })
-  })
-
-  describe('IpcImportCompanionInputSchema', () => {
-    it('accepts valid input from candidate file', () => {
-      const result = IpcImportCompanionInputSchema.safeParse({
-        worldId: 'world_test001',
-        sourceFile: 'reference/角色设定/candidates/alice.md',
-        slot: CompanionSlot.A
-      })
-      expect(result.success).toBe(true)
-    })
-
-    it('rejects invalid slot value', () => {
-      const result = IpcImportCompanionInputSchema.safeParse({
-        worldId: 'world_test001',
-        sourceFile: 'alice.md',
-        slot: 'd'
-      })
-      expect(result.success).toBe(false)
-    })
-
-    it('rejects empty sourceFile', () => {
-      const result = IpcImportCompanionInputSchema.safeParse({
-        worldId: 'world_test001',
-        sourceFile: '',
-        slot: CompanionSlot.B
-      })
-      expect(result.success).toBe(false)
-    })
-  })
 
   describe('IpcCreateTextbookInputSchema', () => {
     it('accepts valid file import input', () => {

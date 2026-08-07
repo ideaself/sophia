@@ -6,30 +6,18 @@ import { join } from 'node:path'
  * Layout (single user, no profile/world layers):
  *   {dataRoot}/
  *     config/
- *     profile.json
- *     world.json
- *     story.md
- *     learner.md
  *     companions/
  *     textbooks/
  *     conversations/
  *     diary/
+ *     story.md
+ *     learner.md
  *     pal_moments.md
  *     handoff_meta.json
  */
 
 export const DEFAULT_PROFILE_ID = 'prof_default'
-export const DEFAULT_PROFILE_NAME = 'Default'
 export const DEFAULT_WORLD_ID = 'world_default'
-export const DEFAULT_WORLD_NAME = '苏格拉底实验室'
-
-export function profileDir(dataRoot: string, _profileId: string = DEFAULT_PROFILE_ID): string {
-  return dataRoot
-}
-
-export function profilePath(dataRoot: string, _profileId: string = DEFAULT_PROFILE_ID): string {
-  return join(dataRoot, 'profile.json')
-}
 
 export function worldDir(
   dataRoot: string,
@@ -37,14 +25,6 @@ export function worldDir(
   _profileId: string = DEFAULT_PROFILE_ID
 ): string {
   return dataRoot
-}
-
-export function worldPath(
-  dataRoot: string,
-  _worldId: string = DEFAULT_WORLD_ID,
-  _profileId: string = DEFAULT_PROFILE_ID
-): string {
-  return join(dataRoot, 'world.json')
 }
 
 export function storyPath(
