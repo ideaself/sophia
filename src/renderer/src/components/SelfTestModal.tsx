@@ -64,7 +64,7 @@ export function SelfTestModal({ questions, onClose }: SelfTestModalProps): React
           <div className="space-y-3">
             {q.hints.slice(0, revealed).map((hint, i) => (
               <div key={i} className="rounded-lg border border-amber-700/40 bg-amber-900/15 px-3 py-2">
-                <p className="mb-1 text-[10px] font-medium uppercase text-amber-400">
+                <p className="mb-1 text-[10px] font-medium uppercase text-amber-700">
                   提示 {i + 1}
                 </p>
                 <p className="text-sm leading-relaxed text-text-secondary">{hint}</p>

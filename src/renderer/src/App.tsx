@@ -293,7 +293,7 @@ function App(): React.ReactElement {
       </header>
 
       {!isOnline && (
-        <div className="border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-1.5 text-center text-xs text-yellow-400">
+        <div className="border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-1.5 text-center text-xs text-amber-700">
           网络连接已断开——发送消息、生成 artifacts、WebDAV 同步暂不可用，恢复联网后自动继续
         </div>
       )}

@@ -550,7 +550,7 @@ export function HistoryView(): React.ReactElement {
                   <div className="flex items-center gap-2">
                     <h2 className="truncate text-lg font-bold">{displayName(selected)}</h2>
                     {selected.endedAt ? (
-                      <span className="rounded-full bg-amber-900/30 px-2 py-0.5 text-xs text-amber-400">已下课</span>
+                      <span className="rounded-full bg-amber-900/30 px-2 py-0.5 text-xs text-text-secondary">已下课</span>
                     ) : (
                       <span className="rounded-full bg-accent-subtle px-2 py-0.5 text-xs text-accent-hover">进行中</span>
                     )}
@@ -625,8 +625,8 @@ export function HistoryView(): React.ReactElement {
                       <h3 className="text-sm font-semibold text-text-primary">学习资料</h3>
                       {selected.endedAt &&
                         STORED_ARTIFACT_TYPES.some((t) => !artifacts.some((a) => a.type === t)) && (
-                          <div className="flex items-center justify-between rounded border border-amber-800 bg-amber-900/20 px-3 py-2">
-                            <p className="text-xs text-amber-300">有学习摘要缺失，可只补齐缺失项</p>
+                          <div className="flex items-center justify-between rounded border border-amber-700/50 bg-amber-900/20 px-3 py-2">
+                            <p className="text-xs text-text-secondary">有学习摘要缺失，可只补齐缺失项</p>
                             <button
                               onClick={() => void handleRedoMissingArtifacts()}
                               disabled={redoingMissing}

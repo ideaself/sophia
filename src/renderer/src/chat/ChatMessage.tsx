@@ -200,9 +200,9 @@ export function ChatMessage({
 
   const highlightClasses =
     highlight === 'current'
-      ? 'ring-2 ring-amber-400'
+      ? 'ring-2 ring-amber-500'
       : highlight === 'match'
-        ? 'ring-1 ring-amber-400/50'
+        ? 'ring-1 ring-amber-500/50'
         : ''
 
   useEffect(() => {

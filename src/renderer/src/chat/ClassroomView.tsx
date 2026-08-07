@@ -1232,7 +1232,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
               </span>
             )}
             {chatStream.state.isStreaming && (
-              <span className="text-xs text-amber-400 animate-pulse">
+              <span className="text-xs text-accent animate-pulse">
                 {chatStream.state.reasoningContent.length > 0 ? '正在推理…' : '正在组织回答…'}
               </span>
             )}
@@ -1257,7 +1257,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
               <button
                 onClick={handleEndClass}
                 disabled={isLoading}
-                className="rounded border border-amber-700 px-3 py-1 text-xs text-amber-400 hover:bg-amber-900/30 disabled:opacity-50"
+                className="rounded border border-amber-700/60 px-3 py-1 text-xs text-amber-700 hover:bg-amber-900/30 disabled:opacity-50"
               >
                 {isLoading ? '处理中...' : '下课'}
               </button>
@@ -1354,7 +1354,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                       {row.showThinking && (
                         <details className="mb-2 rounded border border-surface-border bg-bg-surface/60 px-3 py-2">
                           <summary className="cursor-pointer select-none text-xs text-text-muted hover:text-text-secondary">
-                            🧠 思考过程 {chatStream.state.isStreaming && <span className="text-amber-400 animate-pulse">(进行中...)</span>}
+                            🧠 思考过程 {chatStream.state.isStreaming && <span className="text-accent animate-pulse">(进行中...)</span>}
                           </summary>
                           <ThinkingBlock content={chatStream.state.reasoningContent} />
                         </details>

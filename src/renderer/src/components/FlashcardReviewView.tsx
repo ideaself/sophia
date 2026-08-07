@@ -609,7 +609,7 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
                     <span className="flex items-center gap-3 text-xs text-text-muted">
                       <button
                         onClick={(e) => { e.stopPropagation(); handleToggleFavorite() }}
-                        className={`text-base leading-none ${isFav ? 'text-amber-400' : 'text-text-muted hover:text-amber-400'}`}
+                        className={`text-base leading-none ${isFav ? 'text-amber-700' : 'text-text-muted hover:text-amber-600'}`}
                         title={isFav ? '取消珍藏' : '加入珍藏'}
                       >
                         {isFav ? '★' : '☆'}

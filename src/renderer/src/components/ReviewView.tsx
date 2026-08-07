@@ -48,7 +48,7 @@ function SelfTestBlock({ questions }: { questions: SelfTestQuestion[] }): React.
             <div className="space-y-2">
               {q.hints.slice(0, Math.min(r, q.hints.length)).map((hint, hi) => (
                 <div key={hi} className="rounded-lg border border-amber-700/40 bg-amber-900/15 px-3 py-2">
-                  <p className="mb-1 text-[10px] font-medium uppercase text-amber-400">提示 {hi + 1}</p>
+                  <p className="mb-1 text-[10px] font-medium uppercase text-amber-700">提示 {hi + 1}</p>
                   <p className="text-sm leading-relaxed text-text-secondary">{hint}</p>
                 </div>
               ))}

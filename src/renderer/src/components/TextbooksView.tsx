@@ -228,7 +228,7 @@ export function TextbooksView(): React.ReactElement {
       <div className="space-y-3">
         {missingCount > 0 && (
           <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-800 bg-amber-900/20 px-4 py-2.5">
-            <p className="text-sm text-amber-300">
+            <p className="text-sm text-text-secondary">
               ⚠️ {missingCount} 本 EPUB 正文缺失（旧版解析器只提取到了书名和作者）。
               点「重新提取」即可从原件修复，无需重新导入。
             </p>
