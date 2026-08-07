@@ -22,6 +22,43 @@ import type { ProviderStore } from '../storage/provider-store'
 import { DeepSeekClient } from '../llm/deepseek-client'
 import { createDeepSeekHttpAdapter } from '../llm/deepseek-http-adapter'
 import { estimateTokens } from '../prompt/token-budget'
+import { ConceptStore } from '../learning-memory/concept-store'
+import { buildConceptMasterySegment } from '../../shared/concept-mastery'
+
+/**
+ * 组装概念掌握度提示段（里程碑 3）：本会话概念 + 跨会话同教材薄弱概念。
+ * 按教材隔离：无教材的课堂只注入本会话概念，避免其他学科内容串课。
+ */
+async function loadConceptMasterySegment(
+  dataRoot: string,
+  conversationId: string,
+  textbookId: string | null
+): Promise<string | undefined> {
+  try {
+    const store = new ConceptStore(dataRoot)
+    const local = await store.listByConversation(conversationId)
+    const names = new Set(local.map((c) => c.name))
+
+    const remote: typeof local = []
+    if (textbookId) {
+      const all = await store.load()
+      for (const c of all) {
+        if (c.mastery < 0.35 && c.textbookId === textbookId && !names.has(c.name)) {
+          remote.push(c)
+        }
+      }
+    }
+
+    const briefs = [...local, ...remote].map((c) => ({
+      name: c.name,
+      mastery: c.mastery,
+      misconception: c.misconception
+    }))
+    return buildConceptMasterySegment(briefs) ?? undefined
+  } catch {
+    return undefined
+  }
+}
 
 // ---------------------------------------------------------------
 // Registration
@@ -234,6 +271,7 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
     const builtMessages = buildMessages({
       companion,
       learnerInfo,
+      conceptMastery: await loadConceptMasterySegment(dataRoot, params.conversationId, params.textbookId ?? null),
       textbookContent,
       relatedTextbook,
       textbookTitle,

@@ -69,6 +69,8 @@ export interface BuildSystemPromptParams {
   language?: string
   /** Structured metadata from the previous ended session (time sense). */
   handoffMeta?: HandoffMetaInfo
+  /** 概念掌握度提示段（里程碑 3，pre-formatted by shared/concept-mastery.ts）。 */
+  conceptMastery?: string
 }
 
 /** Structured handoff metadata written at the end of the previous class. */
@@ -334,6 +336,11 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   // Optional learner info
   if (learnerInfo) {
     segments.push(buildLearnerSegment(learnerInfo))
+  }
+
+  // Optional concept mastery state (里程碑 3): 学情注入 — 薄弱优先复习
+  if (params.conceptMastery) {
+    segments.push(params.conceptMastery)
   }
 
   // Optional textbook content (truncated)

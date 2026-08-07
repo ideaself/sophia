@@ -3,6 +3,7 @@ import { useAppStore } from '../stores/useAppStore'
 import { useCompanionStore } from '../stores/useCompanionStore'
 import { useTextbookStore } from '../stores/useTextbookStore'
 import { parseSelfTestQuestions, type SelfTestQuestion } from '../../../shared/self-test-utils'
+import { buildNextSteps } from '../../../shared/next-steps'
 import { FlashcardReviewView } from './FlashcardReviewView'
 import { SelfTestBlock } from './SelfTestBlock'
 
@@ -22,7 +23,7 @@ interface ArtifactDTO {
   createdAt: string
 }
 
-type ReviewTab = 'summary' | 'selftest' | 'flashcards' | 'diary' | 'progress' | 'feynman' | 'knowledge' | 'concepts'
+type ReviewTab = 'summary' | 'selftest' | 'flashcards' | 'diary' | 'progress' | 'feynman' | 'knowledge' | 'concepts' | 'next'
 
 /**
  * 课程复盘视图 —— 把一节已下课课堂的产物整合成一页：
@@ -102,6 +103,7 @@ export function ReviewView(): React.ReactElement {
     { key: 'progress', label: '学习进展', show: !!art('progress') },
     { key: 'knowledge', label: '🧠 知识点图谱', show: !!art('knowledge_graph') },
     { key: 'concepts', label: '📊 概念掌握', show: concepts.length > 0 },
+    { key: 'next', label: '🎯 下一步建议', show: concepts.length > 0 },
     { key: 'feynman', label: '费曼知识蛋', show: !!art('feynman_note') }
   ]
   const visibleTabs = TABS.filter((t) => t.show)
@@ -219,6 +221,8 @@ export function ReviewView(): React.ReactElement {
           </div>
         ) : currentKey === 'concepts' ? (
           <ConceptStateList concepts={concepts} />
+        ) : currentKey === 'next' ? (
+          <NextStepsPanel concepts={concepts} />
         ) : (
           <div className="markdown-body max-w-3xl">
             <Suspense fallback={null}>
@@ -276,6 +280,45 @@ function ConceptStateList({ concepts }: { concepts: ConceptStateDTO[] }): React.
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/** 下一步建议（里程碑 3）：按掌握度档位生成行动卡片，规则驱动、零 LLM。 */
+function NextStepsPanel({ concepts }: { concepts: ConceptStateDTO[] }): React.ReactElement {
+  const steps = buildNextSteps(concepts)
+  const styleOf: Record<string, { frame: string; badge: string }> = {
+    薄弱: { frame: 'border-red-800/40', badge: 'bg-red-900/30 text-red-400' },
+    理解: { frame: 'border-amber-700/40', badge: 'bg-amber-900/30 text-amber-500' },
+    掌握: { frame: 'border-green-800/40', badge: 'bg-green-900/30 text-green-400' },
+    目标: { frame: 'border-accent-border', badge: 'bg-accent/20 text-accent' }
+  }
+  return (
+    <div className="max-w-3xl space-y-3">
+      {steps.map((s, i) => {
+        const st = styleOf[s.tier]
+        return (
+          <div key={i} className={`rounded-xl border ${st.frame} bg-bg-surface p-4`}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium text-text-primary">{s.title}</span>
+              <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${st.badge}`}>
+                {s.tier}
+              </span>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-text-secondary">{s.action}</p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {s.concepts.map((n) => (
+                <span key={n} className="rounded-full bg-bg-elevated px-2 py-0.5 text-xs text-text-muted">
+                  {n}
+                </span>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+      <p className="text-xs text-text-muted">
+        建议由概念掌握度自动生成；在课堂开场用「🎯 下一步建议」里列出的薄弱概念优先复习。
+      </p>
     </div>
   )
 }
