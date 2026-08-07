@@ -8,7 +8,7 @@ Superseded by ADR-006
 
 ## Context
 
-Sophia 是单用户个人工具，目标是尽快复刻核心学习体验，而不是构建通用多模型平台。原报告列出 OpenAI、Anthropic、Gemini、DeepSeek 等多供应商，但用户明确指定 API 选择 DeepSeek。
+Sophia 是单用户个人工具，目标是尽快构建出可用的核心学习体验，而不是构建通用多模型平台。候选供应商有 OpenAI、Anthropic、Gemini、DeepSeek 等，用户明确指定 API 选择 DeepSeek。
 
 DeepSeek 提供 OpenAI-compatible Chat Completions API，适合主进程中用标准 SDK 封装。
 

@@ -23,8 +23,8 @@ Accepted
 
 ### Tauri
 - Pros: 体积更小，安全模型好。
-- Cons: 当前参考产品和调研资料是 Electron/Next.js；项目目标不是探索壳技术。
-- Rejected for now: Electron 更贴近参考架构，降低额外不确定性。
+- Cons: 团队对 Electron 技术栈更熟悉；项目目标不是探索壳技术。
+- Rejected for now: Electron 生态更成熟（IPC、安全实践、打包工具链），降低额外不确定性。
 
 ## Consequences
 

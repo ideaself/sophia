@@ -8,7 +8,7 @@ Partially superseded by ADR-007 (WebDAV sync)
 
 ## Context
 
-官方产品 是面向公开用户的产品，包含账号、订阅、设备限制、书币、Agora 社区等系统。Sophia 当前只服务个人自用。
+Sophia 定位为单用户、本地优先的个人学习工具，不做账号、订阅、设备绑定、社区等平台化系统。
 
 ## Decision
 
@@ -19,7 +19,7 @@ Partially superseded by ADR-007 (WebDAV sync)
 ## Alternatives Considered
 
 ### Build profile switching now
-- Pros: 更接近 官方产品。
+- Pros: 为未来多档案使用留出结构。
 - Cons: 增加 UI 和数据一致性复杂度。
 - Rejected: 当前只有一个使用者。
 
