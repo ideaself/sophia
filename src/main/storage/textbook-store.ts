@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { Textbook } from '../../shared/schemas/textbook'
 import { TextbookSchema } from '../../shared/schemas/textbook'
-import type { TextbookId, WorldId } from '../../shared/types/ids'
+import type { TextbookId } from '../../shared/types/ids'
 import {
   textbooksDir,
   textbookDir,
@@ -15,7 +15,6 @@ import { isNotFoundError, warnReadFailure } from './fs-errors'
 import { atomicWriteFile } from './atomic-write'
 
 export interface CreateTextbookInput {
-  worldId: WorldId
   title: string
   author?: string
   description?: string
@@ -68,7 +67,7 @@ export class TextbookStore {
 
     const raw: Record<string, unknown> = {
       id,
-      worldId: input.worldId,
+      
       title: input.title,
       author: input.author ?? '',
       description: input.description ?? '',
@@ -85,7 +84,7 @@ export class TextbookStore {
     }
     const textbook = raw as unknown as Textbook
 
-    await mkdir(textbookDir(this.dataRoot, id, input.worldId), { recursive: true })
+    await mkdir(textbookDir(this.dataRoot, id, ), { recursive: true })
 
     if (input.originalSourcePath) {
       try {
@@ -95,19 +94,19 @@ export class TextbookStore {
       }
       await copyFile(
         input.originalSourcePath,
-        textbookOriginalPath(this.dataRoot, id, originalFile, input.worldId)
+        textbookOriginalPath(this.dataRoot, id, originalFile, )
       )
     }
 
     await atomicWriteFile(
-      textbookPath(this.dataRoot, id, input.worldId),
+      textbookPath(this.dataRoot, id, ),
       JSON.stringify(textbook, null, 2),
       'utf-8'
     )
 
     if (input.content) {
       await atomicWriteFile(
-        textbookContentPath(this.dataRoot, id, input.worldId),
+        textbookContentPath(this.dataRoot, id, ),
         input.content,
         'utf-8'
       )
@@ -116,10 +115,10 @@ export class TextbookStore {
     return textbook
   }
 
-  async get(textbookId: string, worldId: string): Promise<Textbook | null> {
+  async get(textbookId: string): Promise<Textbook | null> {
     try {
       const content = await readFile(
-        textbookPath(this.dataRoot, textbookId, worldId),
+        textbookPath(this.dataRoot, textbookId),
         'utf-8'
       )
       const result = TextbookSchema.safeParse(JSON.parse(content))
@@ -134,18 +133,18 @@ export class TextbookStore {
     }
   }
 
-  async list(worldId: string): Promise<Textbook[]> {
+  async list(): Promise<Textbook[]> {
     try {
-      await access(textbooksDir(this.dataRoot, worldId))
+      await access(textbooksDir(this.dataRoot))
     } catch {
       return []
     }
 
-    const entries = await readdir(textbooksDir(this.dataRoot, worldId))
+    const entries = await readdir(textbooksDir(this.dataRoot))
     const textbooks: Textbook[] = []
 
     for (const entry of entries) {
-      const tb = await this.get(entry, worldId)
+      const tb = await this.get(entry)
       if (tb && !tb.isDeleted) {
         textbooks.push(tb)
       }
@@ -154,20 +153,20 @@ export class TextbookStore {
     return textbooks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }
 
-  async updateContent(textbookId: string, worldId: string, content: string): Promise<Textbook | null> {
-    const tb = await this.get(textbookId, worldId)
+  async updateContent(textbookId: string, content: string): Promise<Textbook | null> {
+    const tb = await this.get(textbookId)
     if (!tb) return null
 
     tb.content = content
     tb.updatedAt = new Date().toISOString()
 
     await atomicWriteFile(
-      textbookPath(this.dataRoot, textbookId, worldId),
+      textbookPath(this.dataRoot, textbookId),
       JSON.stringify(tb, null, 2),
       'utf-8'
     )
     await atomicWriteFile(
-      textbookContentPath(this.dataRoot, textbookId, worldId),
+      textbookContentPath(this.dataRoot, textbookId),
       content,
       'utf-8'
     )
@@ -175,8 +174,8 @@ export class TextbookStore {
     return tb
   }
 
-  async update(textbookId: string, worldId: string, updates: { title?: string; author?: string; description?: string; content?: string; rating?: number }): Promise<Textbook | null> {
-    const tb = await this.get(textbookId, worldId)
+  async update(textbookId: string, updates: { title?: string; author?: string; description?: string; content?: string; rating?: number }): Promise<Textbook | null> {
+    const tb = await this.get(textbookId)
     if (!tb) return null
 
     if (updates.title !== undefined) tb.title = updates.title
@@ -187,13 +186,13 @@ export class TextbookStore {
     tb.updatedAt = new Date().toISOString()
 
     await atomicWriteFile(
-      textbookPath(this.dataRoot, textbookId, worldId),
+      textbookPath(this.dataRoot, textbookId),
       JSON.stringify(tb, null, 2),
       'utf-8'
     )
     if (updates.content !== undefined) {
       await atomicWriteFile(
-        textbookContentPath(this.dataRoot, textbookId, worldId),
+        textbookContentPath(this.dataRoot, textbookId),
         updates.content,
         'utf-8'
       )
@@ -204,10 +203,9 @@ export class TextbookStore {
 
   async updateProgress(
     textbookId: string,
-    worldId: string,
     progress: { currentPage?: number; totalPages?: number | null; readingPercentage?: number; lastPosition?: string }
   ): Promise<Textbook | null> {
-    const tb = await this.get(textbookId, worldId)
+    const tb = await this.get(textbookId)
     if (!tb) return null
 
     if (progress.currentPage !== undefined) tb.progress.currentPage = progress.currentPage
@@ -217,7 +215,7 @@ export class TextbookStore {
     tb.updatedAt = new Date().toISOString()
 
     await atomicWriteFile(
-      textbookPath(this.dataRoot, textbookId, worldId),
+      textbookPath(this.dataRoot, textbookId),
       JSON.stringify(tb, null, 2),
       'utf-8'
     )
@@ -225,9 +223,9 @@ export class TextbookStore {
     return tb
   }
 
-  async delete(textbookId: string, worldId: string): Promise<boolean> {
+  async delete(textbookId: string): Promise<boolean> {
     try {
-      const dir = textbookDir(this.dataRoot, textbookId, worldId)
+      const dir = textbookDir(this.dataRoot, textbookId)
       await rm(dir, { recursive: true, force: true })
       return true
     } catch {
@@ -235,39 +233,38 @@ export class TextbookStore {
     }
   }
 
-  async softDelete(textbookId: string, worldId: string): Promise<boolean> {
-    const tb = await this.get(textbookId, worldId)
+  async softDelete(textbookId: string): Promise<boolean> {
+    const tb = await this.get(textbookId)
     if (!tb) return false
     tb.isDeleted = true
     tb.updatedAt = new Date().toISOString()
     await atomicWriteFile(
-      textbookPath(this.dataRoot, textbookId, worldId),
+      textbookPath(this.dataRoot, textbookId),
       JSON.stringify(tb, null, 2),
       'utf-8'
     )
     return true
   }
 
-  async getContent(textbookId: string, worldId: string): Promise<string> {
+  async getContent(textbookId: string): Promise<string> {
     try {
       return await readFile(
-        textbookContentPath(this.dataRoot, textbookId, worldId),
+        textbookContentPath(this.dataRoot, textbookId),
         'utf-8'
       )
     } catch {
-      const tb = await this.get(textbookId, worldId)
+      const tb = await this.get(textbookId)
       return tb?.content ?? ''
     }
   }
 
   async readOriginal(
     textbookId: string,
-    worldId: string
-  ): Promise<{ data: Buffer; fileName: string } | null> {
-    const tb = await this.get(textbookId, worldId)
+    ): Promise<{ data: Buffer; fileName: string } | null> {
+    const tb = await this.get(textbookId)
     if (!tb || !tb.originalFile) return null
 
-    const dir = textbookDir(this.dataRoot, textbookId, worldId)
+    const dir = textbookDir(this.dataRoot, textbookId)
     const fileName = tb.sourceFile.split(/[/\\]/).pop() || tb.originalFile
 
     try {

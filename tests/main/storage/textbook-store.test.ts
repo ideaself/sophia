@@ -5,9 +5,7 @@ import { tmpdir } from 'node:os'
 
 import { TextbookStore } from '../../../src/main/storage/textbook-store'
 import { textbookContentPath } from '../../../src/main/storage/app-data'
-import type { WorldId } from '../../../src/shared/types/ids'
 
-const WORLD_ID = 'world_default' as WorldId
 const PDF_BYTES = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff, 0xfe, 0x01, 0x02, 0x03])
 
 let dataRoot: string
@@ -30,7 +28,6 @@ async function createPdfTextbook(store: TextbookStore, withOriginal: boolean) {
     await writeFile(originalSourcePath, PDF_BYTES)
   }
   return store.create({
-    worldId: WORLD_ID,
     title: '高等数学',
     format: 'pdf',
     sourceFile: '高等数学.pdf',
@@ -62,7 +59,7 @@ describe('TextbookStore — original file', () => {
     const store = new TextbookStore(dataRoot)
     const tb = await createPdfTextbook(store, true)
 
-    const result = await store.readOriginal(tb.id, WORLD_ID)
+    const result = await store.readOriginal(tb.id)
     expect(result).not.toBeNull()
     expect(result!.data.equals(PDF_BYTES)).toBe(true)
     expect(result!.fileName).toBe('高等数学.pdf')
@@ -71,18 +68,18 @@ describe('TextbookStore — original file', () => {
   it('readOriginal returns null when the textbook has no original', async () => {
     const store = new TextbookStore(dataRoot)
     const tb = await createPdfTextbook(store, false)
-    expect(await store.readOriginal(tb.id, WORLD_ID)).toBeNull()
+    expect(await store.readOriginal(tb.id)).toBeNull()
   })
 
   it('readOriginal returns null for a nonexistent textbook', async () => {
     const store = new TextbookStore(dataRoot)
-    expect(await store.readOriginal('tb_nope', WORLD_ID)).toBeNull()
+    expect(await store.readOriginal('tb_nope')).toBeNull()
   })
 
   it('textbook.json round-trips through get() with originalFile preserved', async () => {
     const store = new TextbookStore(dataRoot)
     const tb = await createPdfTextbook(store, true)
-    const loaded = await store.get(tb.id, WORLD_ID)
+    const loaded = await store.get(tb.id)
     expect(loaded?.originalFile).toBe('高等数学.pdf')
   })
 })
@@ -91,15 +88,15 @@ describe('TextbookStore mutations', () => {
   it('updateContent rewrites the content file and record', async () => {
     const store = new TextbookStore(dataRoot)
     const tb = await createPdfTextbook(store, false)
-    const updated = await store.updateContent(tb.id, WORLD_ID, '# 新内容')
+    const updated = await store.updateContent(tb.id, '# 新内容')
     expect(updated?.content).toBe('# 新内容')
-    expect(await store.getContent(tb.id, WORLD_ID)).toBe('# 新内容')
+    expect(await store.getContent(tb.id)).toBe('# 新内容')
   })
 
   it('update changes title/author/description/rating', async () => {
     const store = new TextbookStore(dataRoot)
     const tb = await createPdfTextbook(store, false)
-    const updated = await store.update(tb.id, WORLD_ID, { title: '新标题', author: '新作者', rating: 5 })
+    const updated = await store.update(tb.id, { title: '新标题', author: '新作者', rating: 5 })
     expect(updated?.title).toBe('新标题')
     expect(updated?.author).toBe('新作者')
     expect(updated?.rating).toBe(5)
@@ -107,16 +104,16 @@ describe('TextbookStore mutations', () => {
 
   it('update/updateContent/updateProgress return null for a missing textbook', async () => {
     const store = new TextbookStore(dataRoot)
-    expect(await store.update('tb_missing', WORLD_ID, { title: 'x' })).toBeNull()
-    expect(await store.updateContent('tb_missing', WORLD_ID, 'x')).toBeNull()
-    expect(await store.updateProgress('tb_missing', WORLD_ID, { currentPage: 1 })).toBeNull()
+    expect(await store.update('tb_missing', { title: 'x' })).toBeNull()
+    expect(await store.updateContent('tb_missing', 'x')).toBeNull()
+    expect(await store.updateProgress('tb_missing', { currentPage: 1 })).toBeNull()
   })
 
   it('updateProgress persists reading progress', async () => {
     const store = new TextbookStore(dataRoot)
     const tb = await createPdfTextbook(store, false)
-    await store.updateProgress(tb.id, WORLD_ID, { currentPage: 3, totalPages: 10, readingPercentage: 0.3, lastPosition: 'chapter-2' })
-    const got = await store.get(tb.id, WORLD_ID)
+    await store.updateProgress(tb.id, { currentPage: 3, totalPages: 10, readingPercentage: 0.3, lastPosition: 'chapter-2' })
+    const got = await store.get(tb.id)
     expect(got?.progress.currentPage).toBe(3)
     expect(got?.progress.totalPages).toBe(10)
     expect(got?.progress.readingPercentage).toBe(0.3)
@@ -126,17 +123,17 @@ describe('TextbookStore mutations', () => {
   it('softDelete marks isDeleted and hides the textbook from list; delete removes it entirely', async () => {
     const store = new TextbookStore(dataRoot)
     const tb = await createPdfTextbook(store, true)
-    expect(await store.softDelete(tb.id, WORLD_ID)).toBe(true)
-    expect(await store.list(WORLD_ID)).toHaveLength(0)
-    expect((await store.get(tb.id, WORLD_ID))?.isDeleted).toBe(true)
-    expect(await store.delete(tb.id, WORLD_ID)).toBe(true)
-    expect(await store.get(tb.id, WORLD_ID)).toBeNull()
+    expect(await store.softDelete(tb.id)).toBe(true)
+    expect(await store.list()).toHaveLength(0)
+    expect((await store.get(tb.id))?.isDeleted).toBe(true)
+    expect(await store.delete(tb.id)).toBe(true)
+    expect(await store.get(tb.id)).toBeNull()
   })
 
   it('getContent falls back to the record content when the file is missing', async () => {
     const store = new TextbookStore(dataRoot)
     const tb = await createPdfTextbook(store, false)
-    await rm(textbookContentPath(dataRoot, tb.id, WORLD_ID), { force: true })
-    expect(await store.getContent(tb.id, WORLD_ID)).toBe(tb.content)
+    await rm(textbookContentPath(dataRoot, tb.id), { force: true })
+    expect(await store.getContent(tb.id)).toBe(tb.content)
   })
 })

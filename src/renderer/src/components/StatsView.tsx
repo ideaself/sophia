@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { WORLD_ID } from '../types/models'
 import {
   estimateDailyStudyMinutes,
   computeStreak,
@@ -77,7 +76,7 @@ export function StatsView(): React.ReactElement {
     (async () => {
       setLoading(true)
       try {
-        const convs = await window.sophia.data.listConversations(WORLD_ID) as ConversationDTO[]
+        const convs = await window.sophia.data.listConversations() as ConversationDTO[]
         setConversations(convs)
 
         const weekStart = new Date()
@@ -144,7 +143,7 @@ export function StatsView(): React.ReactElement {
 
         // Load textbook titles for the weekly report distribution
         try {
-          const tbs = await window.sophia.data.listTextbooks(WORLD_ID)
+          const tbs = await window.sophia.data.listTextbooks()
           setTextbookTitles(Object.fromEntries(tbs.map((tb) => [tb.id, tb.title])))
         } catch {
           setTextbookTitles({})

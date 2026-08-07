@@ -31,7 +31,6 @@ declare global {
       companionId: string
       textbookId?: string | null
       userMessage: string
-      worldId?: string
       classMode?: 'standard' | 'feynman'
       hideNarration?: boolean
       pace?: 'slow' | 'normal' | 'fast'
@@ -46,7 +45,6 @@ declare global {
 
   interface ConversationDTO {
     id: string
-    worldId: string
     companionId: string
     textbookId: string | null
     title: string
@@ -65,7 +63,6 @@ declare global {
 
   interface TextbookDTO {
     id: string
-    worldId: string
     title: string
     author: string
     description: string
@@ -84,7 +81,6 @@ declare global {
   interface ReadingNoteDTO {
     id: string
     textbookId: string
-    worldId: string
     content: string
     position: string
     chapter: string
@@ -141,58 +137,53 @@ declare global {
     exportBackup: (filePath: string) => Promise<{ fileCount: number }>
     restoreBackup: (zipPath: string) => Promise<{ success: boolean; preRestore?: string; error?: string }>
     createConversation: (input: {
-      worldId: string
       companionId: string
       textbookId?: string
       title: string
     }) => Promise<ConversationDTO>
-    getConversation: (conversationId: string, worldId?: string) => Promise<ConversationDTO | null>
-    listConversations: (worldId: string) => Promise<ConversationDTO[]>
-    deleteConversation: (conversationId: string, worldId?: string) => Promise<boolean>
-    updateTitle: (conversationId: string, title: string, worldId?: string) => Promise<ConversationDTO | null>
-    truncateConversation: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
+    getConversation: (conversationId: string) => Promise<ConversationDTO | null>
+    listConversations: () => Promise<ConversationDTO[]>
+    deleteConversation: (conversationId: string) => Promise<boolean>
+    updateTitle: (conversationId: string, title: string) => Promise<ConversationDTO | null>
+    truncateConversation: (conversationId: string, messageId: string) => Promise<boolean>
     sendMessage: (input: {
       conversationId: string
       content: string
       role?: string
-      worldId?: string
     }) => Promise<MessageDTO>
-    updateMessage: (conversationId: string, messageId: string, content: string, worldId?: string) => Promise<MessageDTO | null>
-    deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
-    listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
-    searchMessages: (worldId: string, query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
-    endConversation: (conversationId: string, worldId?: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
-    redoArtifacts: (conversationId: string, types: string[], worldId?: string) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
+    updateMessage: (conversationId: string, messageId: string, content: string) => Promise<MessageDTO | null>
+    deleteMessage: (conversationId: string, messageId: string) => Promise<boolean>
+    listMessages: (conversationId: string) => Promise<MessageDTO[]>
+    searchMessages: (query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
+    endConversation: (conversationId: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
+    redoArtifacts: (conversationId: string, types: string[]) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
     onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void
     createTextbook: (input: {
-      worldId: string
       title: string
       format: 'markdown' | 'text' | 'pdf' | 'epub'
       sourceFile?: string
       content?: string
     }) => Promise<TextbookDTO>
-    getTextbook: (textbookId: string, worldId?: string) => Promise<TextbookDTO | null>
-    readTextbookOriginal: (textbookId: string, worldId?: string) => Promise<{ data: Uint8Array; fileName: string } | null>
-    readEpubChapters: (textbookId: string, worldId?: string) => Promise<EpubChaptersResult>
-    searchTextbookExcerpt: (textbookId: string, chapter: string, worldId?: string) => Promise<{ chapter: string; excerpt: string } | null>
-    translateTextbookExcerpt: (textbookId: string, chapter: string, worldId?: string) => Promise<{ chapter: string; excerpt: string; translation: string } | null>
-    listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
-    updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
-    updateTextbook: (textbookId: string, updates: { title?: string; content?: string }, worldId?: string) => Promise<TextbookDTO | null>
-    deleteTextbook: (textbookId: string, worldId?: string) => Promise<boolean>
+    getTextbook: (textbookId: string) => Promise<TextbookDTO | null>
+    readTextbookOriginal: (textbookId: string) => Promise<{ data: Uint8Array; fileName: string } | null>
+    readEpubChapters: (textbookId: string) => Promise<EpubChaptersResult>
+    searchTextbookExcerpt: (textbookId: string, chapter: string) => Promise<{ chapter: string; excerpt: string } | null>
+    translateTextbookExcerpt: (textbookId: string, chapter: string) => Promise<{ chapter: string; excerpt: string; translation: string } | null>
+    listTextbooks: () => Promise<TextbookDTO[]>
+    updateTextbookContent: (textbookId: string, content: string) => Promise<TextbookDTO | null>
+    updateTextbook: (textbookId: string, updates: { title?: string; content?: string }) => Promise<TextbookDTO | null>
+    deleteTextbook: (textbookId: string) => Promise<boolean>
     createArtifact: (input: {
       conversationId: string
       type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note' | 'knowledge_graph'
       content: string
-      worldId?: string
     }) => Promise<ArtifactDTO>
-    getArtifact: (artifactId: string, conversationId: string, worldId?: string) => Promise<ArtifactDTO | null>
-    updateArtifact: (artifactId: string, conversationId: string, content: string, worldId?: string) => Promise<ArtifactDTO | null>
-    listArtifacts: (conversationId: string, worldId?: string) => Promise<ArtifactDTO[]>
-    updateTextbookProgress: (textbookId: string, progress: { currentPage?: number; totalPages?: number | null; readingPercentage?: number; lastPosition?: string }, worldId?: string) => Promise<TextbookDTO | null>
+    getArtifact: (artifactId: string, conversationId: string) => Promise<ArtifactDTO | null>
+    updateArtifact: (artifactId: string, conversationId: string, content: string) => Promise<ArtifactDTO | null>
+    listArtifacts: (conversationId: string) => Promise<ArtifactDTO[]>
+    updateTextbookProgress: (textbookId: string, progress: { currentPage?: number; totalPages?: number | null; readingPercentage?: number; lastPosition?: string }) => Promise<TextbookDTO | null>
     createReadingNote: (input: {
       textbookId: string
-      worldId?: string
       content: string
       position: string
       chapter?: string
@@ -200,14 +191,14 @@ declare global {
       color?: string
       readerNote?: string
     }) => Promise<ReadingNoteDTO>
-    listReadingNotes: (textbookId: string, worldId?: string) => Promise<ReadingNoteDTO[]>
-    updateReadingNote: (noteId: string, textbookId: string, updates: Record<string, unknown>, worldId?: string) => Promise<ReadingNoteDTO | null>
-    deleteReadingNote: (noteId: string, textbookId: string, worldId?: string) => Promise<boolean>
+    listReadingNotes: (textbookId: string) => Promise<ReadingNoteDTO[]>
+    updateReadingNote: (noteId: string, textbookId: string, updates: Record<string, unknown>) => Promise<ReadingNoteDTO | null>
+    deleteReadingNote: (noteId: string, textbookId: string) => Promise<boolean>
     getFlashcardSrsState: () => Promise<Record<string, unknown>>
     saveFlashcardSrsState: (state: Record<string, unknown>) => Promise<{ success: boolean }>
     getFlashcardFavorites: () => Promise<string[]>
     saveFlashcardFavorites: (ids: string[]) => Promise<{ success: boolean }>
-    deleteFlashcardCards: (cards: Array<{ conversationId: string; artifactId: string; cardIndex: number }>, worldId?: string) => Promise<{ success: boolean; deleted: number }>
+    deleteFlashcardCards: (cards: Array<{ conversationId: string; artifactId: string; cardIndex: number }>) => Promise<{ success: boolean; deleted: number }>
     archive: {
       list: () => Promise<Array<{ id: string; kind: string; label: string; movedAt: string }>>
       restore: (entryId: string) => Promise<{ success: boolean }>
@@ -222,10 +213,10 @@ declare global {
     exportPdf: (html: string, filePath: string) => Promise<{ success: boolean }>
     captureScreenshot: (filePath: string) => Promise<{ success: boolean }>
     composeAiAnswer: (question: string, history: string) => Promise<{ content: string }>
-    reparseEpubContent: (textbookId: string, worldId?: string) => Promise<{ success: boolean; content: string }>
+    reparseEpubContent: (textbookId: string) => Promise<{ success: boolean; content: string }>
     diary: {
-      listMonths: (worldId?: string) => Promise<string[]>
-      getMonth: (month: string, worldId?: string) => Promise<string | null>
+      listMonths: () => Promise<string[]>
+      getMonth: (month: string) => Promise<string | null>
     }
   }
 

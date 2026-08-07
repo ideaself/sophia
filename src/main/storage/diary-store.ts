@@ -33,11 +33,11 @@ export class DiaryStore {
   /**
    * Append one diary entry to the monthly file for the entry's date.
    */
-  async append(worldId: string, entry: DiaryEntryInput): Promise<void> {
+  async append(entry: DiaryEntryInput): Promise<void> {
     const month = monthOf(entry.date)
     if (!month) return
 
-    const filePath = diaryPath(this.dataRoot, month, worldId)
+    const filePath = diaryPath(this.dataRoot, month)
     const day = entry.date.slice(0, 10)
     const heading = `## ${day} | ${entry.companionName}`
     const body = entry.content.trim()
@@ -46,16 +46,16 @@ export class DiaryStore {
       ? [heading, '', body, '', '---', ''].join('\n')
       : [heading, '', '---', ''].join('\n')
 
-    await mkdir(diaryDir(this.dataRoot, worldId), { recursive: true })
+    await mkdir(diaryDir(this.dataRoot), { recursive: true })
     await appendFile(filePath, block, 'utf-8')
   }
 
   /**
    * List available month files (newest first), e.g. ["2026-07", "2026-06"].
    */
-  async listMonths(worldId: string): Promise<string[]> {
+  async listMonths(): Promise<string[]> {
     try {
-      const dir = diaryDir(this.dataRoot, worldId)
+      const dir = diaryDir(this.dataRoot)
       const entries = await readdir(dir)
       const months = entries
         .filter((name) => /^\d{4}-\d{2}\.md$/.test(name))
@@ -71,9 +71,9 @@ export class DiaryStore {
    * Read the raw markdown for one month (e.g. "2026-07").
    * Returns null when the month has no diary file.
    */
-  async getMonth(worldId: string, month: string): Promise<string | null> {
+  async getMonth(month: string): Promise<string | null> {
     try {
-      const raw = await readFile(diaryPath(this.dataRoot, month, worldId), 'utf-8')
+      const raw = await readFile(diaryPath(this.dataRoot, month), 'utf-8')
       return raw
     } catch {
       return null

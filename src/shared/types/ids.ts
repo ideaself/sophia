@@ -1,12 +1,6 @@
 // Branded ID types for domain entities
 // Uses intersection with a unique symbol brand to prevent accidental mixing of IDs
 
-declare const ProfileIdBrand: unique symbol
-export type ProfileId = string & { readonly [ProfileIdBrand]: 'ProfileId' }
-
-declare const WorldIdBrand: unique symbol
-export type WorldId = string & { readonly [WorldIdBrand]: 'WorldId' }
-
 declare const CompanionIdBrand: unique symbol
 export type CompanionId = string & { readonly [CompanionIdBrand]: 'CompanionId' }
 

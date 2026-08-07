@@ -6,7 +6,6 @@ import { TextbookFormat } from '../types/ids'
 // --- IPC: Textbook ---
 
 export const IpcCreateTextbookInputSchema = z.object({
-  worldId: z.string().min(1),
   title: z.string().min(1),
   format: z.enum([
     TextbookFormat.Markdown,
@@ -26,7 +25,6 @@ export const IpcUpdateTextbookContentInputSchema = z.object({
 // --- IPC: Conversation ---
 
 export const IpcCreateConversationInputSchema = z.object({
-  worldId: z.string().min(1),
   companionId: z.string().min(1),
   textbookId: z.string().optional(),
   title: z.string().min(1)
@@ -37,7 +35,6 @@ export const IpcGetConversationInputSchema = z.object({
 })
 
 export const IpcListConversationsInputSchema = z.object({
-  worldId: z.string().min(1)
 })
 
 export const IpcDeleteConversationInputSchema = z.object({
@@ -56,7 +53,6 @@ export const IpcGetMessagesInputSchema = z.object({
 })
 
 export const IpcSearchMessagesInputSchema = z.object({
-  worldId: z.string().min(1),
   query: z.string().min(2),
   limit: z.number().int().min(1).max(500).optional(),
   offset: z.number().int().min(0).optional()
@@ -67,47 +63,39 @@ export const IpcSearchMessagesInputSchema = z.object({
 export const IpcUpdateTitleInputSchema = z.object({
   conversationId: z.string().min(1),
   title: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcEndClassInputSchema = z.object({
   conversationId: z.string().min(1),
-  worldId: z.string().optional(),
   classMode: z.enum(['standard', 'feynman']).optional()
 })
 
 export const IpcRedoArtifactsInputSchema = z.object({
   conversationId: z.string().min(1),
-  worldId: z.string().optional(),
   types: z.array(z.string().min(1)).min(1)
 })
 
 export const IpcTruncateConversationInputSchema = z.object({
   conversationId: z.string().min(1),
   messageId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcTextbookSearchExcerptInputSchema = z.object({
   textbookId: z.string().min(1),
   chapter: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcTextbookTranslateExcerptInputSchema = z.object({
   textbookId: z.string().min(1),
   chapter: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcGetConversationWithWorldInputSchema = z.object({
   conversationId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcDeleteConversationWithWorldInputSchema = z.object({
   conversationId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 // --- IPC: Message (additional) ---
@@ -116,25 +104,21 @@ export const IpcSendMessageWithWorldInputSchema = z.object({
   conversationId: z.string().min(1),
   content: z.string().min(1),
   role: z.enum(['user', 'assistant', 'system']).optional(),
-  worldId: z.string().optional()
 })
 
 export const IpcGetMessagesWithWorldInputSchema = z.object({
   conversationId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcUpdateMessageInputSchema = z.object({
   conversationId: z.string().min(1),
   messageId: z.string().min(1),
   content: z.string(),
-  worldId: z.string().optional()
 })
 
 export const IpcDeleteMessageInputSchema = z.object({
   conversationId: z.string().min(1),
   messageId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 // --- IPC: Artifact (additional) ---
@@ -145,7 +129,6 @@ export const IpcArtifactTypeSchema = z.enum([
 
 export const IpcCreateArtifactInputSchema = z.object({
   conversationId: z.string().min(1),
-  worldId: z.string().optional(),
   type: IpcArtifactTypeSchema,
   content: z.string()
 })
@@ -153,19 +136,16 @@ export const IpcCreateArtifactInputSchema = z.object({
 export const IpcGetArtifactInputSchema = z.object({
   artifactId: z.string().min(1),
   conversationId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcUpdateArtifactInputSchema = z.object({
   artifactId: z.string().min(1),
   conversationId: z.string().min(1),
   content: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcListArtifactsInputSchema = z.object({
   conversationId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 // --- IPC: Flashcard (additional) ---
@@ -179,7 +159,6 @@ export const IpcFlashcardRefSchema = z.object({
 
 export const IpcFlashcardDeleteCardsInputSchema = z.object({
   cards: z.array(IpcFlashcardRefSchema).min(1),
-  worldId: z.string().optional()
 })
 
 // --- IPC: Archive (回收站) ---
@@ -212,7 +191,6 @@ export const IpcAiComposeInputSchema = z.object({
 
 export const IpcReparseEpubInputSchema = z.object({
   textbookId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 // --- IPC: Profile lock (档案锁) ---
@@ -228,7 +206,6 @@ export const IpcLockVerifyInputSchema = z.object({
 // --- IPC: Textbook (additional) ---
 
 export const IpcCreateTextbookFullInputSchema = z.object({
-  worldId: z.string().min(1),
   title: z.string().min(1),
   author: z.string().optional(),
   description: z.string().optional(),
@@ -244,16 +221,13 @@ export const IpcCreateTextbookFullInputSchema = z.object({
 
 export const IpcGetTextbookInputSchema = z.object({
   textbookId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcListTextbooksInputSchema = z.object({
-  worldId: z.string().min(1)
 })
 
 export const IpcUpdateTextbookInputSchema = z.object({
   textbookId: z.string().min(1),
-  worldId: z.string().optional(),
   title: z.string().optional(),
   author: z.string().optional(),
   description: z.string().optional(),
@@ -263,7 +237,6 @@ export const IpcUpdateTextbookInputSchema = z.object({
 
 export const IpcUpdateTextbookProgressInputSchema = z.object({
   textbookId: z.string().min(1),
-  worldId: z.string().optional(),
   currentPage: z.number().int().min(0).optional(),
   totalPages: z.number().int().min(0).nullable().optional(),
   readingPercentage: z.number().min(0).max(1).optional(),
@@ -272,24 +245,20 @@ export const IpcUpdateTextbookProgressInputSchema = z.object({
 
 export const IpcDeleteTextbookInputSchema = z.object({
   textbookId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcReadOriginalInputSchema = z.object({
   textbookId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcReadEpubChaptersInputSchema = z.object({
   textbookId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 // --- IPC: Reading Note ---
 
 export const IpcCreateReadingNoteInputSchema = z.object({
   textbookId: z.string().min(1),
-  worldId: z.string().optional(),
   content: z.string(),
   position: z.string(),
   chapter: z.string().optional(),
@@ -300,19 +269,16 @@ export const IpcCreateReadingNoteInputSchema = z.object({
 
 export const IpcListReadingNotesInputSchema = z.object({
   textbookId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 export const IpcUpdateReadingNoteInputSchema = z.object({
   noteId: z.string().min(1),
   textbookId: z.string().min(1),
-  worldId: z.string().optional()
 }).catchall(z.unknown())
 
 export const IpcDeleteReadingNoteInputSchema = z.object({
   noteId: z.string().min(1),
   textbookId: z.string().min(1),
-  worldId: z.string().optional()
 })
 
 // --- IPC: File I/O ---
@@ -353,7 +319,6 @@ export const IpcChatPromptMessagesInputSchema = z.object({
   companionId: z.string().min(1),
   textbookId: z.string().nullable().optional(),
   userMessage: z.string().min(1),
-  worldId: z.string().default('world_default'),
   classMode: z.enum(['standard', 'feynman']).optional(),
   hideNarration: z.boolean().optional(),
   pace: z.enum(['slow', 'normal', 'fast']).optional()
@@ -362,11 +327,9 @@ export const IpcChatPromptMessagesInputSchema = z.object({
 // --- IPC: Diary ---
 
 export const IpcDiaryListMonthsInputSchema = z.object({
-  worldId: z.string().default('world_default')
 })
 
 export const IpcDiaryGetMonthInputSchema = z.object({
-  worldId: z.string().default('world_default'),
   month: z.string().regex(/^\d{4}-\d{2}$/, 'Month must be in YYYY-MM format')
 })
 

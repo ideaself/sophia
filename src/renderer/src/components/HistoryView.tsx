@@ -4,7 +4,6 @@ import { handleCopyMathSource } from '../lib/mathCopy'
 import { useAppStore } from '../stores/useAppStore'
 import { useCompanionStore } from '../stores/useCompanionStore'
 import { useTextbookStore } from '../stores/useTextbookStore'
-import { WORLD_ID } from '../types/models'
 import { ArtifactType } from '../../../shared/types/ids'
 import { parseSelfTestQuestions } from '../../../shared/self-test-utils'
 import { SelfTestModal } from './SelfTestModal'
@@ -66,14 +65,14 @@ export function HistoryView(): React.ReactElement {
   const fetchTextbooks = useTextbookStore((s) => s.fetch)
 
   useEffect(() => {
-    window.sophia.data.listConversations(WORLD_ID).then((convs) => {
+    window.sophia.data.listConversations().then((convs) => {
       setConversations(convs)
       // 默认选中最近的一个课堂
       if (convs.length > 0 && !selectedId) {
         setSelectedId(convs[0].id)
       }
     })
-    window.sophia.data.diary.listMonths(WORLD_ID).then(setDiaryMonths)
+    window.sophia.data.diary.listMonths().then(setDiaryMonths)
     fetchTextbooks()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -299,7 +298,7 @@ export function HistoryView(): React.ReactElement {
   const doSearch = useCallback(async (query: string, offset: number) => {
     setSearching(true)
     try {
-      const result = await window.sophia.data.searchMessages(WORLD_ID, query, 50, offset)
+      const result = await window.sophia.data.searchMessages(query, 50, offset)
       if (offset === 0) setSearchResults(result)
       else setSearchResults((prev) => prev ? { results: [...prev.results, ...result.results], total: result.total } : result)
     } catch {
@@ -336,7 +335,7 @@ export function HistoryView(): React.ReactElement {
     if (missing.length === 0) return
     setRedoingMissing(true)
     try {
-      const result = await window.sophia.data.redoArtifacts(selected.id, missing, WORLD_ID)
+      const result = await window.sophia.data.redoArtifacts(selected.id, missing)
       if (result.success) {
         setArtifacts(await window.sophia.data.listArtifacts(selected.id))
       }

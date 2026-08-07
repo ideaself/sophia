@@ -2,7 +2,6 @@ import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { join, dirname } from 'node:path'
 import { readFile, mkdir } from 'node:fs/promises'
 import { CompanionSchema } from '../../shared/schemas/companion'
-import { readLocalContext } from '../storage/world-store'
 import { ConversationStore } from '../storage/conversation-store'
 import { TextbookStore } from '../storage/textbook-store'
 import { ArtifactStore } from '../storage/artifact-store'
@@ -76,7 +75,6 @@ import {
 import {
   ArtifactType,
   type ClassMode,
-  type WorldId,
   type ConversationId
 } from '../../shared/types/ids'
 import { ARTIFACTS_GENERATED } from '../../shared/channel-names'
@@ -123,7 +121,6 @@ export function registerConversationIpc(
 
   function queueArtifactGeneration(
     conversationId: string,
-    worldId: string,
     classMode?: ClassMode
   ): void {
     artifactQueue = artifactQueue.then(async () => {
@@ -131,7 +128,6 @@ export function registerConversationIpc(
         const pipeline = await runArtifactPipeline(
           { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, readingNoteStore, diaryStore },
           conversationId,
-          worldId,
           { classMode }
         )
         notifyArtifactsReady(conversationId, {
@@ -156,7 +152,6 @@ export function registerConversationIpc(
   ipcMain.handle('conversation:create', async (_event, input: unknown) => {
     const parsed = IpcCreateConversationInputSchema.parse(input)
     const conv = await conversationStore.create({
-      worldId: parsed.worldId as WorldId,
       companionId: parsed.companionId,
       textbookId: parsed.textbookId ?? null,
       title: parsed.title
@@ -166,59 +161,53 @@ export function registerConversationIpc(
 
   ipcMain.handle('conversation:get', async (_event, input: unknown) => {
     const parsed = IpcGetConversationWithWorldInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    return conversationStore.get(parsed.conversationId, worldId)
+    return conversationStore.get(parsed.conversationId)
   })
 
-  ipcMain.handle('conversation:list', async (_event, input: unknown) => {
-    const parsed = IpcListConversationsInputSchema.parse(input)
-    return conversationStore.list(parsed.worldId)
+  ipcMain.handle('conversation:list', async () => {
+    return conversationStore.list()
   })
 
   ipcMain.handle('conversation:delete', async (_event, input: unknown) => {
     const parsed = IpcDeleteConversationWithWorldInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
     // Archive before deleting so the class can be restored (4.0.1).
     try {
-      const conv = await conversationStore.get(parsed.conversationId, worldId)
+      const conv = await conversationStore.get(parsed.conversationId)
       await archiveItem(
         dataRoot,
         'conversation',
         parsed.conversationId,
-        conversationDir(dataRoot, parsed.conversationId, worldId),
+        conversationDir(dataRoot, parsed.conversationId),
         conv?.title ?? parsed.conversationId
       )
     } catch (err) {
       console.warn(`Archive conversation ${parsed.conversationId} failed:`, err)
     }
-    return conversationStore.delete(parsed.conversationId, worldId)
+    return conversationStore.delete(parsed.conversationId)
   })
 
   ipcMain.handle('conversation:update-title', async (_event, input: unknown) => {
     const parsed = IpcUpdateTitleInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    return conversationStore.updateTitle(parsed.conversationId, worldId, parsed.title)
+    return conversationStore.updateTitle(parsed.conversationId, parsed.title)
   })
 
   // Rewind a conversation to a message: drop everything after it
   ipcMain.handle('conversation:truncate', async (_event, input: unknown) => {
     const parsed = IpcTruncateConversationInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
     return conversationStore.truncateAfter(
       parsed.conversationId,
-      worldId,
       parsed.messageId
     )
   })
 
   ipcMain.handle('conversation:end', async (_event, input: unknown) => {
     const parsed = IpcEndClassInputSchema.parse(input)
-    const { conversationId, worldId = 'world_default', classMode } = parsed
-    const success = await conversationStore.endConversation(conversationId, worldId)
+    const { conversationId, classMode } = parsed
+    const success = await conversationStore.endConversation(conversationId)
     if (!success) return { success: false, artifacts: 0 }
     // Generate artifacts in the background; the renderer is notified via
     // ARTIFACTS_GENERATED when the results are ready.
-    queueArtifactGeneration(conversationId, worldId, classMode)
+    queueArtifactGeneration(conversationId, classMode)
     return { success: true, artifacts: 0, farewell: '', failures: [], pending: true }
   })
 
@@ -226,7 +215,7 @@ export function registerConversationIpc(
   // (4.0.0 "post-class updates can be run again — redo only the missing work").
   ipcMain.handle('conversation:redo-artifacts', async (_event, input: unknown) => {
     const parsed = IpcRedoArtifactsInputSchema.parse(input)
-    const { conversationId, worldId = 'world_default', types } = parsed
+    const { conversationId, types } = parsed
 
     const knownTypes = new Set<string>(Object.values(ArtifactType))
     const validTypes = types.filter((t): t is ArtifactType => knownTypes.has(t))
@@ -236,7 +225,6 @@ export function registerConversationIpc(
       const pipeline = await runArtifactPipeline(
         { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, readingNoteStore, diaryStore },
         conversationId,
-        worldId,
         { types: validTypes }
       )
       return {
@@ -255,22 +243,19 @@ export function registerConversationIpc(
 
   ipcMain.handle('message:send', async (_event, input: unknown) => {
     const parsed = IpcSendMessageWithWorldInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
     const role = parsed.role ?? 'user'
-    const msg = await conversationStore.addMessage(parsed.conversationId, worldId, role, parsed.content)
+    const msg = await conversationStore.addMessage(parsed.conversationId, role, parsed.content)
     return msg
   })
 
   ipcMain.handle('message:list', async (_event, input: unknown) => {
     const parsed = IpcGetMessagesWithWorldInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    return conversationStore.getMessages(parsed.conversationId, worldId)
+    return conversationStore.getMessages(parsed.conversationId)
   })
 
   ipcMain.handle('message:search', async (_event, input: unknown) => {
     const parsed = IpcSearchMessagesInputSchema.parse(input)
     return conversationStore.searchMessages(
-      parsed.worldId,
       parsed.query,
       parsed.limit,
       parsed.offset
@@ -279,14 +264,12 @@ export function registerConversationIpc(
 
   ipcMain.handle('message:update', async (_event, input: unknown) => {
     const parsed = IpcUpdateMessageInputSchema.parse(input)
-    const wId = parsed.worldId ?? 'world_default'
-    return conversationStore.updateMessage(parsed.conversationId, wId, parsed.messageId, parsed.content)
+    return conversationStore.updateMessage(parsed.conversationId, parsed.messageId, parsed.content)
   })
 
   ipcMain.handle('message:delete', async (_event, input: unknown) => {
     const parsed = IpcDeleteMessageInputSchema.parse(input)
-    const wId = parsed.worldId ?? 'world_default'
-    return conversationStore.deleteMessage(parsed.conversationId, wId, parsed.messageId)
+    return conversationStore.deleteMessage(parsed.conversationId, parsed.messageId)
   })
 
   // --- File Dialog ---
@@ -376,7 +359,6 @@ export function registerConversationIpc(
     }
 
     return textbookStore.create({
-      worldId: parsed.worldId as WorldId,
       title: parsed.title,
       author,
       description,
@@ -390,14 +372,12 @@ export function registerConversationIpc(
 
   ipcMain.handle('textbook:get', async (_event, input: unknown) => {
     const parsed = IpcGetTextbookInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    return textbookStore.get(parsed.textbookId, worldId)
+    return textbookStore.get(parsed.textbookId)
   })
 
   ipcMain.handle('textbook:read-original', async (_event, input: unknown) => {
     const parsed = IpcReadOriginalInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    const result = await textbookStore.readOriginal(parsed.textbookId, worldId)
+    const result = await textbookStore.readOriginal(parsed.textbookId)
     if (!result) return null
     if (result.data.length > MAX_ORIGINAL_SIZE) {
       throw new Error('原件超过 512MB，无法在应用内打开')
@@ -407,12 +387,11 @@ export function registerConversationIpc(
 
   ipcMain.handle('epub:read-chapters', async (_event, input: unknown) => {
     const parsed = IpcReadEpubChaptersInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    const textbook = await textbookStore.get(parsed.textbookId, worldId)
+    const textbook = await textbookStore.get(parsed.textbookId)
     if (!textbook || !textbook.originalFile) {
       throw new Error('Textbook not found or has no original file')
     }
-    const fullPath = join(textbookDir(dataRoot, parsed.textbookId, worldId), textbook.originalFile)
+    const fullPath = join(textbookDir(dataRoot, parsed.textbookId), textbook.originalFile)
     return getEpubChapters(fullPath)
   })
 
@@ -422,26 +401,24 @@ export function registerConversationIpc(
   // looks empty; the rebuilt text is written back to the textbook store.
   ipcMain.handle('epub:reparse-content', async (_event, input: unknown) => {
     const parsed = IpcReparseEpubInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    const textbook = await textbookStore.get(parsed.textbookId, worldId)
+    const textbook = await textbookStore.get(parsed.textbookId)
     if (!textbook || !textbook.originalFile) {
       throw new Error('Textbook not found or has no original file')
     }
-    const fullPath = join(textbookDir(dataRoot, parsed.textbookId, worldId), textbook.originalFile)
+    const fullPath = join(textbookDir(dataRoot, parsed.textbookId), textbook.originalFile)
     const result = await getEpubChapters(fullPath)
     if (result.chapters.length === 0) {
       throw new Error('该 EPUB 没有可读的章节（spine 与 manifest 均未提供可读 HTML）')
     }
     const content = epubChaptersToText(result)
-    await textbookStore.updateContent(parsed.textbookId, worldId, content)
+    await textbookStore.updateContent(parsed.textbookId, content)
     return { success: true, content }
   })
 
   // Look up the real textbook passage for a chat citation chip
   ipcMain.handle('textbook:search-excerpt', async (_event, input: unknown) => {
     const parsed = IpcTextbookSearchExcerptInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    const content = await textbookStore.getContent(parsed.textbookId, worldId)
+    const content = await textbookStore.getContent(parsed.textbookId)
     if (!content) return null
 
     const sections = splitSections(content)
@@ -460,8 +437,7 @@ export function registerConversationIpc(
   // 3.1.0: "Translate the textbook source in one tap" for language learners.
   ipcMain.handle('textbook:translate-excerpt', async (_event, input: unknown) => {
     const parsed = IpcTextbookTranslateExcerptInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    const content = await textbookStore.getContent(parsed.textbookId, worldId)
+    const content = await textbookStore.getContent(parsed.textbookId)
     if (!content) return null
 
     const sections = splitSections(content)
@@ -508,75 +484,66 @@ export function registerConversationIpc(
     }
   })
 
-  ipcMain.handle('textbook:list', async (_event, input: unknown) => {
-    const parsed = IpcListTextbooksInputSchema.parse(input)
-    return textbookStore.list(parsed.worldId)
+  ipcMain.handle('textbook:list', async () => {
+    return textbookStore.list()
   })
 
   ipcMain.handle('textbook:update', async (_event, input: unknown) => {
     const parsed = IpcUpdateTextbookInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    return textbookStore.update(parsed.textbookId, worldId, parsed)
+    return textbookStore.update(parsed.textbookId, parsed)
   })
 
   ipcMain.handle('textbook:update-progress', async (_event, input: unknown) => {
     const parsed = IpcUpdateTextbookProgressInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    return textbookStore.updateProgress(parsed.textbookId, worldId, parsed)
+    return textbookStore.updateProgress(parsed.textbookId, parsed)
   })
 
   ipcMain.handle('textbook:delete', async (_event, input: unknown) => {
     const parsed = IpcDeleteTextbookInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
     // Archive the textbook (source + notes + reading progress) before deleting (4.0.1).
     try {
-      const tb = await textbookStore.get(parsed.textbookId, worldId)
+      const tb = await textbookStore.get(parsed.textbookId)
       await archiveItem(
         dataRoot,
         'textbook',
         parsed.textbookId,
-        textbookDir(dataRoot, parsed.textbookId, worldId),
+        textbookDir(dataRoot, parsed.textbookId),
         tb?.title ?? parsed.textbookId
       )
     } catch (err) {
       console.warn(`Archive textbook ${parsed.textbookId} failed:`, err)
     }
-    return textbookStore.delete(parsed.textbookId, worldId)
+    return textbookStore.delete(parsed.textbookId)
   })
 
   // --- Reading Notes ---
 
   ipcMain.handle('reading-note:create', async (_event, input: unknown) => {
     const parsed = IpcCreateReadingNoteInputSchema.parse(input)
-    return readingNoteStore.create({
-      ...parsed,
-      worldId: parsed.worldId ?? 'world_default'
-    })
+    return readingNoteStore.create({ ...parsed })
   })
 
   ipcMain.handle('reading-note:list', async (_event, input: unknown) => {
     const parsed = IpcListReadingNotesInputSchema.parse(input)
-    return readingNoteStore.list(parsed.textbookId, parsed.worldId ?? 'world_default')
+    return readingNoteStore.list(parsed.textbookId)
   })
 
   ipcMain.handle('reading-note:update', async (_event, input: unknown) => {
     const parsed = IpcUpdateReadingNoteInputSchema.parse(input)
-    return readingNoteStore.update(parsed.noteId, parsed.textbookId, parsed.worldId ?? 'world_default', parsed)
+    return readingNoteStore.update(parsed.noteId, parsed.textbookId, parsed)
   })
 
   ipcMain.handle('reading-note:delete', async (_event, input: unknown) => {
     const parsed = IpcDeleteReadingNoteInputSchema.parse(input)
-    return readingNoteStore.delete(parsed.noteId, parsed.textbookId, parsed.worldId ?? 'world_default')
+    return readingNoteStore.delete(parsed.noteId, parsed.textbookId)
   })
 
   // --- Artifact CRUD ---
 
   ipcMain.handle('artifact:create', async (_event, input: unknown) => {
     const parsed = IpcCreateArtifactInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
     return artifactStore.create(
       parsed.conversationId as ConversationId,
-      worldId as WorldId,
       parsed.type,
       parsed.content
     )
@@ -584,25 +551,21 @@ export function registerConversationIpc(
 
   ipcMain.handle('artifact:get', async (_event, input: unknown) => {
     const parsed = IpcGetArtifactInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    return artifactStore.get(parsed.artifactId, parsed.conversationId, worldId)
+    return artifactStore.get(parsed.artifactId, parsed.conversationId)
   })
 
   ipcMain.handle('artifact:update', async (_event, input: unknown) => {
     const parsed = IpcUpdateArtifactInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
     return artifactStore.update(
       parsed.artifactId,
       parsed.conversationId,
-      worldId,
       parsed.content
     )
   })
 
   ipcMain.handle('artifact:list', async (_event, input: unknown) => {
     const parsed = IpcListArtifactsInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
-    return artifactStore.list(parsed.conversationId, worldId)
+    return artifactStore.list(parsed.conversationId)
   })
 
   // --- File I/O ---
@@ -733,7 +696,6 @@ export function registerConversationIpc(
   // Batch-delete specific cards across flashcards artifacts (2.0.0).
   ipcMain.handle('flashcard:delete-cards', async (_event, input: unknown) => {
     const parsed = IpcFlashcardDeleteCardsInputSchema.parse(input)
-    const worldId = parsed.worldId ?? 'world_default'
     const byArtifact = new Map<string, { conversationId: string; artifactId: string; indexes: number[] }>()
     for (const card of parsed.cards) {
       const key = `${card.conversationId}::${card.artifactId}`
@@ -748,16 +710,16 @@ export function registerConversationIpc(
 
     let deleted = 0
     for (const entry of byArtifact.values()) {
-      const artifact = await artifactStore.get(entry.artifactId, entry.conversationId, worldId)
+      const artifact = await artifactStore.get(entry.artifactId, entry.conversationId)
       if (!artifact) continue
       const cards = parseFlashcards(artifact.content)
       const remove = new Set(entry.indexes)
       const kept = cards.filter((_, i) => !remove.has(i))
       if (kept.length === cards.length) continue
       if (kept.length === 0) {
-        await artifactStore.update(entry.artifactId, entry.conversationId, worldId, '')
+        await artifactStore.update(entry.artifactId, entry.conversationId, '')
       } else {
-        await artifactStore.update(entry.artifactId, entry.conversationId, worldId, rebuildArtifactContent(kept))
+        await artifactStore.update(entry.artifactId, entry.conversationId, rebuildArtifactContent(kept))
       }
       deleted += cards.length - kept.length
     }
@@ -768,12 +730,12 @@ export function registerConversationIpc(
 
   ipcMain.handle('diary:list-months', async (_event, input: unknown) => {
     const parsed = IpcDiaryListMonthsInputSchema.parse(input)
-    return diaryStore.listMonths(parsed.worldId)
+    return diaryStore.listMonths()
   })
 
   ipcMain.handle('diary:get-month', async (_event, input: unknown) => {
     const parsed = IpcDiaryGetMonthInputSchema.parse(input)
-    return diaryStore.getMonth(parsed.worldId, parsed.month)
+    return diaryStore.getMonth(parsed.month)
   })
 
   return { conversationStore, textbookStore, artifactStore, readingNoteStore, diaryStore }
@@ -803,18 +765,17 @@ interface ArtifactPipelineResult {
 async function runArtifactPipeline(
   deps: ArtifactPipelineDeps,
   conversationId: string,
-  worldId: string,
   options: { classMode?: ClassMode; types?: ArtifactType[] } = {}
 ): Promise<ArtifactPipelineResult> {
   const { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, readingNoteStore, diaryStore } = deps
   const { classMode, types } = options
 
   // 本课教材的阅读批注（供日记产物参考；读取失败不影响产物生成）
-  const conv = await conversationStore.get(conversationId, worldId)
+  const conv = await conversationStore.get(conversationId)
   let readingNotes = ''
   if (conv?.textbookId) {
     try {
-      const notes = await readingNoteStore.list(conv.textbookId, worldId)
+      const notes = await readingNoteStore.list(conv.textbookId)
       const parts = notes.slice(0, 12).map((n) => {
         const loc = n.chapter || (n.position ? `位置 ${n.position}` : '教材')
         const noteText = n.readerNote ? `（笔记：${n.readerNote}）` : ''
@@ -844,7 +805,7 @@ async function runArtifactPipeline(
     return { artifactCount: 0, farewell: '', failures: [] }
   }
 
-  const messages = await conversationStore.getMessages(conversationId, worldId)
+  const messages = await conversationStore.getMessages(conversationId)
   const { results, failures: genFailures } = await generateArtifacts(
     messages,
     { apiKey, model, baseUrl },
@@ -883,7 +844,6 @@ async function runArtifactPipeline(
     }
     await artifactStore.create(
       conversationId as ConversationId,
-      worldId as WorldId,
       result.type,
       result.content
     )
@@ -895,7 +855,7 @@ async function runArtifactPipeline(
   // Writeback: save progress artifact content to textbook progress
   if (progressContent && conv?.textbookId) {
     try {
-      await textbookStore.updateProgress(conv.textbookId, worldId, {
+      await textbookStore.updateProgress(conv.textbookId, {
         lastPosition: progressContent
       })
     } catch (err) {
@@ -906,7 +866,7 @@ async function runArtifactPipeline(
   // Writeback: save learner profile to learner.md
   if (learnerProfileContent) {
     try {
-      await atomicWriteFile(learnerPath(dataRoot, worldId), learnerProfileContent, 'utf-8')
+      await atomicWriteFile(learnerPath(dataRoot), learnerProfileContent, 'utf-8')
     } catch (err) {
       console.warn(`Failed to write learner profile for ${conversationId}:`, err)
     }
@@ -917,8 +877,8 @@ async function runArtifactPipeline(
   if (palMomentsContent) {
     try {
       const filePath = conv?.textbookId
-        ? palMomentsPathForTextbook(dataRoot, conv.textbookId, worldId)
-        : palMomentsPath(dataRoot, worldId)
+        ? palMomentsPathForTextbook(dataRoot, conv.textbookId)
+        : palMomentsPath(dataRoot)
       let existing = ''
       try { existing = await readFile(filePath, 'utf-8') } catch { /* file doesn't exist yet */ }
       const merged = palMomentsContent + (existing ? '\n\n---\n\n' + existing : '')
@@ -932,7 +892,7 @@ async function runArtifactPipeline(
   if (relationContent && conv?.companionId) {
     try {
       await atomicWriteFile(
-        relationPath(dataRoot, conv.companionId, worldId),
+        relationPath(dataRoot, conv.companionId),
         relationContent,
         'utf-8'
       )
@@ -946,13 +906,13 @@ async function runArtifactPipeline(
   // by companionId + endedAt sorting.
   if (handoffTailContent && conv) {
     try {
-      const filePath = handoffMetaPath(dataRoot, worldId)
+      const filePath = handoffMetaPath(dataRoot)
       let meta: Record<string, HandoffMetaEntry> = {}
       try { meta = JSON.parse(await readFile(filePath, 'utf-8')) } catch { /* no meta yet */ }
       const companionName = (await readCompanionName(dataRoot, conv.companionId)) ?? conv.companionId
       let endingPage: number | null = null
       if (conv.textbookId) {
-        const tb = await textbookStore.get(conv.textbookId, worldId)
+        const tb = await textbookStore.get(conv.textbookId)
         endingPage = tb?.progress.currentPage ?? null
       }
       meta[conv.companionId] = {
@@ -974,7 +934,7 @@ async function runArtifactPipeline(
   if (diaryContent && conv) {
     try {
       const companionName = (await readCompanionName(dataRoot, conv.companionId)) ?? conv.companionId
-      await diaryStore.append(worldId, {
+      await diaryStore.append({
         date: new Date().toISOString(),
         companionName,
         content: diaryContent

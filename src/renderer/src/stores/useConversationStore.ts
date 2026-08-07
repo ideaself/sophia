@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import type { ActiveConversation } from '../types/models'
-import { WORLD_ID } from '../types/models'
 
 interface ConversationStore {
   activeConversations: ActiveConversation[]
@@ -12,7 +11,7 @@ export const useConversationStore = create<ConversationStore>((set) => ({
 
   fetchActive: async () => {
     try {
-      const convs = await window.sophia.data.listConversations(WORLD_ID)
+      const convs = await window.sophia.data.listConversations()
       const active = convs.filter((c) => !c.endedAt)
       const enriched: ActiveConversation[] = []
       for (const c of active) {

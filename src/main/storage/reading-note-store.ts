@@ -9,7 +9,6 @@ import { atomicWriteFile } from './atomic-write'
 export const ReadingNoteSchema = z.object({
   id: z.string().min(1),
   textbookId: z.string().min(1),
-  worldId: z.string().min(1),
   content: z.string(),
   position: z.string(),
   chapter: z.string().default(''),
@@ -24,7 +23,6 @@ export type ReadingNote = z.infer<typeof ReadingNoteSchema>
 
 export interface CreateReadingNoteInput {
   textbookId: string
-  worldId: string
   content: string
   position: string
   chapter?: string
@@ -43,8 +41,8 @@ function generateId(): ReadingNoteId {
 export class ReadingNoteStore {
   constructor(private readonly dataRoot: string) {}
 
-  private notePath(textbookId: string, noteId: string, worldId: string): string {
-    return join(textbookNotesDir(this.dataRoot, textbookId, worldId), `${noteId}.json`)
+  private notePath(textbookId: string, noteId: string): string {
+    return join(textbookNotesDir(this.dataRoot, textbookId), `${noteId}.json`)
   }
 
   async create(input: CreateReadingNoteInput): Promise<ReadingNote> {
@@ -54,7 +52,7 @@ export class ReadingNoteStore {
     const note: ReadingNote = {
       id,
       textbookId: input.textbookId,
-      worldId: input.worldId,
+      
       content: input.content,
       position: input.position,
       chapter: input.chapter ?? '',
@@ -65,14 +63,14 @@ export class ReadingNoteStore {
       updatedAt: now
     }
 
-    await mkdir(textbookNotesDir(this.dataRoot, input.textbookId, input.worldId), { recursive: true })
-    await atomicWriteFile(this.notePath(input.textbookId, id, input.worldId), JSON.stringify(note, null, 2), 'utf-8')
+    await mkdir(textbookNotesDir(this.dataRoot, input.textbookId, ), { recursive: true })
+    await atomicWriteFile(this.notePath(input.textbookId, id, ), JSON.stringify(note, null, 2), 'utf-8')
     return note
   }
 
-  async list(textbookId: string, worldId: string): Promise<ReadingNote[]> {
+  async list(textbookId: string): Promise<ReadingNote[]> {
     try {
-      const dir = textbookNotesDir(this.dataRoot, textbookId, worldId)
+      const dir = textbookNotesDir(this.dataRoot, textbookId)
       const files = await readdir(dir)
       const notes: ReadingNote[] = []
       for (const file of files) {
@@ -91,9 +89,9 @@ export class ReadingNoteStore {
     }
   }
 
-  async update(noteId: string, textbookId: string, worldId: string, updates: Partial<CreateReadingNoteInput>): Promise<ReadingNote | null> {
+  async update(noteId: string, textbookId: string, updates: Partial<CreateReadingNoteInput>): Promise<ReadingNote | null> {
     try {
-      const content = await readFile(this.notePath(textbookId, noteId, worldId), 'utf-8')
+      const content = await readFile(this.notePath(textbookId, noteId), 'utf-8')
       const note = ReadingNoteSchema.parse(JSON.parse(content))
       if (updates.content !== undefined) note.content = updates.content
       if (updates.position !== undefined) note.position = updates.position
@@ -102,7 +100,7 @@ export class ReadingNoteStore {
       if (updates.color !== undefined) note.color = updates.color
       if (updates.readerNote !== undefined) note.readerNote = updates.readerNote
       note.updatedAt = new Date().toISOString()
-      await atomicWriteFile(this.notePath(textbookId, noteId, worldId), JSON.stringify(note, null, 2), 'utf-8')
+      await atomicWriteFile(this.notePath(textbookId, noteId), JSON.stringify(note, null, 2), 'utf-8')
       return note
     } catch (err) {
       if (!isNotFoundError(err)) warnReadFailure(`reading note ${noteId}`, err)
@@ -110,9 +108,9 @@ export class ReadingNoteStore {
     }
   }
 
-  async delete(noteId: string, textbookId: string, worldId: string): Promise<boolean> {
+  async delete(noteId: string, textbookId: string): Promise<boolean> {
     try {
-      await unlink(this.notePath(textbookId, noteId, worldId))
+      await unlink(this.notePath(textbookId, noteId))
       return true
     } catch {
       return false

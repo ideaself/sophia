@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import type { Textbook } from '../types/models'
-import { WORLD_ID } from '../types/models'
 
 interface TextbookStore {
   textbooks: Textbook[]
@@ -14,7 +13,7 @@ export const useTextbookStore = create<TextbookStore>((set) => ({
   selectedTextbook: null,
 
   fetch: async () => {
-    const list = await window.sophia.data.listTextbooks(WORLD_ID)
+    const list = await window.sophia.data.listTextbooks()
     set({ textbooks: list })
   },
 

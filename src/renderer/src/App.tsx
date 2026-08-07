@@ -14,7 +14,7 @@ import { useAppStore } from './stores/useAppStore'
 import { useCompanionStore } from './stores/useCompanionStore'
 import { useTextbookStore } from './stores/useTextbookStore'
 import { useConversationStore } from './stores/useConversationStore'
-import { WORLD_ID, type ActiveConversation, type Companion, type Textbook } from './types/models'
+import { type ActiveConversation, type Companion, type Textbook } from './types/models'
 import { applyFontScale } from '../../shared/font-scale'
 import { applyTheme, getStoredTheme } from './lib/theme'
 
@@ -102,7 +102,7 @@ function App(): React.ReactElement {
 
   useEffect(() => {
     (async () => {
-      const convs = await window.sophia.data.listConversations(WORLD_ID)
+      const convs = await window.sophia.data.listConversations()
       const active = convs.filter((c) => !c.endedAt).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       if (active.length > 0) {
         const last = active[0]

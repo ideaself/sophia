@@ -4,7 +4,7 @@ import type { Conversation } from '../../shared/schemas/conversation'
 import { ConversationSchema } from '../../shared/schemas/conversation'
 import type { Message } from '../../shared/schemas/message'
 import { MessageSchema } from '../../shared/schemas/message'
-import type { ConversationId, WorldId, MessageId } from '../../shared/types/ids'
+import type { ConversationId, MessageId } from '../../shared/types/ids'
 import {
   conversationsDir,
   conversationDir,
@@ -17,7 +17,6 @@ import { atomicWriteFile } from './atomic-write'
 const MessageRoleSchema = z.enum(['user', 'assistant', 'system'])
 
 export interface CreateConversationInput {
-  worldId: WorldId
   companionId: string
   textbookId: string | null
   title: string
@@ -39,30 +38,30 @@ export class ConversationStore {
   constructor(private readonly dataRoot: string) {}
 
   // ---- In-memory search index ----
-  // Caches the lowercased text of every message per worldId so repeated
+  // Caches the lowercased text of every message so repeated
   // searches don't re-read all JSONL files from disk.  Invalidated on any
   // write (addMessage / updateMessage / deleteMessage / delete).
   private indexCache: Map<string, Array<{ conversationId: string; messageId: string; text: string }>> = new Map()
   private indexDirty: Set<string> = new Set()
 
-  /** Mark a worldId's index as stale so it is rebuilt on the next search. */
-  private invalidateIndex(worldId: string): void {
-    this.indexCache.delete(worldId)
-    this.indexDirty.add(worldId)
+  /** Mark the index as stale so it is rebuilt on the next search. */
+  private invalidateIndex(): void {
+    this.indexCache.delete(this.dataRoot)
+    this.indexDirty.add(this.dataRoot)
   }
 
-  /** Build (or rebuild) the in-memory index for a worldId. */
-  private async buildIndex(worldId: string): Promise<void> {
-    const conversations = await this.list(worldId)
+  /** Build (or rebuild) the in-memory index. */
+  private async buildIndex(): Promise<void> {
+    const conversations = await this.list()
     const entries: Array<{ conversationId: string; messageId: string; text: string }> = []
     for (const conv of conversations) {
-      const messages = await this.getMessages(conv.id, worldId)
+      const messages = await this.getMessages(conv.id)
       for (const msg of messages) {
         entries.push({ conversationId: conv.id, messageId: msg.id, text: msg.content.toLowerCase() })
       }
     }
-    this.indexCache.set(worldId, entries)
-    this.indexDirty.delete(worldId)
+    this.indexCache.set(this.dataRoot, entries)
+    this.indexDirty.delete(this.dataRoot)
   }
 
   async create(input: CreateConversationInput): Promise<Conversation> {
@@ -71,14 +70,14 @@ export class ConversationStore {
 
     const conversation = buildConversation(id, input, now)
 
-    await mkdir(conversationDir(this.dataRoot, id, input.worldId), { recursive: true })
+    await mkdir(conversationDir(this.dataRoot, id, ), { recursive: true })
     await atomicWriteFile(
-      conversationPath(this.dataRoot, id, input.worldId),
+      conversationPath(this.dataRoot, id, ),
       JSON.stringify(conversation, null, 2),
       'utf-8'
     )
     await atomicWriteFile(
-      conversationMessagesPath(this.dataRoot, id, input.worldId),
+      conversationMessagesPath(this.dataRoot, id, ),
       '',
       'utf-8'
     )
@@ -86,10 +85,10 @@ export class ConversationStore {
     return conversation
   }
 
-  async get(conversationId: string, worldId: string): Promise<Conversation | null> {
+  async get(conversationId: string): Promise<Conversation | null> {
     try {
       const content = await readFile(
-        conversationPath(this.dataRoot, conversationId, worldId),
+        conversationPath(this.dataRoot, conversationId),
         'utf-8'
       )
       const parsed = ConversationSchema.parse(JSON.parse(content))
@@ -100,18 +99,18 @@ export class ConversationStore {
     }
   }
 
-  async list(worldId: string): Promise<Conversation[]> {
+  async list(): Promise<Conversation[]> {
     try {
-      await access(conversationsDir(this.dataRoot, worldId))
+      await access(conversationsDir(this.dataRoot))
     } catch {
       return []
     }
 
-    const entries = await readdir(conversationsDir(this.dataRoot, worldId))
+    const entries = await readdir(conversationsDir(this.dataRoot))
     const conversations: Conversation[] = []
 
     for (const entry of entries) {
-      const conv = await this.get(entry, worldId)
+      const conv = await this.get(entry)
       if (conv) {
         conversations.push(conv)
       }
@@ -120,18 +119,18 @@ export class ConversationStore {
     return conversations.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }
 
-  async delete(conversationId: string, worldId: string): Promise<boolean> {
+  async delete(conversationId: string): Promise<boolean> {
     try {
-      const dir = conversationDir(this.dataRoot, conversationId, worldId)
+      const dir = conversationDir(this.dataRoot, conversationId)
       await rm(dir, { recursive: true, force: true })
-      this.invalidateIndex(worldId)
+      this.invalidateIndex()
       return true
     } catch {
       return false
     }
   }
 
-  async addMessage(conversationId: string, worldId: string, role: string, content: string): Promise<Message> {
+  async addMessage(conversationId: string, role: string, content: string): Promise<Message> {
     const now = new Date().toISOString()
     const id = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}` as unknown as MessageId
 
@@ -145,24 +144,24 @@ export class ConversationStore {
     const message = rawMsg as unknown as Message
 
     await appendFile(
-      conversationMessagesPath(this.dataRoot, conversationId, worldId),
+      conversationMessagesPath(this.dataRoot, conversationId),
       JSON.stringify(message) + '\n',
       'utf-8'
     )
 
     // Update conversation's updatedAt
-    const conv = await this.get(conversationId, worldId)
+    const conv = await this.get(conversationId)
     if (conv) {
       conv.updatedAt = now
       await atomicWriteFile(
-        conversationPath(this.dataRoot, conversationId, worldId),
+        conversationPath(this.dataRoot, conversationId),
         JSON.stringify(conv, null, 2),
         'utf-8'
       )
     }
 
     // Incremental index update (avoid full rebuild)
-    const idx = this.indexCache.get(worldId)
+    const idx = this.indexCache.get(this.dataRoot)
     if (idx) {
       idx.push({ conversationId, messageId: id, text: content.toLowerCase() })
     }
@@ -170,10 +169,10 @@ export class ConversationStore {
     return message
   }
 
-  async getMessages(conversationId: string, worldId: string): Promise<Message[]> {
+  async getMessages(conversationId: string): Promise<Message[]> {
     try {
       const content = await readFile(
-        conversationMessagesPath(this.dataRoot, conversationId, worldId),
+        conversationMessagesPath(this.dataRoot, conversationId),
         'utf-8'
       )
       const trimmed = content.trim()
@@ -209,8 +208,8 @@ export class ConversationStore {
     }
   }
 
-  async endConversation(conversationId: string, worldId: string): Promise<boolean> {
-    const conv = await this.get(conversationId, worldId)
+  async endConversation(conversationId: string): Promise<boolean> {
+    const conv = await this.get(conversationId)
     if (!conv) return false
 
     const now = new Date().toISOString()
@@ -218,44 +217,44 @@ export class ConversationStore {
     conv.updatedAt = now
 
     await atomicWriteFile(
-      conversationPath(this.dataRoot, conversationId, worldId),
+      conversationPath(this.dataRoot, conversationId),
       JSON.stringify(conv, null, 2),
       'utf-8'
     )
     return true
   }
 
-  async updateTitle(conversationId: string, worldId: string, title: string): Promise<Conversation | null> {
-    const conv = await this.get(conversationId, worldId)
+  async updateTitle(conversationId: string, title: string): Promise<Conversation | null> {
+    const conv = await this.get(conversationId)
     if (!conv) return null
 
     conv.title = title
     conv.updatedAt = new Date().toISOString()
 
     await atomicWriteFile(
-      conversationPath(this.dataRoot, conversationId, worldId),
+      conversationPath(this.dataRoot, conversationId),
       JSON.stringify(conv, null, 2),
       'utf-8'
     )
     return conv
   }
 
-  async updateMessage(conversationId: string, worldId: string, messageId: string, content: string): Promise<Message | null> {
-    const messages = await this.getMessages(conversationId, worldId)
+  async updateMessage(conversationId: string, messageId: string, content: string): Promise<Message | null> {
+    const messages = await this.getMessages(conversationId)
     const idx = messages.findIndex((m) => m.id === messageId)
     if (idx === -1) return null
     messages[idx].content = content
-    await this.writeMessages(conversationId, worldId, messages)
-    this.invalidateIndex(worldId)
+    await this.writeMessages(conversationId, messages)
+    this.invalidateIndex()
     return messages[idx]
   }
 
-  async deleteMessage(conversationId: string, worldId: string, messageId: string): Promise<boolean> {
-    const messages = await this.getMessages(conversationId, worldId)
+  async deleteMessage(conversationId: string, messageId: string): Promise<boolean> {
+    const messages = await this.getMessages(conversationId)
     const filtered = messages.filter((m) => m.id !== messageId)
     if (filtered.length === messages.length) return false
-    await this.writeMessages(conversationId, worldId, filtered)
-    this.invalidateIndex(worldId)
+    await this.writeMessages(conversationId, filtered)
+    this.invalidateIndex()
     return true
   }
 
@@ -265,22 +264,21 @@ export class ConversationStore {
    */
   async truncateAfter(
     conversationId: string,
-    worldId: string,
     messageId: string
   ): Promise<boolean> {
-    const messages = await this.getMessages(conversationId, worldId)
+    const messages = await this.getMessages(conversationId)
     const idx = messages.findIndex((m) => m.id === messageId)
     if (idx === -1) return false
     const kept = messages.slice(0, idx + 1)
     if (kept.length === messages.length) return false
-    await this.writeMessages(conversationId, worldId, kept)
-    this.invalidateIndex(worldId)
+    await this.writeMessages(conversationId, kept)
+    this.invalidateIndex()
 
-    const conv = await this.get(conversationId, worldId)
+    const conv = await this.get(conversationId)
     if (conv) {
       conv.updatedAt = new Date().toISOString()
       await atomicWriteFile(
-        conversationPath(this.dataRoot, conversationId, worldId),
+        conversationPath(this.dataRoot, conversationId),
         JSON.stringify(conv, null, 2),
         'utf-8'
       )
@@ -289,17 +287,16 @@ export class ConversationStore {
   }
 
   async searchMessages(
-    worldId: string,
     query: string,
     limit = 50,
     offset = 0
   ): Promise<SearchResult> {
     // Build / refresh index if needed
-    if (!this.indexCache.has(worldId) || this.indexDirty.has(worldId)) {
-      await this.buildIndex(worldId)
+    if (!this.indexCache.has(this.dataRoot) || this.indexDirty.has(this.dataRoot)) {
+      await this.buildIndex()
     }
 
-    const index = this.indexCache.get(worldId) ?? []
+    const index = this.indexCache.get(this.dataRoot) ?? []
     const lowerQuery = query.toLowerCase()
     const matched: Array<{ conversationId: string; message: Message }> = []
 
@@ -321,7 +318,7 @@ export class ConversationStore {
     let taken = 0
     for (const [convId, msgIds] of hitsByConv) {
       if (taken >= limit) break
-      const messages = await this.getMessages(convId, worldId)
+      const messages = await this.getMessages(convId)
       for (const msg of messages) {
         if (!msgIds.has(msg.id)) continue
         if (!msg.content.toLowerCase().includes(lowerQuery)) continue
@@ -338,10 +335,10 @@ export class ConversationStore {
     return { results: matched, total }
   }
 
-  private async writeMessages(conversationId: string, worldId: string, messages: Message[]): Promise<void> {
+  private async writeMessages(conversationId: string, messages: Message[]): Promise<void> {
     const jsonl = messages.map((m) => JSON.stringify(m)).join('\n') + (messages.length > 0 ? '\n' : '')
     await atomicWriteFile(
-      conversationMessagesPath(this.dataRoot, conversationId, worldId),
+      conversationMessagesPath(this.dataRoot, conversationId),
       jsonl,
       'utf-8'
     )
@@ -355,7 +352,7 @@ function buildConversation(
 ): Conversation {
   const raw: Record<string, unknown> = {
     id,
-    worldId: input.worldId,
+    
     companionId: input.companionId,
     textbookId: input.textbookId,
     title: input.title,

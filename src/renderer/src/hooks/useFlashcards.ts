@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { parseFlashcards } from '../../../shared/flashcard-utils'
-import { WORLD_ID } from '../types/models'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -169,7 +168,7 @@ export function toggleFavorite(favorites: Set<string>, cardId: string): Set<stri
 // ---------------------------------------------------------------------------
 
 export async function loadAllFlashcards(): Promise<Flashcard[]> {
-  const conversations = await window.sophia.data.listConversations(WORLD_ID) as ConversationDTO[]
+  const conversations = await window.sophia.data.listConversations() as ConversationDTO[]
   const endedConvs = conversations.filter((c) => c.endedAt)
   const allCards: Flashcard[] = []
 

@@ -1,7 +1,7 @@
 import { mkdir, readFile, access, readdir } from 'node:fs/promises'
 import type { Artifact } from '../../shared/schemas/artifact'
 import { ArtifactSchema } from '../../shared/schemas/artifact'
-import type { ArtifactId, ConversationId, WorldId } from '../../shared/types/ids'
+import type { ArtifactId, ConversationId } from '../../shared/types/ids'
 import { artifactsDir, artifactPath } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
 import { atomicWriteFile } from './atomic-write'
@@ -20,7 +20,6 @@ export class ArtifactStore {
 
   async create(
     conversationId: ConversationId,
-    worldId: WorldId,
     type: ArtifactTypeValue,
     content: string
   ): Promise<Artifact> {
@@ -36,9 +35,9 @@ export class ArtifactStore {
     }
     const artifact = raw as unknown as Artifact
 
-    await mkdir(artifactsDir(this.dataRoot, conversationId, worldId), { recursive: true })
+    await mkdir(artifactsDir(this.dataRoot, conversationId), { recursive: true })
     await atomicWriteFile(
-      artifactPath(this.dataRoot, conversationId, id, worldId),
+      artifactPath(this.dataRoot, conversationId, id),
       JSON.stringify(artifact, null, 2),
       'utf-8'
     )
@@ -46,10 +45,10 @@ export class ArtifactStore {
     return artifact
   }
 
-  async get(artifactId: string, conversationId: string, worldId: string): Promise<Artifact | null> {
+  async get(artifactId: string, conversationId: string): Promise<Artifact | null> {
     try {
       const content = await readFile(
-        artifactPath(this.dataRoot, conversationId, artifactId, worldId),
+        artifactPath(this.dataRoot, conversationId, artifactId),
         'utf-8'
       )
       const parsed = ArtifactSchema.parse(JSON.parse(content))
@@ -60,20 +59,20 @@ export class ArtifactStore {
     }
   }
 
-  async list(conversationId: string, worldId: string): Promise<Artifact[]> {
+  async list(conversationId: string): Promise<Artifact[]> {
     try {
-      await access(artifactsDir(this.dataRoot, conversationId, worldId))
+      await access(artifactsDir(this.dataRoot, conversationId))
     } catch {
       return []
     }
 
-    const entries = await readdir(artifactsDir(this.dataRoot, conversationId, worldId))
+    const entries = await readdir(artifactsDir(this.dataRoot, conversationId))
     const artifacts: Artifact[] = []
 
     for (const entry of entries) {
       if (!entry.endsWith('.json')) continue
       const id = entry.replace(/\.json$/, '')
-      const art = await this.get(id, conversationId, worldId)
+      const art = await this.get(id, conversationId)
       if (art) {
         artifacts.push(art)
       }
@@ -89,10 +88,9 @@ export class ArtifactStore {
   async update(
     artifactId: string,
     conversationId: string,
-    worldId: string,
     content: string
   ): Promise<Artifact | null> {
-    const filePath = artifactPath(this.dataRoot, conversationId, artifactId, worldId)
+    const filePath = artifactPath(this.dataRoot, conversationId, artifactId)
     let existing: Artifact
     try {
       const raw = await readFile(filePath, 'utf-8')

@@ -1,10 +1,9 @@
 import { z } from 'zod'
-import type { TextbookId, WorldId } from '../types/ids'
+import type { TextbookId } from '../types/ids'
 import { TextbookFormat } from '../types/ids'
 
 export interface Textbook {
   id: TextbookId
-  worldId: WorldId
   title: string
   author: string
   description: string
@@ -38,7 +37,6 @@ const isoDatetime = z.string().datetime({ offset: true })
 
 export const TextbookSchema = z.object({
   id: z.string().min(1),
-  worldId: z.string().min(1),
   title: z.string().min(1),
   author: z.string().default(''),
   description: z.string().default(''),

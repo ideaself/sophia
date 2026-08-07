@@ -35,7 +35,6 @@ export interface ArtifactsGeneratedPayload {
 
 export interface ConversationDTO {
   id: string
-  worldId: string
   companionId: string
   textbookId: string | null
   title: string
@@ -54,7 +53,6 @@ export interface MessageDTO {
 
 export interface TextbookDTO {
   id: string
-  worldId: string
   title: string
   author: string
   description: string
@@ -73,7 +71,6 @@ export interface TextbookDTO {
 export interface ReadingNoteDTO {
   id: string
   textbookId: string
-  worldId: string
   content: string
   position: string
   chapter: string
@@ -128,7 +125,6 @@ export interface ChatAPI {
     companionId: string
     textbookId?: string | null
     userMessage: string
-    worldId?: string
     classMode?: 'standard' | 'feynman'
     hideNarration?: boolean
     pace?: 'slow' | 'normal' | 'fast'
@@ -144,62 +140,57 @@ export interface DataAPI {
     exportBackup: (filePath: string) => Promise<{ fileCount: number }>
     restoreBackup: (zipPath: string) => Promise<{ success: boolean; preRestore?: string; error?: string }>
   createConversation: (input: {
-    worldId: string
     companionId: string
     textbookId?: string
     title: string
   }) => Promise<ConversationDTO>
-  getConversation: (conversationId: string, worldId?: string) => Promise<ConversationDTO | null>
-  listConversations: (worldId: string) => Promise<ConversationDTO[]>
-  deleteConversation: (conversationId: string, worldId?: string) => Promise<boolean>
-  updateTitle: (conversationId: string, title: string, worldId?: string) => Promise<ConversationDTO | null>
-  truncateConversation: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
+  getConversation: (conversationId: string) => Promise<ConversationDTO | null>
+  listConversations: () => Promise<ConversationDTO[]>
+  deleteConversation: (conversationId: string) => Promise<boolean>
+  updateTitle: (conversationId: string, title: string) => Promise<ConversationDTO | null>
+  truncateConversation: (conversationId: string, messageId: string) => Promise<boolean>
   sendMessage: (input: {
     conversationId: string
     content: string
     role?: string
-    worldId?: string
   }) => Promise<MessageDTO>
-  updateMessage: (conversationId: string, messageId: string, content: string, worldId?: string) => Promise<MessageDTO | null>
-  deleteMessage: (conversationId: string, messageId: string, worldId?: string) => Promise<boolean>
-  listMessages: (conversationId: string, worldId?: string) => Promise<MessageDTO[]>
-  searchMessages: (worldId: string, query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
-    endConversation: (conversationId: string, worldId?: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
-    redoArtifacts: (conversationId: string, types: string[], worldId?: string) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
+  updateMessage: (conversationId: string, messageId: string, content: string) => Promise<MessageDTO | null>
+  deleteMessage: (conversationId: string, messageId: string) => Promise<boolean>
+  listMessages: (conversationId: string) => Promise<MessageDTO[]>
+  searchMessages: (query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
+    endConversation: (conversationId: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
+    redoArtifacts: (conversationId: string, types: string[]) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
     onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void
   createTextbook: (input: {
-    worldId: string
     title: string
     format: 'markdown' | 'text' | 'pdf' | 'epub'
     sourceFile?: string
     content?: string
   }) => Promise<TextbookDTO>
-  getTextbook: (textbookId: string, worldId?: string) => Promise<TextbookDTO | null>
-  readTextbookOriginal: (textbookId: string, worldId?: string) => Promise<{ data: Uint8Array; fileName: string } | null>
-  readEpubChapters: (textbookId: string, worldId?: string) => Promise<{
+  getTextbook: (textbookId: string) => Promise<TextbookDTO | null>
+  readTextbookOriginal: (textbookId: string) => Promise<{ data: Uint8Array; fileName: string } | null>
+  readEpubChapters: (textbookId: string) => Promise<{
     chapters: Array<{ id: string; title: string; html: string }>
     title: string
     author: string
   }>
-    searchTextbookExcerpt: (textbookId: string, chapter: string, worldId?: string) => Promise<{ chapter: string; excerpt: string } | null>
-    translateTextbookExcerpt: (textbookId: string, chapter: string, worldId?: string) => Promise<{ chapter: string; excerpt: string; translation: string } | null>
-  listTextbooks: (worldId: string) => Promise<TextbookDTO[]>
-  updateTextbookContent: (textbookId: string, content: string, worldId?: string) => Promise<TextbookDTO | null>
-  updateTextbook: (textbookId: string, updates: { title?: string; content?: string }, worldId?: string) => Promise<TextbookDTO | null>
-  deleteTextbook: (textbookId: string, worldId?: string) => Promise<boolean>
+    searchTextbookExcerpt: (textbookId: string, chapter: string) => Promise<{ chapter: string; excerpt: string } | null>
+    translateTextbookExcerpt: (textbookId: string, chapter: string) => Promise<{ chapter: string; excerpt: string; translation: string } | null>
+  listTextbooks: () => Promise<TextbookDTO[]>
+  updateTextbookContent: (textbookId: string, content: string) => Promise<TextbookDTO | null>
+  updateTextbook: (textbookId: string, updates: { title?: string; content?: string }) => Promise<TextbookDTO | null>
+  deleteTextbook: (textbookId: string) => Promise<boolean>
   createArtifact: (input: {
     conversationId: string
     type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note'
     content: string
-    worldId?: string
   }) => Promise<ArtifactDTO>
-    getArtifact: (artifactId: string, conversationId: string, worldId?: string) => Promise<ArtifactDTO | null>
-    updateArtifact: (artifactId: string, conversationId: string, content: string, worldId?: string) => Promise<ArtifactDTO | null>
-    listArtifacts: (conversationId: string, worldId?: string) => Promise<ArtifactDTO[]>
-    updateTextbookProgress: (textbookId: string, progress: { currentPage?: number; totalPages?: number | null; readingPercentage?: number; lastPosition?: string }, worldId?: string) => Promise<TextbookDTO | null>
+    getArtifact: (artifactId: string, conversationId: string) => Promise<ArtifactDTO | null>
+    updateArtifact: (artifactId: string, conversationId: string, content: string) => Promise<ArtifactDTO | null>
+    listArtifacts: (conversationId: string) => Promise<ArtifactDTO[]>
+    updateTextbookProgress: (textbookId: string, progress: { currentPage?: number; totalPages?: number | null; readingPercentage?: number; lastPosition?: string }) => Promise<TextbookDTO | null>
   createReadingNote: (input: {
     textbookId: string
-    worldId?: string
     content: string
     position: string
     chapter?: string
@@ -207,14 +198,14 @@ export interface DataAPI {
     color?: string
     readerNote?: string
   }) => Promise<ReadingNoteDTO>
-  listReadingNotes: (textbookId: string, worldId?: string) => Promise<ReadingNoteDTO[]>
-  updateReadingNote: (noteId: string, textbookId: string, updates: Record<string, unknown>, worldId?: string) => Promise<ReadingNoteDTO | null>
-  deleteReadingNote: (noteId: string, textbookId: string, worldId?: string) => Promise<boolean>
+  listReadingNotes: (textbookId: string) => Promise<ReadingNoteDTO[]>
+  updateReadingNote: (noteId: string, textbookId: string, updates: Record<string, unknown>) => Promise<ReadingNoteDTO | null>
+  deleteReadingNote: (noteId: string, textbookId: string) => Promise<boolean>
   getFlashcardSrsState: () => Promise<Record<string, unknown>>
   saveFlashcardSrsState: (state: Record<string, unknown>) => Promise<{ success: boolean }>
   getFlashcardFavorites: () => Promise<string[]>
   saveFlashcardFavorites: (ids: string[]) => Promise<{ success: boolean }>
-  deleteFlashcardCards: (cards: Array<{ conversationId: string; artifactId: string; cardIndex: number }>, worldId?: string) => Promise<{ success: boolean; deleted: number }>
+  deleteFlashcardCards: (cards: Array<{ conversationId: string; artifactId: string; cardIndex: number }>) => Promise<{ success: boolean; deleted: number }>
   archive: {
     list: () => Promise<Array<{ id: string; kind: string; label: string; movedAt: string }>>
     restore: (entryId: string) => Promise<{ success: boolean }>
@@ -229,10 +220,10 @@ export interface DataAPI {
   exportPdf: (html: string, filePath: string) => Promise<{ success: boolean }>
   captureScreenshot: (filePath: string) => Promise<{ success: boolean }>
   composeAiAnswer: (question: string, history: string) => Promise<{ content: string }>
-  reparseEpubContent: (textbookId: string, worldId?: string) => Promise<{ success: boolean; content: string }>
+  reparseEpubContent: (textbookId: string) => Promise<{ success: boolean; content: string }>
   diary: {
-    listMonths: (worldId?: string) => Promise<string[]>
-    getMonth: (month: string, worldId?: string) => Promise<string | null>
+    listMonths: () => Promise<string[]>
+    getMonth: (month: string) => Promise<string | null>
   }
 }
 
@@ -515,76 +506,76 @@ const sophia: SophiaAPI = {
     restoreBackup: (zipPath) => ipcRenderer.invoke('data:restore-backup', zipPath),
     createConversation: (input) =>
       ipcRenderer.invoke('conversation:create', input),
-    getConversation: (conversationId, worldId = 'world_default') =>
-      ipcRenderer.invoke('conversation:get', { conversationId, worldId }),
-    listConversations: (worldId) =>
-      ipcRenderer.invoke('conversation:list', { worldId }),
-    deleteConversation: (conversationId, worldId = 'world_default') =>
-      ipcRenderer.invoke('conversation:delete', { conversationId, worldId }),
-    updateTitle: (conversationId, title, worldId = 'world_default') =>
-      ipcRenderer.invoke('conversation:update-title', { conversationId, title, worldId }),
-    truncateConversation: (conversationId, messageId, worldId = 'world_default') =>
-      ipcRenderer.invoke('conversation:truncate', { conversationId, messageId, worldId }),
+    getConversation: (conversationId) =>
+      ipcRenderer.invoke('conversation:get', { conversationId }),
+    listConversations: () =>
+      ipcRenderer.invoke('conversation:list', {}),
+    deleteConversation: (conversationId) =>
+      ipcRenderer.invoke('conversation:delete', { conversationId }),
+    updateTitle: (conversationId, title) =>
+      ipcRenderer.invoke('conversation:update-title', { conversationId, title }),
+    truncateConversation: (conversationId, messageId) =>
+      ipcRenderer.invoke('conversation:truncate', { conversationId, messageId }),
     sendMessage: (input) =>
       ipcRenderer.invoke('message:send', input),
-    updateMessage: (conversationId, messageId, content, worldId = 'world_default') =>
-      ipcRenderer.invoke('message:update', { conversationId, messageId, content, worldId }),
-    deleteMessage: (conversationId, messageId, worldId = 'world_default') =>
-      ipcRenderer.invoke('message:delete', { conversationId, messageId, worldId }),
-    listMessages: (conversationId, worldId = 'world_default') =>
-      ipcRenderer.invoke('message:list', { conversationId, worldId }),
-    searchMessages: (worldId, query, limit, offset) =>
-      ipcRenderer.invoke('message:search', { worldId, query, limit, offset }),
-    endConversation: (conversationId, worldId = 'world_default', classMode) =>
-      ipcRenderer.invoke('conversation:end', { conversationId, worldId, classMode }),
-    redoArtifacts: (conversationId, types, worldId = 'world_default') =>
-      ipcRenderer.invoke('conversation:redo-artifacts', { conversationId, types, worldId }),
+    updateMessage: (conversationId, messageId, content) =>
+      ipcRenderer.invoke('message:update', { conversationId, messageId, content }),
+    deleteMessage: (conversationId, messageId) =>
+      ipcRenderer.invoke('message:delete', { conversationId, messageId }),
+    listMessages: (conversationId) =>
+      ipcRenderer.invoke('message:list', { conversationId }),
+    searchMessages: (query, limit, offset) =>
+      ipcRenderer.invoke('message:search', { query, limit, offset }),
+    endConversation: (conversationId, classMode) =>
+      ipcRenderer.invoke('conversation:end', { conversationId, classMode }),
+    redoArtifacts: (conversationId, types) =>
+      ipcRenderer.invoke('conversation:redo-artifacts', { conversationId, types }),
     onArtifactsGenerated: (callback) =>
       createSimpleSubscriber<ArtifactsGeneratedPayload>(ARTIFACTS_GENERATED, callback),
     createTextbook: (input) =>
       ipcRenderer.invoke('textbook:create', input),
-    getTextbook: (textbookId, worldId = 'world_default') =>
-      ipcRenderer.invoke('textbook:get', { textbookId, worldId }),
-    readTextbookOriginal: (textbookId, worldId = 'world_default') =>
-      ipcRenderer.invoke('textbook:read-original', { textbookId, worldId }),
-    readEpubChapters: (textbookId, worldId = 'world_default') =>
-      ipcRenderer.invoke('epub:read-chapters', { textbookId, worldId }),
-    searchTextbookExcerpt: (textbookId, chapter, worldId = 'world_default') =>
-      ipcRenderer.invoke('textbook:search-excerpt', { textbookId, chapter, worldId }),
-    translateTextbookExcerpt: (textbookId, chapter, worldId = 'world_default') =>
-      ipcRenderer.invoke('textbook:translate-excerpt', { textbookId, chapter, worldId }),
-    listTextbooks: (worldId) =>
-      ipcRenderer.invoke('textbook:list', { worldId }),
-    updateTextbookContent: (textbookId, content, worldId = 'world_default') =>
-      ipcRenderer.invoke('textbook:update-content', { textbookId, content, worldId }),
-    updateTextbook: (textbookId, updates, worldId = 'world_default') =>
-      ipcRenderer.invoke('textbook:update', { textbookId, ...updates, worldId }),
-    deleteTextbook: (textbookId, worldId = 'world_default') =>
-      ipcRenderer.invoke('textbook:delete', { textbookId, worldId }),
+    getTextbook: (textbookId) =>
+      ipcRenderer.invoke('textbook:get', { textbookId }),
+    readTextbookOriginal: (textbookId) =>
+      ipcRenderer.invoke('textbook:read-original', { textbookId }),
+    readEpubChapters: (textbookId) =>
+      ipcRenderer.invoke('epub:read-chapters', { textbookId }),
+    searchTextbookExcerpt: (textbookId, chapter) =>
+      ipcRenderer.invoke('textbook:search-excerpt', { textbookId, chapter }),
+    translateTextbookExcerpt: (textbookId, chapter) =>
+      ipcRenderer.invoke('textbook:translate-excerpt', { textbookId, chapter }),
+    listTextbooks: () =>
+      ipcRenderer.invoke('textbook:list', { }),
+    updateTextbookContent: (textbookId, content) =>
+      ipcRenderer.invoke('textbook:update-content', { textbookId, content }),
+    updateTextbook: (textbookId, updates) =>
+      ipcRenderer.invoke('textbook:update', { textbookId, ...updates }),
+    deleteTextbook: (textbookId) =>
+      ipcRenderer.invoke('textbook:delete', { textbookId }),
     createArtifact: (input) =>
       ipcRenderer.invoke('artifact:create', input),
-    getArtifact: (artifactId, conversationId, worldId = 'world_default') =>
-      ipcRenderer.invoke('artifact:get', { artifactId, conversationId, worldId }),
-    updateArtifact: (artifactId, conversationId, content, worldId = 'world_default') =>
-      ipcRenderer.invoke('artifact:update', { artifactId, conversationId, content, worldId }),
-    listArtifacts: (conversationId, worldId = 'world_default') =>
-      ipcRenderer.invoke('artifact:list', { conversationId, worldId }),
-    updateTextbookProgress: (textbookId, progress, worldId = 'world_default') =>
-      ipcRenderer.invoke('textbook:update-progress', { textbookId, ...progress, worldId }),
+    getArtifact: (artifactId, conversationId) =>
+      ipcRenderer.invoke('artifact:get', { artifactId, conversationId }),
+    updateArtifact: (artifactId, conversationId, content) =>
+      ipcRenderer.invoke('artifact:update', { artifactId, conversationId, content }),
+    listArtifacts: (conversationId) =>
+      ipcRenderer.invoke('artifact:list', { conversationId }),
+    updateTextbookProgress: (textbookId, progress) =>
+      ipcRenderer.invoke('textbook:update-progress', { textbookId, ...progress }),
     createReadingNote: (input) =>
       ipcRenderer.invoke('reading-note:create', input),
-    listReadingNotes: (textbookId, worldId = 'world_default') =>
-      ipcRenderer.invoke('reading-note:list', { textbookId, worldId }),
-    updateReadingNote: (noteId, textbookId, updates, worldId = 'world_default') =>
-      ipcRenderer.invoke('reading-note:update', { noteId, textbookId, ...updates, worldId }),
-    deleteReadingNote: (noteId, textbookId, worldId = 'world_default') =>
-      ipcRenderer.invoke('reading-note:delete', { noteId, textbookId, worldId }),
+    listReadingNotes: (textbookId) =>
+      ipcRenderer.invoke('reading-note:list', { textbookId }),
+    updateReadingNote: (noteId, textbookId, updates) =>
+      ipcRenderer.invoke('reading-note:update', { noteId, textbookId, ...updates }),
+    deleteReadingNote: (noteId, textbookId) =>
+      ipcRenderer.invoke('reading-note:delete', { noteId, textbookId }),
     getFlashcardSrsState: () => ipcRenderer.invoke('flashcard:get-srs-state'),
     saveFlashcardSrsState: (state) => ipcRenderer.invoke('flashcard:save-srs-state', state),
     getFlashcardFavorites: () => ipcRenderer.invoke('flashcard:get-favorites'),
     saveFlashcardFavorites: (ids) => ipcRenderer.invoke('flashcard:save-favorites', ids),
-    deleteFlashcardCards: (cards, worldId = 'world_default') =>
-      ipcRenderer.invoke('flashcard:delete-cards', { cards, worldId }),
+    deleteFlashcardCards: (cards) =>
+      ipcRenderer.invoke('flashcard:delete-cards', { cards }),
     archive: {
       list: () => ipcRenderer.invoke('archive:list'),
       restore: (entryId) => ipcRenderer.invoke('archive:restore', { entryId }),
@@ -599,11 +590,11 @@ const sophia: SophiaAPI = {
     exportPdf: (html, filePath) => ipcRenderer.invoke('pdf:export', { html, filePath }),
     captureScreenshot: (filePath) => ipcRenderer.invoke('screenshot:capture', { filePath }),
     composeAiAnswer: (question, history) => ipcRenderer.invoke('ai:compose-answer', { question, history }),
-    reparseEpubContent: (textbookId, worldId = 'world_default') =>
-      ipcRenderer.invoke('epub:reparse-content', { textbookId, worldId }),
+    reparseEpubContent: (textbookId) =>
+      ipcRenderer.invoke('epub:reparse-content', { textbookId }),
     diary: {
-      listMonths: (worldId = 'world_default') => ipcRenderer.invoke('diary:list-months', { worldId }),
-      getMonth: (month, worldId = 'world_default') => ipcRenderer.invoke('diary:get-month', { worldId, month })
+      listMonths: () => ipcRenderer.invoke('diary:list-months', {}),
+      getMonth: (month) => ipcRenderer.invoke('diary:get-month', { month })
     }
   },
   companions: {

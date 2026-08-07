@@ -2,7 +2,7 @@ import { useState, lazy, Suspense } from 'react'
 import { PdfReaderView } from '../reader/PdfReaderView'
 import { EpubReaderView } from '../reader/EpubReaderView'
 import { useTextbookStore } from '../stores/useTextbookStore'
-import { WORLD_ID, type Textbook } from '../types/models'
+import { type Textbook } from '../types/models'
 
 const MarkdownRenderer = lazy(() => import('../lib/MarkdownRenderer'))
 
@@ -70,7 +70,6 @@ export function TextbooksView(): React.ReactElement {
     setError('')
     try {
       await window.sophia.data.createTextbook({
-        worldId: WORLD_ID,
         title: title.trim(),
         format: 'markdown',
         content
@@ -106,7 +105,6 @@ export function TextbooksView(): React.ReactElement {
       else if (ext === 'txt') format = 'text'
 
       await window.sophia.data.createTextbook({
-        worldId: WORLD_ID,
         title: title.trim() || autoTitle,
         format,
         sourceFile: filePath

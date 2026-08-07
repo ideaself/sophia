@@ -73,9 +73,9 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
     let textbookTitle: string | undefined
     let progressFraction: number | null = null
     if (params.textbookId) {
-      textbookContent = await textbookStore.getContent(params.textbookId, params.worldId)
+      textbookContent = await textbookStore.getContent(params.textbookId)
       textbookContent = textbookContent || undefined
-      const tb = await textbookStore.get(params.textbookId, params.worldId)
+      const tb = await textbookStore.get(params.textbookId)
       textbookTitle = tb?.title
       const p = tb?.progress
       if (p && typeof p.totalPages === 'number' && p.totalPages > 0 && typeof p.currentPage === 'number' && p.currentPage > 0) {
@@ -100,7 +100,6 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
       conversationStore,
       artifactStore,
       params.companionId,
-      params.worldId,
       params.conversationId,
       params.textbookId ?? null
     )
@@ -109,17 +108,17 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
     // 4b. Load pal moments (cross-session teaching interaction notes).
     //     按教材隔离：有教材的课堂只读该教材专属的备忘文件，避免上一门
     //     课（如傅里叶光学）的互动内容串进新教材（微积分）课堂。
-    const palMoments = await loadPalMoments(dataRoot, params.worldId, params.textbookId ?? null)
+    const palMoments = await loadPalMoments(dataRoot, params.textbookId ?? null)
 
     // 4c. Load relationship state for this companion
     let relationState: string | undefined
     try {
-      const raw = await readFile(relationPath(dataRoot, params.companionId, params.worldId), 'utf-8')
+      const raw = await readFile(relationPath(dataRoot, params.companionId), 'utf-8')
       relationState = raw.trim() || undefined
     } catch { /* file doesn't exist yet */ }
 
     // 5. Load conversation history
-    const messages = await conversationStore.getMessages(params.conversationId, params.worldId)
+    const messages = await conversationStore.getMessages(params.conversationId)
     const history: DeepSeekChatMessage[] = messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({
@@ -307,12 +306,11 @@ async function loadCompanion(dataRoot: string, companionId: string): Promise<Com
 /** 读取教学互动备忘：有教材读专属文件，无教材读全局文件。 */
 export async function loadPalMoments(
   dataRoot: string,
-  worldId: string,
   textbookId: string | null
 ): Promise<string | undefined> {
   const filePath = textbookId
-    ? palMomentsPathForTextbook(dataRoot, textbookId, worldId)
-    : palMomentsPath(dataRoot, worldId)
+    ? palMomentsPathForTextbook(dataRoot, textbookId)
+    : palMomentsPath(dataRoot)
   try {
     const raw = await readFile(filePath, 'utf-8')
     return raw.trim() || undefined
@@ -326,7 +324,6 @@ export async function loadHandoffTail(
   conversationStore: ConversationStore,
   artifactStore: ArtifactStore,
   companionId: string,
-  worldId: string,
   excludeConversationId: string,
   textbookId: string | null
 ): Promise<{ tail?: string; meta?: HandoffMetaInfo }> {
@@ -335,7 +332,7 @@ export async function loadHandoffTail(
   //    接力尾巴必须来自同一教材的上一课；meta 无 textbookId 字段的旧记录
   //    视为不匹配，回退到下面的按教材过滤的 legacy 搜索。
   try {
-    const metaRaw = await readFile(handoffMetaPath(dataRoot, worldId), 'utf-8')
+    const metaRaw = await readFile(handoffMetaPath(dataRoot), 'utf-8')
     const meta = JSON.parse(metaRaw) as Record<string, (HandoffMetaInfo & { prevConvId: string; textbookId?: string | null })>
     const entry = meta[companionId]
     if (
@@ -343,7 +340,7 @@ export async function loadHandoffTail(
       entry.prevConvId !== excludeConversationId &&
       entry.textbookId === textbookId
     ) {
-      const artifacts = await artifactStore.list(entry.prevConvId, worldId)
+      const artifacts = await artifactStore.list(entry.prevConvId)
       const handoff = artifacts.find((a) => a.type === 'handoff_tail')
       if (handoff?.content) {
         return {
@@ -359,7 +356,7 @@ export async function loadHandoffTail(
   // 2. Legacy fallback: most recent ended conversation with same companion
   //    and the same textbook.
   try {
-    const conversations = await conversationStore.list(worldId)
+    const conversations = await conversationStore.list()
     const ended = conversations
       .filter((c) =>
         c.endedAt &&
@@ -370,7 +367,7 @@ export async function loadHandoffTail(
       .sort((a, b) => (b.endedAt ?? '').localeCompare(a.endedAt ?? ''))
 
     for (const conv of ended) {
-      const artifacts = await artifactStore.list(conv.id, worldId)
+      const artifacts = await artifactStore.list(conv.id)
       const handoff = artifacts.find((a) => a.type === 'handoff_tail')
       if (handoff?.content) {
         return {

@@ -39,4 +39,3 @@ export const THEMES: ThemeOption[] = [
   { id: 'light', name: '暖光', preview: { bg: '#fafaf9', surface: '#ffffff', accent: '#b45309', text: '#1c1917' } }
 ]
 
-export const WORLD_ID = 'world_default'

@@ -76,7 +76,6 @@ type MessageRow =
   | { kind: 'error'; key: string }
   | { kind: 'end'; key: string }
 
-const WORLD_ID = 'world_default'
 const MAX_INPUT_LENGTH = 20000
 
 /**
@@ -90,7 +89,7 @@ function useTodayStudyMinutes(): number {
     let cancelled = false
     const load = async () => {
       try {
-        const convs = await window.sophia.data.listConversations(WORLD_ID) as Array<{ id: string }>
+        const convs = await window.sophia.data.listConversations() as Array<{ id: string }>
         const start = new Date()
         start.setHours(0, 0, 0, 0)
         const startMs = start.getTime()
@@ -572,7 +571,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         const defaultTitle = `${mm}-${dd} ${companion.name}`
         try {
           const conv = await window.sophia.data.createConversation({
-            worldId: WORLD_ID,
             companionId: companion.id,
             textbookId: textbook?.id,
             title: defaultTitle
@@ -590,7 +588,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           conversationId: convId,
           content: userMessage,
           role: 'user',
-          worldId: WORLD_ID
         })
       } catch {
         try {
@@ -599,7 +596,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           const dd = String(now.getDate()).padStart(2, '0')
           const defaultTitle = `${mm}-${dd} ${companion.name}`
           const conv = await window.sophia.data.createConversation({
-            worldId: WORLD_ID,
             companionId: companion.id,
             textbookId: textbook?.id,
             title: defaultTitle
@@ -610,7 +606,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             conversationId: convId,
             content: userMessage,
             role: 'user',
-            worldId: WORLD_ID
           })
         } catch {
           setSendError('发送消息失败，对话可能已被删除')
@@ -633,7 +628,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           companionId: companion.id,
           textbookId: textbook?.id ?? null,
           userMessage,
-          worldId: WORLD_ID,
           classMode: tab.classMode,
           pace: tab.pace,
           hideNarration
@@ -658,8 +652,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
               conversationId: convId,
               content,
               role: 'assistant',
-              worldId: WORLD_ID
-            })
+              })
           }
           if (content) {
             setTabs((prev) => {
@@ -712,7 +705,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     try {
       const result = await window.sophia.data.endConversation(
         activeTab.conversationId,
-        WORLD_ID,
         activeTab.classMode
       )
       if (result.success) {

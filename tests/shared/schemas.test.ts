@@ -7,8 +7,6 @@ import {
   TextbookFormat
 } from '../../src/shared/types/ids'
 import type {
-  ProfileId,
-  WorldId,
   CompanionId,
   TextbookId,
   ConversationId,
@@ -67,7 +65,6 @@ function validCompanion(): Companion {
 function validTextbook(): Textbook {
   return {
     id: 'tb_001' as TextbookId,
-    worldId: 'world_test001' as WorldId,
     title: 'Introduction to Chemistry',
     author: '',
     description: '',
@@ -87,7 +84,6 @@ function validTextbook(): Textbook {
 function validConversation(): Conversation {
   return {
     id: 'conv_001' as ConversationId,
-    worldId: 'world_test001' as WorldId,
     companionId: 'comp_alice01' as CompanionId,
     textbookId: 'tb_001' as TextbookId,
     title: 'Chemistry with Alice',
@@ -222,11 +218,6 @@ describe('ConversationSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('rejects a conversation missing worldId', () => {
-    const { worldId: _worldId, ...rest } = validConversation()
-    const result = ConversationSchema.safeParse(rest)
-    expect(result.success).toBe(false)
-  })
 })
 
 // ============================================================
@@ -346,8 +337,7 @@ describe('IPC input schemas', () => {
   describe('IpcCreateTextbookInputSchema', () => {
     it('accepts valid file import input', () => {
       const result = IpcCreateTextbookInputSchema.safeParse({
-        worldId: 'world_test001',
-        title: 'Chemistry 101',
+            title: 'Chemistry 101',
         format: TextbookFormat.Markdown,
         sourceFile: '/books/chem.md'
       })
@@ -356,8 +346,7 @@ describe('IPC input schemas', () => {
 
     it('accepts valid pasted text input', () => {
       const result = IpcCreateTextbookInputSchema.safeParse({
-        worldId: 'world_test001',
-        title: 'My Notes',
+            title: 'My Notes',
         format: TextbookFormat.Text,
         sourceFile: '',
         content: 'This is pasted content.'
@@ -367,16 +356,14 @@ describe('IPC input schemas', () => {
 
     it('rejects missing title', () => {
       const result = IpcCreateTextbookInputSchema.safeParse({
-        worldId: 'world_test001',
-        format: TextbookFormat.Text
+            format: TextbookFormat.Text
       })
       expect(result.success).toBe(false)
     })
 
     it('rejects unsupported format', () => {
       const result = IpcCreateTextbookInputSchema.safeParse({
-        worldId: 'world_test001',
-        title: 'Doc',
+            title: 'Doc',
         format: 'docx'
       })
       expect(result.success).toBe(false)
@@ -386,8 +373,7 @@ describe('IPC input schemas', () => {
   describe('IpcCreateConversationInputSchema', () => {
     it('accepts valid input with textbook', () => {
       const result = IpcCreateConversationInputSchema.safeParse({
-        worldId: 'world_test001',
-        companionId: 'comp_alice01',
+            companionId: 'comp_alice01',
         textbookId: 'tb_001',
         title: 'Chemistry Session'
       })
@@ -396,8 +382,7 @@ describe('IPC input schemas', () => {
 
     it('accepts valid input without textbook', () => {
       const result = IpcCreateConversationInputSchema.safeParse({
-        worldId: 'world_test001',
-        companionId: 'comp_alice01',
+            companionId: 'comp_alice01',
         title: 'Free Chat'
       })
       expect(result.success).toBe(true)
@@ -405,8 +390,7 @@ describe('IPC input schemas', () => {
 
     it('rejects empty title', () => {
       const result = IpcCreateConversationInputSchema.safeParse({
-        worldId: 'world_test001',
-        companionId: 'comp_alice01',
+            companionId: 'comp_alice01',
         title: ''
       })
       expect(result.success).toBe(false)
@@ -578,17 +562,6 @@ describe('IPC input schemas', () => {
     })
   })
 
-  describe('IpcListConversationsInputSchema', () => {
-    it('accepts valid input with worldId', () => {
-      const result = IpcListConversationsInputSchema.safeParse({ worldId: 'world_test001' })
-      expect(result.success).toBe(true)
-    })
-
-    it('rejects missing worldId', () => {
-      const result = IpcListConversationsInputSchema.safeParse({})
-      expect(result.success).toBe(false)
-    })
-  })
 
   describe('IpcGetMessagesInputSchema', () => {
     it('accepts valid input', () => {
@@ -659,24 +632,21 @@ describe('IPC input schemas', () => {
   describe('IpcSearchMessagesInputSchema', () => {
     it('accepts valid input', () => {
       const result = IpcSearchMessagesInputSchema.safeParse({
-        worldId: 'world_test001',
-        query: 'atom'
+            query: 'atom'
       })
       expect(result.success).toBe(true)
     })
 
     it('rejects empty query', () => {
       const result = IpcSearchMessagesInputSchema.safeParse({
-        worldId: 'world_test001',
-        query: ''
+            query: ''
       })
       expect(result.success).toBe(false)
     })
 
     it('rejects query shorter than 2 characters', () => {
       const result = IpcSearchMessagesInputSchema.safeParse({
-        worldId: 'world_test001',
-        query: 'a'
+            query: 'a'
       })
       expect(result.success).toBe(false)
     })
