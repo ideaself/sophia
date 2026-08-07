@@ -7,13 +7,12 @@
  * - buildSystemPrompt(params) → the full system prompt string.
  * - buildMessages(params) → [system, ...windowed history, user] for DeepSeek.
  *
- * The system prompt is built from 6 segments (separated by \n\n---\n\n):
+ * The system prompt is built from 5 segments (separated by \n\n---\n\n):
  *   1. Socratic rules
  *   2. Character profile (companion)
- *   3. World context
- *   4. Optional learner info
- *   5. Optional current textbook content (truncated)
- *   6. Narration / end-class / page-navigation / language rules
+ *   3. Optional learner info
+ *   4. Optional current textbook content (truncated)
+ *   5. Narration / end-class / page-navigation / language rules
  */
 
 import type { Companion } from '../../shared/schemas/companion'

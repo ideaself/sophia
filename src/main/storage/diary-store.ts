@@ -2,7 +2,7 @@
  * DiaryStore — monthly diary aggregation.
  *
  * Diary artifacts are also written into per-month markdown files under
- * `{world}/diary/YYYY-MM.md` so the learner can browse their diary as a
+ * `{dataRoot}/diary/YYYY-MM.md` so the learner can browse their diary as a
  * timeline.  Each entry uses the reference layout:
  *
  *   ## YYYY-MM-DD | 伙伴名

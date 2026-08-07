@@ -30,27 +30,10 @@ export const IpcCreateConversationInputSchema = z.object({
   title: z.string().min(1)
 })
 
-export const IpcGetConversationInputSchema = z.object({
-  conversationId: z.string().min(1)
-})
-
 export const IpcListConversationsInputSchema = z.object({
 })
 
-export const IpcDeleteConversationInputSchema = z.object({
-  conversationId: z.string().min(1)
-})
-
 // --- IPC: Message ---
-
-export const IpcSendMessageInputSchema = z.object({
-  conversationId: z.string().min(1),
-  content: z.string().min(1)
-})
-
-export const IpcGetMessagesInputSchema = z.object({
-  conversationId: z.string().min(1)
-})
 
 export const IpcSearchMessagesInputSchema = z.object({
   query: z.string().min(2),
@@ -90,23 +73,23 @@ export const IpcTextbookTranslateExcerptInputSchema = z.object({
   chapter: z.string().min(1),
 })
 
-export const IpcGetConversationWithWorldInputSchema = z.object({
+export const IpcGetConversationInputSchema = z.object({
   conversationId: z.string().min(1),
 })
 
-export const IpcDeleteConversationWithWorldInputSchema = z.object({
+export const IpcDeleteConversationInputSchema = z.object({
   conversationId: z.string().min(1),
 })
 
 // --- IPC: Message (additional) ---
 
-export const IpcSendMessageWithWorldInputSchema = z.object({
+export const IpcSendMessageInputSchema = z.object({
   conversationId: z.string().min(1),
   content: z.string().min(1),
   role: z.enum(['user', 'assistant', 'system']).optional(),
 })
 
-export const IpcGetMessagesWithWorldInputSchema = z.object({
+export const IpcGetMessagesInputSchema = z.object({
   conversationId: z.string().min(1),
 })
 

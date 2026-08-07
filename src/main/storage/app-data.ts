@@ -3,7 +3,7 @@ import { join } from 'node:path'
 /**
  * Path resolution helpers for the local data layout.
  *
- * Layout (single user, no profile/world layers):
+ * Layout (single user, flat):
  *   {dataRoot}/
  *     config/
  *     companions/
@@ -14,10 +14,6 @@ import { join } from 'node:path'
  *     pal_moments.md
  *     handoff_meta.json
  */
-
-export function worldDir(dataRoot: string): string {
-  return dataRoot
-}
 
 export function learnerPath(dataRoot: string): string {
   return join(dataRoot, 'learner.md')

@@ -30,13 +30,13 @@ import {
 import { archiveItem } from '../storage/archive-store'
 import {
   IpcCreateConversationInputSchema,
-  IpcGetConversationWithWorldInputSchema,
+  IpcGetConversationInputSchema,
   IpcListConversationsInputSchema,
-  IpcDeleteConversationWithWorldInputSchema,
+  IpcDeleteConversationInputSchema,
   IpcUpdateTitleInputSchema,
   IpcEndClassInputSchema,
-  IpcSendMessageWithWorldInputSchema,
-  IpcGetMessagesWithWorldInputSchema,
+  IpcSendMessageInputSchema,
+  IpcGetMessagesInputSchema,
   IpcSearchMessagesInputSchema,
   IpcUpdateMessageInputSchema,
   IpcDeleteMessageInputSchema,
@@ -160,7 +160,7 @@ export function registerConversationIpc(
   })
 
   ipcMain.handle('conversation:get', async (_event, input: unknown) => {
-    const parsed = IpcGetConversationWithWorldInputSchema.parse(input)
+    const parsed = IpcGetConversationInputSchema.parse(input)
     return conversationStore.get(parsed.conversationId)
   })
 
@@ -169,7 +169,7 @@ export function registerConversationIpc(
   })
 
   ipcMain.handle('conversation:delete', async (_event, input: unknown) => {
-    const parsed = IpcDeleteConversationWithWorldInputSchema.parse(input)
+    const parsed = IpcDeleteConversationInputSchema.parse(input)
     // Archive before deleting so the class can be restored (4.0.1).
     try {
       const conv = await conversationStore.get(parsed.conversationId)
@@ -242,14 +242,14 @@ export function registerConversationIpc(
   // --- Messages ---
 
   ipcMain.handle('message:send', async (_event, input: unknown) => {
-    const parsed = IpcSendMessageWithWorldInputSchema.parse(input)
+    const parsed = IpcSendMessageInputSchema.parse(input)
     const role = parsed.role ?? 'user'
     const msg = await conversationStore.addMessage(parsed.conversationId, role, parsed.content)
     return msg
   })
 
   ipcMain.handle('message:list', async (_event, input: unknown) => {
-    const parsed = IpcGetMessagesWithWorldInputSchema.parse(input)
+    const parsed = IpcGetMessagesInputSchema.parse(input)
     return conversationStore.getMessages(parsed.conversationId)
   })
 

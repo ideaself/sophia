@@ -5,7 +5,7 @@ import type { Companion } from '../../shared/schemas/companion'
 import { CompanionSchema } from '../../shared/schemas/companion'
 import type { DeepSeekChatMessage } from '../llm/types'
 import { buildMessages, type HandoffMetaInfo } from '../prompt/prompt-builder'
-import { readLocalContext } from '../storage/world-store'
+import { readLocalContext } from '../storage/local-context'
 import { TextbookStore } from '../storage/textbook-store'
 import { ConversationStore } from '../storage/conversation-store'
 import { ArtifactStore } from '../storage/artifact-store'
@@ -32,7 +32,7 @@ import { estimateTokens } from '../prompt/token-budget'
  *
  * This handler orchestrates all context loading and prompt assembly:
  * 1. Load full companion data (personality, speakingStyle, emotionalExpressions)
- * 2. Load world context (story.md) and learner info (learner.md)
+ * 2. Load learner profile (learner.md)
  * 3. Load textbook content (source.md)
  * 4. Load conversation history from messages.json
  * 5. Call buildMessages() to assemble the full message array
@@ -65,8 +65,8 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
     }
 
     // 2. Load learner profile (learner.md)
-    const worldData = await readLocalContext(dataRoot)
-    const learnerInfo = worldData?.learnerProfile ?? undefined
+    const localCtx = await readLocalContext(dataRoot)
+    const learnerInfo = localCtx?.learnerProfile ?? undefined
 
     // 3. Load textbook content
     let textbookContent: string | undefined

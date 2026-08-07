@@ -43,7 +43,7 @@ const LEARNER_TEMPLATE = `# 学习者档案
 /**
  * Initialize the local app data directory structure (single user, flat).
  *
- * Creates the directory layout, seeds story.md from the world preset and a
+ * Creates the directory layout, writes the learner.md template, and
  * learner.md template, and loads/copies all 9 reference companions into the
  * companion pool.
  *

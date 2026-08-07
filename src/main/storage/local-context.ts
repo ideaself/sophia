@@ -8,7 +8,7 @@ export interface LocalContext {
 
 /**
  * Read the single-user local context: learner.md straight from the data
- * root. No world/profile layers — the learner profile is the whole context.
+ * root — the learner profile is the whole context.
  */
 export async function readLocalContext(
   dataRoot: string
