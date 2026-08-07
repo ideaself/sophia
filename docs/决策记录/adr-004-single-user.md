@@ -14,7 +14,7 @@ Sophia 定位为单用户、本地优先的个人学习工具，不做账号、�
 
 第二层只做单用户本地工具。不做账号、登录、多用户、权限、云同步、支付、订阅、设备绑定。
 
-保留 `profiles/default` 文件布局是为了兼容未来迁移，而不是支持多用户 UI。
+数据采用单用户扁平布局（`%APPDATA%/Sophia/LocalData` 直接存放各数据目录与文件），不保留多档案层级。
 
 ## Alternatives Considered
 
