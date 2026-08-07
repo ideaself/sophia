@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-Sophia-Local is a local-first desktop app (ADR-002). As the user began using it on multiple machines, the need to transfer learning data (conversations, textbooks, flashcards) between devices became apparent.
+Sophia is a local-first desktop app (ADR-002). As the user began using it on multiple machines, the need to transfer learning data (conversations, textbooks, flashcards) between devices became apparent.
 
 Manual USB/cloud copy is error-prone and inconvenient. A cloud-sync solution was needed that preserves the local-first principle: the local copy is always primary and fully functional offline.
 
@@ -17,7 +17,7 @@ Manual USB/cloud copy is error-prone and inconvenient. A cloud-sync solution was
 Add WebDAV sync as the official data synchronization mechanism:
 
 - Uses standard WebDAV protocol (RFC 4918) — no custom server.
-- Syncs the entire `{appData}/Sophia-Local` data directory.
+- Syncs the entire `{appData}/Sophia` data directory.
 - Bidirectional sync with conflict resolution (last-write-wins by mtime).
 - Incremental sync — only transfers changed files (based on mtime + size).
 - Binary-safe — preserves PDF originals byte-for-byte.

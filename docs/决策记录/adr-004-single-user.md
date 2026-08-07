@@ -8,7 +8,7 @@ Partially superseded by ADR-007 (WebDAV sync)
 
 ## Context
 
-Sophia 是面向公开用户的产品，包含账号、订阅、设备限制、书币、Agora 社区等系统。Sophia-Local 当前只服务个人自用。
+官方产品 是面向公开用户的产品，包含账号、订阅、设备限制、书币、Agora 社区等系统。Sophia 当前只服务个人自用。
 
 ## Decision
 
@@ -19,7 +19,7 @@ Sophia 是面向公开用户的产品，包含账号、订阅、设备限制、�
 ## Alternatives Considered
 
 ### Build profile switching now
-- Pros: 更接近 Sophia。
+- Pros: 更接近 官方产品。
 - Cons: 增加 UI 和数据一致性复杂度。
 - Rejected: 当前只有一个使用者。
 

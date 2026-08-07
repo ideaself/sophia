@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-Sophia-Local initially launched with DeepSeek-only support (ADR-001). User feedback and practical usage revealed several limitations:
+Sophia initially launched with DeepSeek-only support (ADR-001). User feedback and practical usage revealed several limitations:
 
 1. DeepSeek API outages or rate limits (429) block all classroom activity.
 2. Different providers offer different strengths — DeepSeek for general chat, Mimo for budget-friendly summarization.

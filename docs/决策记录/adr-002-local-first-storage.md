@@ -14,7 +14,7 @@ Accepted
 
 ## Decision
 
-从第一版开始使用 Electron main process 管理本地文件系统。数据根目录放在 Electron `app.getPath("userData")` 下的 Sophia-Local 目录。
+从第一版开始使用 Electron main process 管理本地文件系统。数据根目录放在 Electron `app.getPath("userData")` 下的 Sophia 目录。
 
 API Key 使用 `safeStorage` 或 OS keychain 方案加密保存，不放入普通 JSON 文件。
 
@@ -27,7 +27,7 @@ API Key 使用 `safeStorage` 或 OS keychain 方案加密保存，不放入普�
 
 ### SQLite first
 - Pros: 查询强，适合复杂搜索统计。
-- Cons: 当前项目已有 Sophia 文件布局参考，Markdown/JSON 更透明，便于人工检查和备份。
+- Cons: 当前项目已有 官方产品 文件布局参考，Markdown/JSON 更透明，便于人工检查和备份。
 - Deferred: 如果搜索/统计变复杂，可后续新增索引或 SQLite。
 
 ## Consequences
