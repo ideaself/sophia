@@ -18,3 +18,58 @@ export function isKnowledgeQuestion(text: string): boolean {
 export function hasTextbookCitation(content: string): boolean {
   return CITATION_RE.test(content)
 }
+
+export interface CitationBlock {
+  /** 引用标记原文（含【教材出处 …】）。 */
+  marker: string
+  /** 引用块正文。 */
+  quoted: string
+}
+
+/**
+ * 提取回答中的教材引用块（markdown 引用行）。
+ * 无引用时返回空数组。
+ */
+export function extractCitations(content: string): CitationBlock[] {
+  const out: CitationBlock[] = []
+  const lines = content.split('\n')
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    const m = /^\s*>\s*(【教材出处 · 《[^》]+》 · [^】]+】)(?:\s*)$/.exec(line)
+    if (m) {
+      const marker = m[1]
+      const quoted: string[] = []
+      let j = i + 1
+      while (j < lines.length && /^\s*>\s?/.test(lines[j])) {
+        quoted.push(lines[j].replace(/^\s*>\s?/, ''))
+        j++
+      }
+      if (quoted.length > 0) {
+        out.push({ marker, quoted: quoted.join('\n') })
+      }
+      i = j
+      continue
+    }
+    i++
+  }
+  return out
+}
+
+/** 规范化文本用于模糊匹配：去空白与中文标点、小写。 */
+export function normalizeForMatch(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[\s\u3000、。，；：？！·《》【】"'“”‘’\-—_()（）]/g, '')
+}
+
+/**
+ * 引用真实性校验（里程碑 5）：引用块正文是否真的能在教材中找到对应内容。
+ * 策略：引用正文切为 6 字以上片段，任一长片段可在教材中找到（包含关系）即视为真实。
+ */
+export function citationMatchesTextbook(citation: CitationBlock, textbook: string): boolean {
+  const book = normalizeForMatch(textbook)
+  const chunks = citation.quoted.split('\n').map(normalizeForMatch).filter((s) => s.length >= 6)
+  if (chunks.length === 0) return false
+  return chunks.some((chunk) => book.includes(chunk))
+}
