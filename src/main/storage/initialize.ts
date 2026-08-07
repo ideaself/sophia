@@ -7,14 +7,15 @@ import {
   DEFAULT_PROFILE_NAME,
   DEFAULT_WORLD_ID,
   DEFAULT_WORLD_NAME,
-  profileDir,
   profilePath,
-  worldDir,
   worldPath,
   storyPath,
   learnerPath,
   companionDir,
-  configDir
+  configDir,
+  conversationsDir,
+  textbooksDir,
+  diaryDir
 } from './app-data'
 import { loadReferenceCompanions } from '../companions/reference-loader'
 
@@ -68,11 +69,12 @@ export async function initDataDir(options: InitOptions): Promise<InitResult> {
   const { dataRoot, referenceDir, worldPresetPath, clock } = options
   const now = clock ? clock() : new Date().toISOString()
 
-  // --- Create directory structure ---
+  // --- Create directory structure (single user, flat layout) ---
   await mkdir(configDir(dataRoot), { recursive: true })
-  await mkdir(profileDir(dataRoot), { recursive: true })
-  await mkdir(worldDir(dataRoot), { recursive: true })
   await mkdir(companionDir(dataRoot), { recursive: true })
+  await mkdir(conversationsDir(dataRoot), { recursive: true })
+  await mkdir(textbooksDir(dataRoot), { recursive: true })
+  await mkdir(diaryDir(dataRoot), { recursive: true })
 
   // --- Write profile.json (only if not exists) ---
   const profile: Profile = {

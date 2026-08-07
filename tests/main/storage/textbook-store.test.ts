@@ -47,7 +47,7 @@ describe('TextbookStore — original file', () => {
     expect(tb.originalFile).toBe('高等数学.pdf')
 
     const stored = await readFile(
-      join(dataRoot, 'profiles', 'prof_default', 'worlds', WORLD_ID, 'textbooks', tb.id, '高等数学.pdf')
+      join(dataRoot, 'textbooks', tb.id, '高等数学.pdf')
     )
     expect(stored.equals(PDF_BYTES)).toBe(true)
   })

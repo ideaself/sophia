@@ -13,7 +13,7 @@ import extract from 'extract-zip'
 import { createBackupZip } from './backup'
 
 /** Top-level dirs a valid Sophia data root must contain. */
-const REQUIRED_TOP_LEVEL = ['config', 'profiles']
+const REQUIRED_TOP_LEVEL = ['config', 'companions']
 
 export interface RestoreResult {
   success: boolean

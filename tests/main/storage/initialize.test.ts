@@ -23,10 +23,10 @@ const worldPresetPath = join(projectsRoot, 'reference', 'world_preset.md')
 const FIXED_TIME = '2026-07-06T12:00:00.000Z'
 const fixedClock = (): string => FIXED_TIME
 
-// Path helpers matching the app-data layout
-const profileRel = join('profiles', DEFAULT_PROFILE_ID)
-const worldRel = join(profileRel, 'worlds', DEFAULT_WORLD_ID)
-const companionsRel = join(worldRel, 'companions')
+// Path helpers matching the flat (single-user) app-data layout
+const profileRel = 'profile.json'
+const worldRel = 'world.json'
+const companionsRel = join('companions')
 
 function buildOptions(overrides?: Partial<InitOptions>): InitOptions {
   return {
@@ -64,8 +64,8 @@ describe('initDataDir', () => {
     const opts = buildOptions()
     await initDataDir(opts)
 
+    await access(opts.dataRoot) // 单用户扁平布局：数据直接在根下
     await access(join(opts.dataRoot, profileRel))
-    await access(join(opts.dataRoot, profileRel, 'profile.json'))
   })
 
   it('creates world directory structure', async () => {
@@ -73,7 +73,7 @@ describe('initDataDir', () => {
     await initDataDir(opts)
 
     await access(join(opts.dataRoot, worldRel))
-    await access(join(opts.dataRoot, worldRel, 'world.json'))
+    await access(join(opts.dataRoot, worldRel))
   })
 
   it('profile.json validates against ProfileSchema', async () => {
@@ -81,7 +81,7 @@ describe('initDataDir', () => {
     await initDataDir(opts)
 
     const raw = await readFile(
-      join(opts.dataRoot, profileRel, 'profile.json'),
+      join(opts.dataRoot, profileRel),
       'utf-8'
     )
     const parsed = JSON.parse(raw)
@@ -95,7 +95,7 @@ describe('initDataDir', () => {
     await initDataDir(opts)
 
     const raw = await readFile(
-      join(opts.dataRoot, profileRel, 'profile.json'),
+      join(opts.dataRoot, profileRel),
       'utf-8'
     )
     const profile = JSON.parse(raw)
@@ -111,7 +111,7 @@ describe('initDataDir', () => {
     await initDataDir(opts)
 
     const raw = await readFile(
-      join(opts.dataRoot, worldRel, 'world.json'),
+      join(opts.dataRoot, worldRel),
       'utf-8'
     )
     const parsed = JSON.parse(raw)
@@ -125,7 +125,7 @@ describe('initDataDir', () => {
     await initDataDir(opts)
 
     const raw = await readFile(
-      join(opts.dataRoot, worldRel, 'world.json'),
+      join(opts.dataRoot, worldRel),
       'utf-8'
     )
     const world = JSON.parse(raw)
@@ -141,7 +141,7 @@ describe('initDataDir', () => {
     await initDataDir(opts)
 
     const storyRaw = await readFile(
-      join(opts.dataRoot, worldRel, 'story.md'),
+      join(opts.dataRoot, 'story.md'),
       'utf-8'
     )
     const presetRaw = await readFile(worldPresetPath, 'utf-8')
@@ -154,7 +154,7 @@ describe('initDataDir', () => {
     await initDataDir(opts)
 
     const raw = await readFile(
-      join(opts.dataRoot, worldRel, 'learner.md'),
+      join(opts.dataRoot, 'learner.md'),
       'utf-8'
     )
 
@@ -216,9 +216,9 @@ describe('initDataDir', () => {
     await initDataDir(opts)
 
     // All files should still exist
-    await access(join(opts.dataRoot, profileRel, 'profile.json'))
-    await access(join(opts.dataRoot, worldRel, 'world.json'))
-    await access(join(opts.dataRoot, worldRel, 'story.md'))
+    await access(join(opts.dataRoot, profileRel))
+    await access(join(opts.dataRoot, worldRel))
+    await access(join(opts.dataRoot, 'story.md'))
     await access(join(opts.dataRoot, companionsRel, 'index.json'))
   })
 })

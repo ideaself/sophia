@@ -138,17 +138,6 @@ export class SyncWebDavClient {
     }
   }
 
-  /** 远程目录是否存在（404/不存在 → false）。 */
-  async remoteExists(remoteDir: string): Promise<boolean> {
-    try {
-      await withTimeout(this.client.getDirectoryContents(remoteDir), REQUEST_TIMEOUT_MS, `PROPFIND ${remoteDir}`)
-      return true
-    } catch (err) {
-      if (isRemoteNotFoundError(err)) return false
-      throw err
-    }
-  }
-
   async uploadFile(remotePath: string, content: string | Buffer | Readable): Promise<void> {
     const timeout = content instanceof Readable ? STREAM_UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS
     await withTimeout(

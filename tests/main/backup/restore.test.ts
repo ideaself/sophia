@@ -14,9 +14,9 @@ let dataRoot: string
 beforeEach(async () => {
   dataRoot = join(tempBase, 'Sophia')
   await mkdir(join(dataRoot, 'config'), { recursive: true })
-  await mkdir(join(dataRoot, 'profiles', 'profile_default'), { recursive: true })
+  await mkdir(join(dataRoot, 'companions'), { recursive: true })
   await writeFile(join(dataRoot, 'config', 'providers.json'), JSON.stringify({ current: 'A' }))
-  await writeFile(join(dataRoot, 'profiles', 'profile_default', 'learner.md'), '# 学习者')
+  await writeFile(join(dataRoot, 'learner.md'), '# 学习者')
 })
 
 afterEach(async () => {
@@ -43,7 +43,7 @@ describe('restoreFromBackup', () => {
     // 数据被恢复为备份内容
     const providers = JSON.parse(await readFile(join(dataRoot, 'config', 'providers.json'), 'utf-8'))
     expect(providers.current).toBe('A')
-    expect(await readFile(join(dataRoot, 'profiles', 'profile_default', 'learner.md'), 'utf-8')).toBe('# 学习者')
+    expect(await readFile(join(dataRoot, 'learner.md'), 'utf-8')).toBe('# 学习者')
 
     // 保险备份存在且非空（内容是篡改前的数据，zip 格式）
     const snapshotStat = await readFile(result.preRestore!)
