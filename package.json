@@ -29,7 +29,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Sophia"
+      "shortcutName": "Sophia",
+      "deleteAppDataOnUninstall": true
     }
   },
   "scripts": {
