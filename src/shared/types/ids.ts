@@ -42,7 +42,10 @@ export const ArtifactType = {
   Relation: 'relation',
   CompanionNote: 'companion_note',
   FeynmanNote: 'feynman_note',
-  KnowledgeGraph: 'knowledge_graph'
+  KnowledgeGraph: 'knowledge_graph',
+  LessonAudio: 'lesson_audio',
+  LessonTimeline: 'lesson_timeline',
+  LessonFaq: 'lesson_faq'
 } as const
 export type ArtifactType = (typeof ArtifactType)[keyof typeof ArtifactType]
 

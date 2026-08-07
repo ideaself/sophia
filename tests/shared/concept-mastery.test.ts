@@ -18,12 +18,13 @@ describe('concept-mastery prompt segment', () => {
       { name: '导数', mastery: 0.9, misconception: null },
       { name: '极限', mastery: 0.3, misconception: '把极限当函数值' }
     ])
-    expect(seg).toContain('## 学习者的概念掌握度')
-    expect(seg).toContain('- 极限：薄弱（掌握度 30%），误解点：把极限当函数值')
-    expect(seg).toContain('- 导数：已掌握（掌握度 90%）')
-    expect(seg.indexOf('极限')).toBeLessThan(seg.indexOf('导数'))
-    expect(seg).toContain('「薄弱」概念：优先复习巩固')
-    expect(seg).toContain('若某概念标注了误解点，必须先针对误解澄清')
+    expect(seg).not.toBeNull()
+    expect(seg!).toContain('## 学习者的概念掌握度')
+    expect(seg!).toContain('- 极限：薄弱（掌握度 30%），误解点：把极限当函数值')
+    expect(seg!).toContain('- 导数：已掌握（掌握度 90%）')
+    expect(seg!.indexOf('极限')).toBeLessThan(seg!.indexOf('导数'))
+    expect(seg!).toContain('「薄弱」概念：优先复习巩固')
+    expect(seg!).toContain('若某概念标注了误解点，必须先针对误解澄清')
   })
 })
 

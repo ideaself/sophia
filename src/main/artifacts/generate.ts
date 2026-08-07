@@ -74,7 +74,10 @@ export async function generateArtifacts(
       ArtifactType.PalMoments,
       ArtifactType.Relation,
       ArtifactType.CompanionNote,
-      ArtifactType.KnowledgeGraph
+      ArtifactType.KnowledgeGraph,
+      ArtifactType.LessonAudio,
+      ArtifactType.LessonTimeline,
+      ArtifactType.LessonFaq
     ]
     if (options.classMode === 'feynman') {
       artifactTypes.push(ArtifactType.FeynmanNote)
@@ -333,6 +336,42 @@ function buildArtifactPrompt(type: ArtifactType, cardTarget?: string): string {
 - 图例可加一句说明（用 %% 注释）
 输出格式：直接输出一个 mermaid 代码块（\`\`\`mermaid ... \`\`\`），不要其他解释文字。
 如果概念太少（少于 3 个），输出一句说明"本节课知识点较少，未生成图谱"。`
+
+    case ArtifactType.LessonAudio:
+      return `你是一位教育助手。请把以下课堂对话浓缩成一段 5-7 轮的"双人回顾对话"脚本，用于课后语音回听。
+格式（每行一条）：
+【导师】<一句话>
+【学习者】<一句话>
+
+要求：
+- 覆盖本课最核心的 2-4 个概念，先由导师提问唤起记忆，再由学习者用自己的话简述，导师补充修正。
+- 学习者的话语要自然口语化、可理解（像真人回忆），不是背诵定义。
+- 导师语气与课堂角色一致，鼓励、追问并给出关键结论。
+- 每轮对白 15-40 字，总时长控制在 1 分钟左右。
+- 只使用课堂真实讨论过的内容，不新增课外知识点。
+- 铁律：仅输出【导师】/【学习者】行，不要标题、不要解释、不要其他格式。`
+
+    case ArtifactType.LessonTimeline:
+      return `你是一位教育助手。请根据以下课堂对话生成"课堂时间线"，每行一个事件：
+格式：
+- MM:SS 事件名：一句话描述
+
+要求：
+- MM:SS 为相对课堂开始的时间（从 00:00 开始，事件越多时间越靠后）
+- 按时间顺序排列 5-8 个事件，事件名简短（如"引入主题""定义概念""举例说明""提问检验"）
+- 描述基于课堂真实内容，可包含关键术语
+- 铁律：仅输出时间线行，不要标题、不要解释。如果课堂太短（少于 3 条对话），输出一行：本节课太短，未生成时间线。`
+
+    case ArtifactType.LessonFaq:
+      return `你是一位教育助手。请根据以下课堂对话，生成本课 FAQ（学习者可能想再确认的问题）。
+格式，每个问答两块：
+- 问：<一句话问题>
+- 答：<2-3 句简洁回答，基于课堂内容>
+
+要求：
+- 3-5 个问答，覆盖本课核心概念、容易混淆的点、以及课堂未完全展开但仍重要的问题
+- 问题用学习者视角提问
+- 铁律：仅输出问答行，不要标题、不要解释。`
 
     default: {
       const _exhaustive: never = type

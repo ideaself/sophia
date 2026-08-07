@@ -1,12 +1,12 @@
 import { mkdir, readFile, access, readdir } from 'node:fs/promises'
 import type { Artifact } from '../../shared/schemas/artifact'
 import { ArtifactSchema } from '../../shared/schemas/artifact'
-import type { ArtifactId, ConversationId } from '../../shared/types/ids'
+import type { ArtifactId, ArtifactType, ConversationId } from '../../shared/types/ids'
 import { artifactsDir, artifactPath } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
 import { atomicWriteFile } from './atomic-write'
 
-type ArtifactTypeValue = 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note' | 'knowledge_graph'
+type ArtifactTypeValue = ArtifactType
 
 let idCounter = 0
 

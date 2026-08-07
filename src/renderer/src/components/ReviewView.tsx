@@ -4,8 +4,10 @@ import { useCompanionStore } from '../stores/useCompanionStore'
 import { useTextbookStore } from '../stores/useTextbookStore'
 import { parseSelfTestQuestions, type SelfTestQuestion } from '../../../shared/self-test-utils'
 import { buildNextSteps } from '../../../shared/next-steps'
+import { parseTimeline, parseFaq } from '../../../shared/lesson-media'
 import { FlashcardReviewView } from './FlashcardReviewView'
 import { SelfTestBlock } from './SelfTestBlock'
+import { AudioReviewPlayer } from './AudioReviewPlayer'
 
 const MarkdownRenderer = lazy(() => import('../lib/MarkdownRenderer'))
 
@@ -23,7 +25,7 @@ interface ArtifactDTO {
   createdAt: string
 }
 
-type ReviewTab = 'summary' | 'selftest' | 'flashcards' | 'diary' | 'progress' | 'feynman' | 'knowledge' | 'concepts' | 'next'
+type ReviewTab = 'summary' | 'selftest' | 'flashcards' | 'diary' | 'progress' | 'feynman' | 'knowledge' | 'concepts' | 'next' | 'audio' | 'timeline' | 'faq'
 
 /**
  * 课程复盘视图 —— 把一节已下课课堂的产物整合成一页：
@@ -104,6 +106,9 @@ export function ReviewView(): React.ReactElement {
     { key: 'knowledge', label: '🧠 知识点图谱', show: !!art('knowledge_graph') },
     { key: 'concepts', label: '📊 概念掌握', show: concepts.length > 0 },
     { key: 'next', label: '🎯 下一步建议', show: concepts.length > 0 },
+    { key: 'audio', label: '🎧 音频回顾', show: !!art('lesson_audio') },
+    { key: 'timeline', label: '🕐 课堂时间线', show: !!art('lesson_timeline') },
+    { key: 'faq', label: '❓ 课堂 FAQ', show: !!art('lesson_faq') },
     { key: 'feynman', label: '费曼知识蛋', show: !!art('feynman_note') }
   ]
   const visibleTabs = TABS.filter((t) => t.show)
@@ -223,6 +228,12 @@ export function ReviewView(): React.ReactElement {
           <ConceptStateList concepts={concepts} />
         ) : currentKey === 'next' ? (
           <NextStepsPanel concepts={concepts} />
+        ) : currentKey === 'audio' ? (
+          <AudioReviewPlayer content={art('lesson_audio') ?? ''} />
+        ) : currentKey === 'timeline' ? (
+          <TimelinePanel content={art('lesson_timeline') ?? ''} />
+        ) : currentKey === 'faq' ? (
+          <FaqPanel content={art('lesson_faq') ?? ''} />
         ) : (
           <div className="markdown-body max-w-3xl">
             <Suspense fallback={null}>
@@ -319,6 +330,68 @@ function NextStepsPanel({ concepts }: { concepts: ConceptStateDTO[] }): React.Re
       <p className="text-xs text-text-muted">
         建议由概念掌握度自动生成；在课堂开场用「🎯 下一步建议」里列出的薄弱概念优先复习。
       </p>
+    </div>
+  )
+}
+
+/** 课堂时间线（里程碑 4）：竖向时间轴渲染。 */
+function TimelinePanel({ content }: { content: string }): React.ReactElement {
+  const events = parseTimeline(content)
+  if (events.length === 0) {
+    return (
+      <div className="max-w-3xl rounded-xl border border-surface-border bg-bg-surface p-4 text-sm text-text-muted">
+        {content || '本课未生成时间线。'}
+      </div>
+    )
+  }
+  return (
+    <div className="max-w-3xl">
+      <ol className="relative space-y-4 border-l border-surface-border-strong pl-5">
+        {events.map((e, i) => (
+          <li key={i} className="relative">
+            <span className="absolute -left-[26px] top-1 h-2.5 w-2.5 rounded-full bg-accent" />
+            <p className="text-xs font-medium text-accent">{e.time}</p>
+            <p className="mt-0.5 text-sm font-medium text-text-primary">{e.name}</p>
+            <p className="mt-0.5 text-sm leading-relaxed text-text-secondary">{e.description}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+/** 课堂 FAQ（里程碑 4）：点击展开的问答卡。 */
+function FaqPanel({ content }: { content: string }): React.ReactElement {
+  const entries = parseFaq(content)
+  const [open, setOpen] = useState<number | null>(0)
+  if (entries.length === 0) {
+    return (
+      <div className="max-w-3xl rounded-xl border border-surface-border bg-bg-surface p-4 text-sm text-text-muted">
+        {content || '本课未生成 FAQ。'}
+      </div>
+    )
+  }
+  return (
+    <div className="max-w-3xl space-y-2">
+      {entries.map((e, i) => {
+        const isOpen = open === i
+        return (
+          <div key={i} className="overflow-hidden rounded-xl border border-surface-border bg-bg-surface">
+            <button
+              onClick={() => setOpen(isOpen ? null : i)}
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+            >
+              <span className="text-sm font-medium text-text-primary">Q{i + 1}. {e.question}</span>
+              <span className="flex-shrink-0 text-xs text-text-muted">{isOpen ? '▴' : '▾'}</span>
+            </button>
+            {isOpen && (
+              <p className="border-t border-surface-border px-4 py-3 text-sm leading-relaxed text-text-secondary">
+                {e.answer}
+              </p>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
