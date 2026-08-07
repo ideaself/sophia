@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { readFile, access, readdir } from 'node:fs/promises'
+import { access, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -13,8 +13,6 @@ const TEST_ID = `sophia-init-${randomUUID()}`
 const tempDir = join(tmpdir(), TEST_ID)
 const projectsRoot = join(__dirname, '..', '..', '..')
 const referenceDir = join(projectsRoot, 'reference', '角色设定', 'candidates')
-const worldPresetPath = join(projectsRoot, 'reference', 'world_preset.md')
-
 
 // Path helpers matching the flat (single-user) app-data layout
 const companionsRel = join('companions')
@@ -23,7 +21,6 @@ function buildOptions(overrides?: Partial<InitOptions>): InitOptions {
   return {
     dataRoot: join(tempDir, 'data'),
     referenceDir,
-    worldPresetPath,
     ...overrides
   }
 }
@@ -50,18 +47,6 @@ describe('initDataDir', () => {
     await access(join(opts.dataRoot, 'config'))
   })
 
-  it('story.md is initialized from world_preset.md', async () => {
-    const opts = buildOptions()
-    await initDataDir(opts)
-
-    const storyRaw = await readFile(
-      join(opts.dataRoot, 'story.md'),
-      'utf-8'
-    )
-    const presetRaw = await readFile(worldPresetPath, 'utf-8')
-
-    expect(storyRaw).toBe(presetRaw)
-  })
 
   it('learner.md is created as empty template', async () => {
     const opts = buildOptions()
@@ -122,7 +107,7 @@ describe('initDataDir', () => {
     await initDataDir(opts)
 
     // All files should still exist
-    await access(join(opts.dataRoot, 'story.md'))
+    await access(join(opts.dataRoot, 'learner.md'))
     await access(join(opts.dataRoot, companionsRel, 'index.json'))
   })
 })

@@ -20,12 +20,7 @@ describe('resolveReferencePaths', () => {
     )
   })
 
-  it('resolves worldPresetPath from appPath', () => {
-    const result = resolveReferencePaths(appPathUnix)
-    expect(result.worldPresetPath).toBe(
-      join(appPathUnix, 'reference', 'world_preset.md')
-    )
-  })
+
 
   it('resolves paths relative to appPath, not cwd', () => {
     const input = process.platform === 'win32' ? 'C:\\my\\app' : '/my/app'
@@ -33,7 +28,7 @@ describe('resolveReferencePaths', () => {
     const result = resolveReferencePaths(input)
     // Paths should be absolute (start with the appPath)
     expect(result.candidatesDir.startsWith(prefix)).toBe(true)
-    expect(result.worldPresetPath.startsWith(prefix)).toBe(true)
+
   })
 
   it('preserves correct nesting depth', () => {

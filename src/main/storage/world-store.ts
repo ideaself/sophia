@@ -1,16 +1,14 @@
 import { readFile } from 'node:fs/promises'
-import { storyPath, learnerPath, DEFAULT_WORLD_ID, DEFAULT_PROFILE_ID } from './app-data'
+import { learnerPath, DEFAULT_WORLD_ID, DEFAULT_PROFILE_ID } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
 
 export interface LocalContext {
-  story: string
   learnerProfile: string
 }
 
 /**
- * Read the single-user local context: story.md + learner.md straight from
- * the data root. No world/profile layers — these two markdown files are the
- * whole world context.
+ * Read the single-user local context: learner.md straight from the data
+ * root. No world/profile layers — the learner profile is the whole context.
  */
 export async function readLocalContext(
   dataRoot: string,
@@ -18,13 +16,6 @@ export async function readLocalContext(
   _profileId: string = DEFAULT_PROFILE_ID
 ): Promise<LocalContext | null> {
   try {
-    let story = ''
-    try {
-      story = await readFile(storyPath(dataRoot), 'utf-8')
-    } catch {
-      // story.md is optional
-    }
-
     let learnerProfile = ''
     try {
       learnerProfile = await readFile(learnerPath(dataRoot), 'utf-8')
@@ -32,7 +23,7 @@ export async function readLocalContext(
       // learner.md is optional
     }
 
-    return { story, learnerProfile }
+    return { learnerProfile }
   } catch (err) {
     if (!isNotFoundError(err)) warnReadFailure('local context', err)
     return null

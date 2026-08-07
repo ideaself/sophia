@@ -64,9 +64,8 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
       throw new Error(`Companion not found: ${params.companionId}`)
     }
 
-    // 2. Load local context (story.md + learner.md)
+    // 2. Load learner profile (learner.md)
     const worldData = await readLocalContext(dataRoot)
-    const worldContext = worldData?.story ?? ''
     const learnerInfo = worldData?.learnerProfile ?? undefined
 
     // 3. Load textbook content
@@ -235,7 +234,6 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
     // 8. Build messages with system prompt
     const builtMessages = buildMessages({
       companion,
-      worldContext,
       learnerInfo,
       textbookContent,
       relatedTextbook,

@@ -97,7 +97,6 @@ describe('prompt-builder → StreamChatSession pipeline', () => {
 
     const messages = buildMessages({
       companion,
-      worldContext: 'Ancient Athens, 399 BC.',
       userMessage: 'What is virtue?',
     })
 
@@ -153,7 +152,6 @@ describe('prompt-builder → StreamChatSession pipeline', () => {
 
     const messages = buildMessages({
       companion,
-      worldContext: 'Athens.',
       history,
       userMessage: 'Tell me more about the forms.',
     })
@@ -175,7 +173,6 @@ describe('prompt-builder → StreamChatSession pipeline', () => {
 
     const messages = buildMessages({
       companion,
-      worldContext: 'Academy.',
       learnerInfo: 'Student, 15, curious about ethics.',
       textbookContent: 'The Apology of Socrates.',
       userMessage: 'Start the lesson.',

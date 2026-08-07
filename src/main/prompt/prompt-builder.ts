@@ -42,8 +42,6 @@ import { truncateToBudget, windowMessages } from './token-budget'
 export interface BuildSystemPromptParams {
   /** The companion (AI character) to role-play */
   companion: Companion
-  /** World narrative context (world_preset.md content) */
-  worldContext: string
   /** Optional learner profile information */
   learnerInfo?: string
   /** Optional current textbook/page content to teach from */
@@ -136,14 +134,6 @@ function buildCharacterSegment(companion: Companion): string {
     wrapUserContent(companion.speakingStyle),
     '',
     wrapUserContent(companion.emotionalExpressions)
-  ].join('\n')
-}
-
-function buildWorldSegment(worldContent: string): string {
-  return [
-    '## 你所在的世界',
-    '',
-    wrapUserContent(worldContent.trim())
   ].join('\n')
 }
 
@@ -322,8 +312,7 @@ function genderLabel(gender: string): string {
 export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   const {
     companion,
-    worldContext,
-    learnerInfo,
+      learnerInfo,
     textbookContent,
     handoffTail,
     palMoments,
@@ -340,8 +329,7 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   const segments: string[] = [
     getSocraticRules(),
     getLessonRhythmRules(),
-    buildCharacterSegment(companion),
-    buildWorldSegment(worldContext)
+    buildCharacterSegment(companion)
   ]
 
   // Optional learner info

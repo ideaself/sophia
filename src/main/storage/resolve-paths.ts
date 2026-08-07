@@ -3,8 +3,6 @@ import { join } from 'node:path'
 export interface ReferencePaths {
   /** Directory containing candidate character .md files */
   candidatesDir: string
-  /** Path to the world_preset.md file */
-  worldPresetPath: string
 }
 
 /**
@@ -18,7 +16,6 @@ export interface ReferencePaths {
  */
 export function resolveReferencePaths(appPath: string): ReferencePaths {
   return {
-    candidatesDir: join(appPath, 'reference', '角色设定', 'candidates'),
-    worldPresetPath: join(appPath, 'reference', 'world_preset.md')
+    candidatesDir: join(appPath, 'reference', '角色设定', 'candidates')
   }
 }

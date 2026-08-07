@@ -268,16 +268,15 @@ if (!app.requestSingleInstanceLock()) {
     })
 
     // 单用户扁平数据目录：所有数据（config/companions/textbooks/conversations/
-    // diary/story.md/learner.md 等）直接放在 LocalData 下，无 profile/world 层级。
+    // diary/learner.md 等）直接放在 LocalData 下，无 profile/world 层级。
     const dataRoot = join(app.getPath('userData'), 'LocalData')
-    const { candidatesDir, worldPresetPath } = resolveReferencePaths(app.getAppPath())
+    const { candidatesDir } = resolveReferencePaths(app.getAppPath())
 
     // Initialize local data layout (idempotent — safe to call on every start)
     try {
       await initDataDir({
         dataRoot,
-        referenceDir: candidatesDir,
-        worldPresetPath
+        referenceDir: candidatesDir
       })
     } catch (err) {
       // Don't let a data-init failure abort startup silently — an unhandled

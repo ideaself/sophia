@@ -1,6 +1,5 @@
-import { mkdir, writeFile, readFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import {
-  storyPath,
   learnerPath,
   companionDir,
   configDir,
@@ -15,8 +14,6 @@ export interface InitOptions {
   dataRoot: string
   /** Directory containing reference candidate character .md files */
   referenceDir: string
-  /** Path to the world_preset.md file */
-  worldPresetPath: string
 }
 
 export interface InitResult {
@@ -53,7 +50,7 @@ const LEARNER_TEMPLATE = `# 学习者档案
  * Idempotent: if files already exist, they are not overwritten.
  */
 export async function initDataDir(options: InitOptions): Promise<InitResult> {
-  const { dataRoot, referenceDir, worldPresetPath } = options
+  const { dataRoot, referenceDir } = options
 
   // --- Create directory structure ---
   await mkdir(configDir(dataRoot), { recursive: true })
@@ -61,15 +58,6 @@ export async function initDataDir(options: InitOptions): Promise<InitResult> {
   await mkdir(conversationsDir(dataRoot), { recursive: true })
   await mkdir(textbooksDir(dataRoot), { recursive: true })
   await mkdir(diaryDir(dataRoot), { recursive: true })
-
-  // --- Copy world_preset.md as story.md (only if not exists) ---
-  const stPath = storyPath(dataRoot)
-  try {
-    const presetContent = await readFile(worldPresetPath, 'utf-8')
-    await writeFile(stPath, presetContent, { flag: 'wx' })
-  } catch {
-    // File exists — skip
-  }
 
   // --- Write learner.md template (only if not exists) ---
   const lnPath = learnerPath(dataRoot)

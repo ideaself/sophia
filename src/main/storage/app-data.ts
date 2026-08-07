@@ -10,7 +10,6 @@ import { join } from 'node:path'
  *     textbooks/
  *     conversations/
  *     diary/
- *     story.md
  *     learner.md
  *     pal_moments.md
  *     handoff_meta.json
@@ -25,14 +24,6 @@ export function worldDir(
   _profileId: string = DEFAULT_PROFILE_ID
 ): string {
   return dataRoot
-}
-
-export function storyPath(
-  dataRoot: string,
-  _worldId: string = DEFAULT_WORLD_ID,
-  _profileId: string = DEFAULT_PROFILE_ID
-): string {
-  return join(dataRoot, 'story.md')
 }
 
 export function learnerPath(
