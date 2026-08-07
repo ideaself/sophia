@@ -5,6 +5,8 @@ export interface Companion {
   name: string
   identity: string
   personalityKeywords: string[]
+  /** 人格版本（里程碑 2）。 */
+  version?: number
 }
 
 export interface Textbook {

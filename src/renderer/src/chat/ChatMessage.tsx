@@ -5,6 +5,7 @@ import { MermaidBlock } from '../components/MermaidBlock'
 import { SelfTestBlock } from '../components/SelfTestBlock'
 import { normalizeMathDelimiters } from '../../../shared/math-delimiters'
 import { parseSelfTestQuestions } from '../../../shared/self-test-utils'
+import { parseEventCard, type EventCard } from '../../../shared/event-cards'
 import { handleCopyMathSource } from '../lib/mathCopy'
 
 const MarkdownRenderer = lazy(() => import('../lib/MarkdownRenderer'))
@@ -22,11 +23,55 @@ interface ChatMessageProps {
   highlight?: MessageHighlight
   /** Textbook id used by the in-message citation chip (「查看教材原文」). */
   textbookId?: string | null
+  /** 轻量 grounding 提醒：知识性回答未引用教材出处时展示小字警示。 */
+  showGroundingNotice?: boolean
   onEdit?: (id: string, content: string) => void
   onDelete?: (id: string) => void
   onRegenerate?: (id: string) => void
   /** Rewind the conversation to this message (drop everything after it). */
   onRewind?: (id: string) => void
+}
+
+const CARD_STYLES: Record<EventCard['kind'], { frame: string; badge: string; label: string }> = {
+  hint: {
+    frame: 'border-amber-700/40 bg-amber-900/10',
+    badge: 'bg-amber-900/30 text-amber-500',
+    label: '💡 导师提示'
+  },
+  correction: {
+    frame: 'border-red-800/40 bg-red-900/10',
+    badge: 'bg-red-900/30 text-red-400',
+    label: '⚠️ 纠正一下'
+  },
+  memory: {
+    frame: 'border-indigo-700/40 bg-indigo-900/10',
+    badge: 'bg-indigo-900/30 text-indigo-400',
+    label: '🧠 建议记忆'
+  }
+}
+
+/** 事件卡片（提示 / 纠错 / 记忆提议）：徽标 + 内容，卡片块后其余内容照常渲染。 */
+function EventCardBlock({ card }: { card: EventCard }): React.ReactElement {
+  const style = CARD_STYLES[card.kind]
+  return (
+    <div className="space-y-2">
+      <div className={`rounded-xl border ${style.frame} p-3`}>
+        <span className={`mb-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${style.badge}`}>
+          {style.label}
+        </span>
+        <div className="text-sm leading-relaxed text-text-secondary">
+          <Suspense fallback={null}>
+            <MarkdownRenderer>{normalizeMathDelimiters(card.body)}</MarkdownRenderer>
+          </Suspense>
+        </div>
+      </div>
+      {card.rest.trim() && (
+        <Suspense fallback={null}>
+          <MarkdownRenderer>{normalizeMathDelimiters(card.rest)}</MarkdownRenderer>
+        </Suspense>
+      )}
+    </div>
+  )
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -190,12 +235,14 @@ export function ChatMessage({
   showActions,
   highlight = 'none',
   textbookId,
+  showGroundingNotice = false,
   onEdit,
   onDelete,
   onRegenerate,
   onRewind
 }: ChatMessageProps): React.ReactElement {
   const isUser = role === 'user'
+  const eventCard = isUser ? null : parseEventCard(content)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(content)
   const editRef = useRef<HTMLTextAreaElement>(null)
@@ -222,7 +269,7 @@ export function ChatMessage({
   }
   const rendered = useMemo(() => {
     // 课堂测验卡片化（里程碑 2）：assistant 回复若含 **自测 N：** 结构化题目，渲染为逐级揭晓卡片
-    const questions = isUser ? [] : parseSelfTestQuestions(content)
+    const questions = isUser || eventCard ? [] : parseSelfTestQuestions(content)
     const quizMode = questions.length > 0
 
     const intro = (() => {
@@ -232,7 +279,9 @@ export function ChatMessage({
       return first > 0 ? lines.slice(0, first).join('\n') : ''
     })()
 
-    const body = quizMode ? (
+    const body = eventCard ? (
+      <EventCardBlock card={eventCard} />
+    ) : quizMode ? (
       <>
         {intro.trim() && (
           <Suspense fallback={null}>
@@ -294,7 +343,7 @@ export function ChatMessage({
         {body}
       </div>
     )
-  }, [content, isUser, textbookId])
+  }, [content, isUser, textbookId, eventCard])
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} group`}>
@@ -347,6 +396,11 @@ export function ChatMessage({
             {createdAt && !editing && (
               <p className={`mt-1 text-[10px] leading-none ${isUser ? 'text-right text-white/50' : 'text-text-muted'}`}>
                 {new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
+            {showGroundingNotice && !isUser && !editing && (
+              <p className="mt-1.5 text-[10px] leading-relaxed text-amber-600/90">
+                ⚠️ 本次回答未引用教材出处，内容待核实
               </p>
             )}
           </div>

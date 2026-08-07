@@ -56,6 +56,7 @@ export function registerCompanionIpc(dataRoot: string): void {
     const newCompanion = CompanionSchema.parse({
       id: `custom_${Date.now()}`,
       source: 'custom',
+      version: 1,
       name,
       gender,
       age,
@@ -76,7 +77,9 @@ export function registerCompanionIpc(dataRoot: string): void {
     const companions = await readIndex(dataRoot)
     const idx = companions.findIndex((c) => c.id === companionId)
     if (idx === -1) return null
-    const parsed = CompanionSchema.parse({ ...companions[idx], ...updates, id: companionId })
+    // 人格版本管理（里程碑 2）：每次编辑版本 +1，旧会话保留创建时快照不受回溯影响
+    const bumped = (companions[idx].version ?? 1) + 1
+    const parsed = CompanionSchema.parse({ ...companions[idx], ...updates, id: companionId, version: bumped })
     companions[idx] = parsed
     await writeIndex(dataRoot, companions)
     return parsed

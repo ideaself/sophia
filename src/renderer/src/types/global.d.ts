@@ -46,6 +46,7 @@ declare global {
   interface ConversationDTO {
     id: string
     companionId: string
+    companionVersion: number | null
     textbookId: string | null
     title: string
     createdAt: string
@@ -135,6 +136,7 @@ declare global {
   interface CompanionDTO {
     id: string
     source: string
+    version: number
     name: string
     gender: string
     age: number
@@ -152,6 +154,7 @@ declare global {
     restoreBackup: (zipPath: string) => Promise<{ success: boolean; preRestore?: string; error?: string }>
     createConversation: (input: {
       companionId: string
+      companionVersion?: number
       textbookId?: string
       title: string
     }) => Promise<ConversationDTO>

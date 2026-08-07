@@ -50,6 +50,8 @@ export interface ConceptStateDTO {
 export interface ConversationDTO {
   id: string
   companionId: string
+  /** 创建会话时的人格版本快照（里程碑 2），旧会话可能为 null。 */
+  companionVersion: number | null
   textbookId: string | null
   title: string
   createdAt: string
@@ -155,6 +157,7 @@ export interface DataAPI {
     restoreBackup: (zipPath: string) => Promise<{ success: boolean; preRestore?: string; error?: string }>
   createConversation: (input: {
     companionId: string
+    companionVersion?: number
     textbookId?: string
     title: string
   }) => Promise<ConversationDTO>
@@ -250,6 +253,8 @@ export interface DataAPI {
 export interface CompanionDTO {
   id: string
   source: string
+  /** 人格版本（里程碑 2）：每次编辑 +1。 */
+  version: number
   name: string
   gender: string
   age: number

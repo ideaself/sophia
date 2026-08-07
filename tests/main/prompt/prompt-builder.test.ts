@@ -459,6 +459,7 @@ describe('injection hardening', () => {
   const maliciousCompanion: Companion = {
     id: 'test-malicious' as CompanionId,
     source: CompanionSource.Candidate,
+    version: 1,
     name: 'TestBot',
     gender: CompanionGender.Other,
     age: 99,

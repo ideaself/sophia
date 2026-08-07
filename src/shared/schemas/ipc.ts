@@ -26,6 +26,7 @@ export const IpcUpdateTextbookContentInputSchema = z.object({
 
 export const IpcCreateConversationInputSchema = z.object({
   companionId: z.string().min(1),
+  companionVersion: z.number().int().min(1).optional(),
   textbookId: z.string().optional(),
   title: z.string().min(1)
 })

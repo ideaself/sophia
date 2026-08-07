@@ -30,6 +30,7 @@ function mockCompanion(overrides?: Partial<Companion>): Companion {
   return {
     id: 'candidate-socrates' as Companion['id'],
     source: CompanionSource.Candidate,
+    version: 1,
     name: 'Socrates',
     gender: CompanionGender.Male,
     age: 70,

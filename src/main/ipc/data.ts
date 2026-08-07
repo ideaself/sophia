@@ -156,6 +156,7 @@ export function registerConversationIpc(
     const parsed = IpcCreateConversationInputSchema.parse(input)
     const conv = await conversationStore.create({
       companionId: parsed.companionId,
+      companionVersion: parsed.companionVersion ?? null,
       textbookId: parsed.textbookId ?? null,
       title: parsed.title
     })

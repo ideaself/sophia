@@ -50,6 +50,7 @@ function validCompanion(): Companion {
   return {
     id: 'comp_alice01' as CompanionId,
     source: CompanionSource.Candidate,
+    version: 1,
     name: 'Alice',
     gender: CompanionGender.Female,
     age: 15,
@@ -85,6 +86,7 @@ function validConversation(): Conversation {
   return {
     id: 'conv_001' as ConversationId,
     companionId: 'comp_alice01' as CompanionId,
+    companionVersion: 3,
     textbookId: 'tb_001' as TextbookId,
     title: 'Chemistry with Alice',
     createdAt: '2026-07-06T12:00:00.000Z',
@@ -196,6 +198,20 @@ describe('TextbookSchema', () => {
     const result = TextbookSchema.safeParse({ ...validTextbook(), content: '' })
     expect(result.success).toBe(true)
     expect(result.data?.content).toBe('')
+  })
+
+  it('companion version defaults to 1 for legacy records', () => {
+    const { version, ...legacy } = validCompanion()
+    const result = CompanionSchema.safeParse(legacy)
+    expect(result.success).toBe(true)
+    expect(result.data?.version).toBe(1)
+  })
+
+  it('conversation companionVersion defaults to null for legacy records', () => {
+    const { companionVersion, ...legacy } = validConversation()
+    const result = ConversationSchema.safeParse(legacy)
+    expect(result.success).toBe(true)
+    expect(result.data?.companionVersion).toBeNull()
   })
 })
 

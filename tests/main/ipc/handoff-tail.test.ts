@@ -28,6 +28,7 @@ afterEach(async () => {
 async function makeEndedClass(convId: string, textbookId: string | null, tail = '傅里叶光学：上次讲到菲涅耳衍射'): Promise<void> {
   const conv = await conversationStore.create({
     companionId: COMPANION,
+    companionVersion: 1,
     textbookId,
     title: 'test'
   })
@@ -56,7 +57,7 @@ async function writeMeta(prevConvId: string, textbookId: string | null): Promise
 describe('loadHandoffTail — 接力尾巴按教材隔离', () => {
   it('同教材的上一课：继承接力尾巴', async () => {
     const conv = await conversationStore.create({
-      companionId: COMPANION, textbookId: 'tb_fourier', title: 't'
+      companionId: COMPANION, companionVersion: 1, textbookId: 'tb_fourier', title: 't'
     })
     await conversationStore.endConversation(conv.id)
     await artifactStore.create(conv.id as ConversationId, 'handoff_tail', '傅里叶光学：上次讲到菲涅耳衍射')
@@ -67,7 +68,7 @@ describe('loadHandoffTail — 接力尾巴按教材隔离', () => {
 
   it('换了教材：绝不继承旧教材的接力尾巴（bug 复现场景）', async () => {
     const conv = await conversationStore.create({
-      companionId: COMPANION, textbookId: 'tb_fourier', title: 't'
+      companionId: COMPANION, companionVersion: 1, textbookId: 'tb_fourier', title: 't'
     })
     await conversationStore.endConversation(conv.id)
     await artifactStore.create(conv.id as ConversationId, 'handoff_tail', '傅里叶光学：上次讲到菲涅耳衍射')
@@ -78,7 +79,7 @@ describe('loadHandoffTail — 接力尾巴按教材隔离', () => {
 
   it('无教材课堂只继承无教材的上一课', async () => {
     const conv = await conversationStore.create({
-      companionId: COMPANION, textbookId: 'tb_fourier', title: 't'
+      companionId: COMPANION, companionVersion: 1, textbookId: 'tb_fourier', title: 't'
     })
     await conversationStore.endConversation(conv.id)
     await artifactStore.create(conv.id as ConversationId, 'handoff_tail', '傅里叶光学：上次讲到菲涅耳衍射')

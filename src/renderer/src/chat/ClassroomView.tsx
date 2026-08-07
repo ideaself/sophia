@@ -10,6 +10,7 @@ import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-temp
 import { detectVoiceTrigger, loadVoiceTriggers } from '../../../shared/voice-trigger'
 import { estimateDailyStudyMinutes } from '../../../shared/study-time'
 import { loadThinkingMode, shouldUseThinking } from '../../../shared/thinking'
+import { isKnowledgeQuestion, hasTextbookCitation } from '../../../shared/grounding'
 
 // PDF/EPUB 阅读器体积大（pdfjs 等），打开阅读分栏时才加载
 const EpubReaderView = lazy(() => import('../reader/EpubReaderView').then((m) => ({ default: m.EpubReaderView })))
@@ -87,8 +88,8 @@ const QUICK_ACTIONS: Array<{ label: string; prompt: string; title: string }> = [
   },
   {
     label: '给我提示',
-    prompt: '给我一点提示，但不要直接给答案。',
-    title: '请求一个提示'
+    prompt: '给我一点提示，但不要直接给答案。请用引用块格式回复：> 💡 提示：<提示内容>',
+    title: '请求一个提示（以提示卡片呈现）'
   },
   {
     label: '换种解释',
@@ -117,8 +118,8 @@ const QUICK_ACTIONS: Array<{ label: string; prompt: string; title: string }> = [
   },
   {
     label: '加入复习',
-    prompt: '把刚才讲的核心概念加入我的复习计划。',
-    title: '标记概念进入复习'
+    prompt: '把刚才讲的核心概念加入我的复习计划，用引用块格式列出建议记忆的卡片：> 🧠 建议记忆：<问题> - <答案>，一卡一行。',
+    title: '标记概念进入复习（以记忆卡片呈现）'
   }
 ]
 
@@ -616,6 +617,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         try {
           const conv = await window.sophia.data.createConversation({
             companionId: companion.id,
+            companionVersion: (companion as { version?: number }).version ?? undefined,
             textbookId: textbook?.id,
             title: defaultTitle
           })
@@ -641,6 +643,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           const defaultTitle = `${mm}-${dd} ${companion.name}`
           const conv = await window.sophia.data.createConversation({
             companionId: companion.id,
+            companionVersion: (companion as { version?: number }).version ?? undefined,
             textbookId: textbook?.id,
             title: defaultTitle
           })
@@ -997,6 +1000,21 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     }
     return out
   }, [activeTab.messages, streamingHere, chatStream.state.assistantContent])
+
+  // ---- verify_grounding 轻量校验（里程碑 2）：知识性提问的回复未引用教材出处时提示 ----
+  const groundingFlagged = useMemo(() => {
+    if (!textbook) return new Set<string>()
+    const flagged = new Set<string>()
+    for (let i = 1; i < allMessages.length; i++) {
+      const prev = allMessages[i - 1]
+      const cur = allMessages[i]
+      if (prev.role === 'user' && cur.role === 'assistant' &&
+          isKnowledgeQuestion(prev.content) && !hasTextbookCitation(cur.content)) {
+        flagged.add(cur.id)
+      }
+    }
+    return flagged
+  }, [allMessages, textbook])
 
   // ---- In-conversation search (Ctrl+F) ----
   const searchMatches = useMemo(() => {
@@ -1403,6 +1421,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                         showActions={!chatStream.state.isStreaming && row.msg.role !== 'system'}
                         highlight={row.highlight}
                         textbookId={textbook?.id ?? null}
+                        showGroundingNotice={groundingFlagged.has(row.msg.id)}
                         onRewind={
                           !chatStream.state.isStreaming &&
                           row.msg.role !== 'system' &&

@@ -40,7 +40,7 @@ describe('ConversationStore read-path failure handling', () => {
 
   it('getMessages keeps valid JSONL lines, skips malformed ones, and warns', async () => {
     const store = new ConversationStore(dataRoot)
-    const conv = await store.create({ companionId: 'c1', textbookId: null, title: 't' })
+    const conv = await store.create({ companionId: 'c1', companionVersion: 1, textbookId: null, title: 't' })
     await store.addMessage(conv.id, 'user', 'hello')
     // Corrupt the file: append a broken line after the valid one
     await writeFile(
@@ -58,7 +58,7 @@ describe('ConversationStore read-path failure handling', () => {
 
   it('getMessages warns and returns [] when the legacy JSON-array file is corrupt', async () => {
     const store = new ConversationStore(dataRoot)
-    const conv = await store.create({ companionId: 'c1', textbookId: null, title: 't' })
+    const conv = await store.create({ companionId: 'c1', companionVersion: 1, textbookId: null, title: 't' })
     await writeFile(conversationMessagesPath(dataRoot, conv.id), '[{"role":', 'utf-8')
     const msgs = await store.getMessages(conv.id)
     expect(msgs).toEqual([])
@@ -78,7 +78,7 @@ describe('ConversationStore read-path failure handling', () => {
 
   it('list skips a corrupt conversation but keeps the healthy ones', async () => {
     const store = new ConversationStore(dataRoot)
-    await store.create({ companionId: 'c1', textbookId: null, title: 'healthy' })
+    await store.create({ companionId: 'c1', companionVersion: 1, textbookId: null, title: 'healthy' })
     await mkdir(join(conversationsDir(dataRoot), 'conv_broken'), { recursive: true })
     await writeFile(conversationPath(dataRoot, 'conv_broken'), 'not json', 'utf-8')
     const all = await store.list()
@@ -91,7 +91,7 @@ describe('ConversationStore read-path failure handling', () => {
 describe('ConversationStore truncateAfter', () => {
   it('keeps messages up to and including the target, drops the rest', async () => {
     const store = new ConversationStore(dataRoot)
-    const conv = await store.create({ companionId: 'c1', textbookId: null, title: 't' })
+    const conv = await store.create({ companionId: 'c1', companionVersion: 1, textbookId: null, title: 't' })
     const m1 = await store.addMessage(conv.id, 'user', 'q1')
     const m2 = await store.addMessage(conv.id, 'assistant', 'a1')
     await store.addMessage(conv.id, 'user', 'q2')
@@ -104,7 +104,7 @@ describe('ConversationStore truncateAfter', () => {
 
   it('returns false for a missing message or when nothing would change', async () => {
     const store = new ConversationStore(dataRoot)
-    const conv = await store.create({ companionId: 'c1', textbookId: null, title: 't' })
+    const conv = await store.create({ companionId: 'c1', companionVersion: 1, textbookId: null, title: 't' })
     const m1 = await store.addMessage(conv.id, 'user', 'q1')
     expect(await store.truncateAfter(conv.id, 'missing')).toBe(false)
     expect(await store.truncateAfter(conv.id, m1.id)).toBe(false)
@@ -114,7 +114,7 @@ describe('ConversationStore truncateAfter', () => {
 describe('ConversationStore write path', () => {
   it('create → get round-trips with default fields', async () => {
     const store = new ConversationStore(dataRoot)
-    const conv = await store.create({ companionId: 'comp_a', textbookId: 'tb_1', title: '07-01 测试' })
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: 'tb_1', title: '07-01 测试' })
     expect(conv.id).toBeTruthy()
     expect(conv.endedAt).toBeNull()
     const got = await store.get(conv.id)
@@ -124,7 +124,7 @@ describe('ConversationStore write path', () => {
 
   it('addMessage appends a message', async () => {
     const store = new ConversationStore(dataRoot)
-    const conv = await store.create({ companionId: 'comp_a', textbookId: null, title: 't' })
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
     const msg = await store.addMessage(conv.id, 'user', '你好')
     expect(msg.role).toBe('user')
     expect(msg.content).toBe('你好')
@@ -135,14 +135,14 @@ describe('ConversationStore write path', () => {
 
   it('endConversation sets endedAt', async () => {
     const store = new ConversationStore(dataRoot)
-    const conv = await store.create({ companionId: 'comp_a', textbookId: null, title: 't' })
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
     expect(await store.endConversation(conv.id)).toBe(true)
     expect((await store.get(conv.id))?.endedAt).toBeTruthy()
   })
 
   it('updateTitle / updateMessage / deleteMessage / delete', async () => {
     const store = new ConversationStore(dataRoot)
-    const conv = await store.create({ companionId: 'comp_a', textbookId: null, title: '旧标题' })
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: '旧标题' })
     const msg = await store.addMessage(conv.id, 'assistant', '旧内容')
 
     await store.updateTitle(conv.id, '新标题')
@@ -160,8 +160,8 @@ describe('ConversationStore write path', () => {
 
   it('list returns both conversations', async () => {
     const store = new ConversationStore(dataRoot)
-    const a = await store.create({ companionId: 'comp_a', textbookId: null, title: 'a' })
-    const b = await store.create({ companionId: 'comp_a', textbookId: null, title: 'b' })
+    const a = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 'a' })
+    const b = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 'b' })
     await store.addMessage(a.id, 'user', 'x')
     const list = await store.list()
     expect(list.map((c) => c.id).sort()).toEqual([a.id, b.id].sort())

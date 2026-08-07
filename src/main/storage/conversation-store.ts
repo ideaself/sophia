@@ -18,6 +18,8 @@ const MessageRoleSchema = z.enum(['user', 'assistant', 'system'])
 
 export interface CreateConversationInput {
   companionId: string
+  /** 创建会话时的人格版本快照（里程碑 2），缺失时 null。 */
+  companionVersion: number | null
   textbookId: string | null
   title: string
 }
@@ -354,6 +356,7 @@ function buildConversation(
     id,
     
     companionId: input.companionId,
+    companionVersion: input.companionVersion ?? null,
     textbookId: input.textbookId,
     title: input.title,
     createdAt: now,

@@ -39,7 +39,14 @@ export function CompanionsManageView({ onStartConversation }: CompanionsManageVi
               }}
               className="w-full text-left"
             >
-              <h3 className="text-lg font-semibold">{c.name}</h3>
+              <h3 className="text-lg font-semibold">
+                {c.name}
+                {(c as { version?: number }).version != null && (
+                  <span className="ml-2 align-middle rounded-full border border-surface-border-strong bg-bg-elevated px-1.5 py-0.5 text-[10px] font-normal text-text-muted">
+                    v{(c as { version?: number }).version}
+                  </span>
+                )}
+              </h3>
               <p className="mt-1 text-sm text-text-muted">{c.identity}</p>
               <div className="mt-3 flex flex-wrap gap-1">
                 {c.personalityKeywords.map((kw) => (

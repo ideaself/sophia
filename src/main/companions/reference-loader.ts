@@ -69,6 +69,7 @@ function parseCompanionMarkdown(content: string, id: CompanionId, originalFile: 
   return {
     id,
     source: CompanionSource.Candidate,
+    version: 1,
     name,
     gender,
     age,
