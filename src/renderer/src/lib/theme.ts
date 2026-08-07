@@ -2,7 +2,7 @@ import { THEMES } from '../types/models'
 
 export function getStoredTheme(): string {
   const saved = localStorage.getItem('sophia-theme')
-  return saved && THEMES.some((t) => t.id === saved) ? saved : 'dark'
+  return saved && THEMES.some((t) => t.id === saved) ? saved : 'auto'
 }
 
 /**
