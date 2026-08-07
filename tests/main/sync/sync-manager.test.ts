@@ -89,12 +89,29 @@ class FakeClient {
     throw new Error(`no such remote file: ${path}`)
   }
   async moveFile(path: string, target: string): Promise<void> {
-    const f = this.remote.get(path)
-    if (!f) throw new Error(`no such remote file: ${path}`)
-    this.remote.delete(path)
-    this.ensureParentDirs(target)
-    this.remote.set(target, f)
+    const keys = [...this.remote.keys()]
+    const children = keys.filter((k) => k === path || k.startsWith(path + '/'))
+    const wasDir = this.dirs.has(path)
+    if (children.length === 0 && !wasDir) throw new Error(`no such remote file: ${path}`)
+    const entries = children.map((k) => [k, this.remote.get(k)!] as const)
+    for (const [k, f] of entries) {
+      this.remote.delete(k)
+      this.remote.set(target + k.slice(path.length), f)
+    }
+    for (const d of [...this.dirs]) {
+      if (d === path || d.startsWith(path + '/')) {
+        this.dirs.delete(d)
+        this.dirs.add(target + d.slice(path.length))
+      }
+    }
     this.moves.push({ path, target })
+  }
+  async remoteExists(dir: string): Promise<boolean> {
+    if (this.dirs.has(dir)) return true
+    for (const key of this.remote.keys()) {
+      if (key.startsWith(dir + '/')) return true
+    }
+    return false
   }
   async listAllFilesDetailed(dir: string): Promise<WebDavRemoteFile[]> {
     return [...this.remote.entries()]
@@ -775,3 +792,48 @@ async function walkLocal(dir: string): Promise<string[]> {
   }
   return out
 }
+
+
+describe('远程前缀品牌迁移（/sophia → /sophia）', () => {
+  it('push 时检测到旧前缀目录且新前缀不存在 → MOVE 整棵远程目录树', async () => {
+    const fake = new FakeClient()
+    fake.setRemote('/sophia/conversations/a.md', 'hello', 'mod-1')
+    const manager = makeManager(dataRoot, fake)
+    const result = await manager.push(CONFIG)
+    expect(result.success).toBe(true)
+    const move = fake.moves.find((m) => m.path === '/sophia')
+    expect(move?.target).toBe('/sophia')
+    // push 会按同步语义把本地不存在的远程文件送进回收站，
+    // 这里只验证迁移动作本身发生了
+    expect(fake.moves.some((m) => m.path === '/sophia' && m.target === '/sophia')).toBe(true)
+  })
+
+  it('pull 时迁移旧前缀并保留远程文件', async () => {
+    const fake = new FakeClient()
+    fake.setRemote('/sophia/conversations/a.md', 'hello', 'mod-1')
+    const manager = makeManager(dataRoot, fake)
+    const result = await manager.pull(CONFIG)
+    expect(result.success).toBe(true)
+    expect(fake.moves.some((m) => m.path === '/sophia' && m.target === '/sophia')).toBe(true)
+    expect(fake.hasRemote('/sophia/conversations/a.md')).toBe(true)
+  })
+
+  it('pull 时新前缀已存在则不迁移', async () => {
+    const fake = new FakeClient()
+    fake.setRemote('/sophia/config/providers.json', '{}')
+    const manager = makeManager(dataRoot, fake)
+    const result = await manager.pull(CONFIG)
+    expect(result.success).toBe(true)
+    expect(fake.moves.some((m) => m.path === '/sophia')).toBe(false)
+  })
+
+  it('新旧前缀都不存在时正常同步（全新安装）', async () => {
+    const fake = new FakeClient()
+    await touch('conversations/a.md', 'hello')
+    const manager = makeManager(dataRoot, fake)
+    const result = await manager.push(CONFIG)
+    expect(result.success).toBe(true)
+    expect(fake.moves.some((m) => m.path === '/sophia')).toBe(false)
+    expect(fake.uploads.some((u) => u.path.startsWith('/sophia/'))).toBe(true)
+  })
+})

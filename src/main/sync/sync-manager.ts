@@ -12,6 +12,8 @@ import {
 } from './sync-state'
 
 const REMOTE_PREFIX = '/sophia'
+/** 品牌迁移前的远程目录前缀（WebDAV 已同步数据的旧位置）。 */
+const REMOTE_LEGACY_PREFIX = '/sophia'
 const REMOTE_TRASH = `${REMOTE_PREFIX}/.trash`
 /** Keep this many trash batches on the server before pruning the oldest. */
 const MAX_TRASH_BATCHES = 3
@@ -116,6 +118,26 @@ export class SyncManager {
   async test(config: WebDavConfig): Promise<{ success: boolean; message?: string }> {
     const client = this.createClient(config)
     return client.test()
+  }
+
+  /**
+   * 品牌迁移：远程目录前缀 /sophia → /sophia。检测旧前缀目录存在且
+   * 新前缀不存在时，用 MOVE 迁移整棵远程目录树（保留已同步数据）。
+   * 失败时静默（下次同步自动重试），不阻断同步。
+   */
+  private async migrateRemotePrefixIfNeeded(client: SyncWebDavClient): Promise<void> {
+    try {
+      const [oldExists, newExists] = await Promise.all([
+        client.remoteExists(REMOTE_LEGACY_PREFIX),
+        client.remoteExists(REMOTE_PREFIX)
+      ])
+      if (oldExists && !newExists) {
+        await client.moveFile(REMOTE_LEGACY_PREFIX, REMOTE_PREFIX)
+        console.log('[sync] 已迁移远程前缀 /sophia → /sophia')
+      }
+    } catch (err) {
+      console.warn('[sync] 远程前缀迁移失败（下次同步重试）：', err instanceof Error ? err.message : err)
+    }
   }
 
   private async statLocal(relPath: string): Promise<LocalFileStat | null> {
@@ -404,6 +426,7 @@ export class SyncManager {
   async push(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
     await this.backupBeforeSync()
     const client = this.createClient(config)
+    await this.migrateRemotePrefixIfNeeded(client)
     const plan = await this.buildPushPlan(client)
     const errors: string[] = []
     let transferred = 0
@@ -480,6 +503,7 @@ export class SyncManager {
   async pull(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
     await this.backupBeforeSync()
     const client = this.createClient(config)
+    await this.migrateRemotePrefixIfNeeded(client)
     const plan = await this.buildPullPlan(client)
     const errors: string[] = plan.unsafePaths.map((p) => `${p}: unsafe remote path, skipped`)
     let transferred = 0
