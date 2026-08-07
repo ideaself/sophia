@@ -10,6 +10,8 @@ import { DiaryStore } from '../storage/diary-store'
 import type { ProviderStore } from '../storage/provider-store'
 import { generateArtifacts } from '../artifacts/generate'
 import { restoreFromBackup } from '../backup/restore'
+import { ConceptStore } from '../learning-memory/concept-store'
+import { extractConceptUpdates } from '../learning-memory/concept-extractor'
 import { parseFlashcards, rebuildArtifactContent } from '../../shared/flashcard-utils'
 import { extractText, getEpubChapters, epubChaptersToText } from '../parsers'
 import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
@@ -103,6 +105,7 @@ export function registerConversationIpc(
   const artifactStore = new ArtifactStore(dataRoot)
   const readingNoteStore = new ReadingNoteStore(dataRoot)
   const diaryStore = new DiaryStore(dataRoot)
+  const conceptStore = new ConceptStore(dataRoot)
   const pickedFiles = new PickedFileRegistry()
 
   // Sequential background queue for end-of-class artifact generation, so
@@ -241,10 +244,65 @@ export function registerConversationIpc(
 
   // --- Messages ---
 
+  // 概念增量识别（Kimi 方案）：assistant 消息落地后异步分析最近一轮问答，
+  // 更新概念掌握度。带每会话防抖（流式重试等场景不重复触发）。
+  const lastConceptUpdateAt = new Map<string, number>()
+  const CONCEPT_UPDATE_DEBOUNCE_MS = 15_000
+
+  function scheduleConceptUpdate(conversationId: string): void {
+    const now = Date.now()
+    const last = lastConceptUpdateAt.get(conversationId) ?? 0
+    if (now - last < CONCEPT_UPDATE_DEBOUNCE_MS) return
+    lastConceptUpdateAt.set(conversationId, now)
+
+    void (async () => {
+      try {
+        const msgs = await conversationStore.getMessages(conversationId)
+        const recent = msgs.slice(-4)
+        const lastUser = [...recent].reverse().find((m) => m.role === 'user')
+        const lastAssistant = [...recent].reverse().find((m) => m.role === 'assistant')
+        if (!lastUser || !lastAssistant) return
+
+        const conv = await conversationStore.get(conversationId)
+        const transcript = `${lastUser.role === 'user' ? '学习者' : '导师'}: ${lastUser.content}\n\n${lastAssistant.role === 'user' ? '学习者' : '导师'}: ${lastAssistant.content}`
+
+        const active = providerStore ? await providerStore.getActive() : null
+        if (!active) return
+        const apiKey = await providerStore!.readApiKey(active.id)
+        if (!apiKey) return
+
+        const updates = await extractConceptUpdates(transcript, {
+          apiKey,
+          baseUrl: active.baseUrl || 'https://api.deepseek.com',
+          model: active.selectedModel || 'deepseek-v4-flash'
+        })
+        if (!updates || updates.length === 0) return
+
+        await conceptStore.applyEvidence({
+          conversationId,
+          textbookId: conv?.textbookId ?? null,
+          messageIds: [lastUser.id, lastAssistant.id],
+          updates
+        })
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('concepts:updated', { conversationId })
+        }
+      } catch (err) {
+        console.warn('[concepts] 概念更新失败（非致命）：', err instanceof Error ? err.message : err)
+      }
+    })()
+  }
+
+  ipcMain.handle('concepts:list', async (_event, input: unknown) => {
+    const conversationId = typeof input === 'string' ? input : ''
+    return conversationId ? conceptStore.listByConversation(conversationId) : conceptStore.load()
+  })
+
   ipcMain.handle('message:send', async (_event, input: unknown) => {
     const parsed = IpcSendMessageInputSchema.parse(input)
     const role = parsed.role ?? 'user'
     const msg = await conversationStore.addMessage(parsed.conversationId, role, parsed.content)
+    if (role === 'assistant') scheduleConceptUpdate(parsed.conversationId)
     return msg
   })
 

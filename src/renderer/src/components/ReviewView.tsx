@@ -21,7 +21,7 @@ interface ArtifactDTO {
   createdAt: string
 }
 
-type ReviewTab = 'summary' | 'selftest' | 'flashcards' | 'diary' | 'progress' | 'feynman' | 'knowledge'
+type ReviewTab = 'summary' | 'selftest' | 'flashcards' | 'diary' | 'progress' | 'feynman' | 'knowledge' | 'concepts'
 
 /** 逐级揭晓自测题（提示1 → 提示2 → 答案）。 */
 function SelfTestBlock({ questions }: { questions: SelfTestQuestion[] }): React.ReactElement {
@@ -98,6 +98,7 @@ export function ReviewView(): React.ReactElement {
   const [tab, setTab] = useState<ReviewTab>('summary')
   const [messages, setMessages] = useState<MessageDTO[]>([])
   const [artifacts, setArtifacts] = useState<ArtifactDTO[]>([])
+  const [concepts, setConcepts] = useState<ConceptStateDTO[]>([])
   const [companionName, setCompanionName] = useState('')
   const [textbookTitle, setTextbookTitle] = useState('')
   const [loading, setLoading] = useState(true)
@@ -111,6 +112,8 @@ export function ReviewView(): React.ReactElement {
         window.sophia.data.listMessages(scope.conversationId).catch(() => [] as MessageDTO[]),
         window.sophia.data.listArtifacts(scope.conversationId).catch(() => [] as ArtifactDTO[])
       ])
+      const cps = await window.sophia.data.listConcepts(scope.conversationId).catch(() => [] as ConceptStateDTO[])
+      setConcepts(cps)
       if (conv) {
         const comp = conv.companionId ? await window.sophia.companions.get(conv.companionId).catch(() => null) : null
         setCompanionName(comp?.name ?? conv.companionId)
@@ -130,6 +133,15 @@ export function ReviewView(): React.ReactElement {
     load()
   }, [load])
 
+  // 课堂对话中概念掌握度增量更新 → 实时刷新本 tab
+  useEffect(() => {
+    return window.sophia.data.onConceptsUpdated(({ conversationId }) => {
+      if (conversationId === scope?.conversationId) {
+        void window.sophia.data.listConcepts(conversationId).then(setConcepts).catch(() => {})
+      }
+    })
+  }, [scope?.conversationId])
+
   if (!scope) {
     return (
       <div className="flex h-full items-center justify-center text-text-muted">
@@ -148,6 +160,7 @@ export function ReviewView(): React.ReactElement {
     { key: 'diary', label: '学习日记', show: !!art('diary') },
     { key: 'progress', label: '学习进展', show: !!art('progress') },
     { key: 'knowledge', label: '🧠 知识点图谱', show: !!art('knowledge_graph') },
+    { key: 'concepts', label: '📊 概念掌握', show: concepts.length > 0 },
     { key: 'feynman', label: '费曼知识蛋', show: !!art('feynman_note') }
   ]
   const visibleTabs = TABS.filter((t) => t.show)
@@ -263,6 +276,8 @@ export function ReviewView(): React.ReactElement {
               <MarkdownRenderer>{art('knowledge_graph') ?? ''}</MarkdownRenderer>
             </Suspense>
           </div>
+        ) : currentKey === 'concepts' ? (
+          <ConceptStateList concepts={concepts} />
         ) : (
           <div className="markdown-body max-w-3xl">
             <Suspense fallback={null}>
@@ -271,6 +286,55 @@ export function ReviewView(): React.ReactElement {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** 概念掌握度四档标签与颜色。 */
+function masteryLevel(m: number): { label: string; bar: string; text: string } {
+  if (m >= 0.75) return { label: '掌握', bar: 'bg-green-500', text: 'text-green-600' }
+  if (m >= 0.5) return { label: '理解', bar: 'bg-accent', text: 'text-accent' }
+  if (m >= 0.25) return { label: '薄弱', bar: 'bg-amber-500', text: 'text-amber-700' }
+  return { label: '未接触', bar: 'bg-bg-elevated', text: 'text-text-muted' }
+}
+
+/** 复盘页「概念掌握」：本课涉及概念的增量识别结果与累计掌握度。 */
+function ConceptStateList({ concepts }: { concepts: ConceptStateDTO[] }): React.ReactElement {
+  if (concepts.length === 0) {
+    return (
+      <div className="max-w-3xl rounded-xl border border-surface-border bg-bg-surface p-6 text-center text-sm text-text-muted">
+        本课尚未积累概念状态。课堂对话会实时识别涉及的概念与掌握表现。
+      </div>
+    )
+  }
+  const sorted = [...concepts].sort((a, b) => b.mastery - a.mastery)
+  return (
+    <div className="max-w-3xl space-y-3">
+      {sorted.map((c) => {
+        const level = masteryLevel(c.mastery)
+        return (
+          <div key={c.id} className="rounded-xl border border-surface-border bg-bg-surface p-4">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium text-text-primary">{c.name}</span>
+              <span className={`flex-shrink-0 rounded-full bg-bg-elevated px-2 py-0.5 text-[10px] font-medium ${level.text}`}>
+                {level.label} · {Math.round(c.mastery * 100)}%
+              </span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-bg-elevated">
+              <div className={`h-full rounded-full ${level.bar}`} style={{ width: `${Math.max(4, c.mastery * 100)}%` }} />
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-muted">
+              <span>尝试 {c.attemptCount} 次 · 答对 {c.correctCount} 次</span>
+              <span>最近接触 {new Date(c.lastSeenAt).toLocaleString()}</span>
+            </div>
+            {c.misconception && (
+              <p className="mt-2 rounded-lg border border-amber-700/40 bg-amber-900/15 px-3 py-2 text-xs leading-relaxed text-text-secondary">
+                ⚠️ 误解点：{c.misconception}
+              </p>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

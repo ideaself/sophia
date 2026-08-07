@@ -39,8 +39,6 @@ const CORRECT_ALPHA = 0.2
 const PARTIAL_ALPHA = 0.1
 const INCORRECT_PENALTY = 0.25
 const INITIAL_MASTERY = 0.5
-/** 陈旧概念的掌握度会缓慢衰减（长期不接触）。 */
-const DECAY_RATE = 0.02
 
 /** 概念 id 由名称稳定生成（同名概念跨会话合并）。 */
 function conceptId(name: string): string {
@@ -109,7 +107,9 @@ export class ConceptStore {
         states.push(s)
       }
 
-      s.attemptCount += 1
+      if (u.performance !== 'unclear') {
+        s.attemptCount += 1
+      }
       s.lastSeenAt = now
       s.updatedAt = now
       s.evidenceConversationId = evidence.conversationId
@@ -130,8 +130,7 @@ export class ConceptStore {
           if (u.misconception) s.misconception = u.misconception
           break
         case 'unclear':
-          // 学习者提出但尚未作答的问题：轻微衰减，不做结论
-          s.mastery = Math.max(0.05, s.mastery - DECAY_RATE)
+          // 学习者提出但尚未作答的问题：仅标记接触，不改变掌握度
           break
       }
     }

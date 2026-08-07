@@ -107,6 +107,20 @@ declare global {
     error?: string
   }
 
+  interface ConceptStateDTO {
+    id: string
+    name: string
+    textbookId: string | null
+    mastery: number
+    misconception: string | null
+    attemptCount: number
+    correctCount: number
+    lastSeenAt: string
+    updatedAt: string
+    evidenceConversationId: string
+    evidenceMessageIds: string[]
+  }
+
   interface SearchResultDTO {
     conversationId: string
     message: MessageDTO
@@ -158,6 +172,8 @@ declare global {
     endConversation: (conversationId: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
     redoArtifacts: (conversationId: string, types: string[]) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
     onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void
+    listConcepts: (conversationId: string) => Promise<ConceptStateDTO[]>
+    onConceptsUpdated: (callback: (payload: { conversationId: string }) => void) => () => void
     createTextbook: (input: {
       title: string
       format: 'markdown' | 'text' | 'pdf' | 'epub'

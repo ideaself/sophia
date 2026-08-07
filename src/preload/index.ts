@@ -29,6 +29,20 @@ export interface ArtifactsGeneratedPayload {
   error?: string
 }
 
+export interface ConceptStateDTO {
+  id: string
+  name: string
+  textbookId: string | null
+  mastery: number
+  misconception: string | null
+  attemptCount: number
+  correctCount: number
+  lastSeenAt: string
+  updatedAt: string
+  evidenceConversationId: string
+  evidenceMessageIds: string[]
+}
+
 // ---------------------------------------------------------------
 // Domain types (lightweight — full types come from shared/schemas)
 // ---------------------------------------------------------------
@@ -161,6 +175,8 @@ export interface DataAPI {
     endConversation: (conversationId: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
     redoArtifacts: (conversationId: string, types: string[]) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
     onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void
+    listConcepts: (conversationId: string) => Promise<ConceptStateDTO[]>
+    onConceptsUpdated: (callback: (payload: { conversationId: string }) => void) => () => void
   createTextbook: (input: {
     title: string
     format: 'markdown' | 'text' | 'pdf' | 'epub'
@@ -532,6 +548,10 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('conversation:redo-artifacts', { conversationId, types }),
     onArtifactsGenerated: (callback) =>
       createSimpleSubscriber<ArtifactsGeneratedPayload>(ARTIFACTS_GENERATED, callback),
+    listConcepts: (conversationId) =>
+      ipcRenderer.invoke('concepts:list', conversationId),
+    onConceptsUpdated: (callback) =>
+      createSimpleSubscriber<{ conversationId: string }>('concepts:updated', callback),
     createTextbook: (input) =>
       ipcRenderer.invoke('textbook:create', input),
     getTextbook: (textbookId) =>
