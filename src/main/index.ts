@@ -15,6 +15,7 @@ import { initDataDir } from './storage/initialize'
 import { resolveReferencePaths } from './storage/resolve-paths'
 import { createDeepSeekStreamAdapter } from './llm/deepseek-stream-adapter'
 import { maybeAutoBackup } from './backup/auto-backup'
+import { migrateLegacyUserData } from './storage/migrate-user-data'
 
 function makeIcon(size: number): Electron.NativeImage {
   const buf = Buffer.alloc(size * size * 4)
@@ -146,7 +147,7 @@ function createWindow(): void {
 function setupTray(mainWindow: BrowserWindow): void {
   try {
     const tray = new Tray(loadTrayIcon())
-    tray.setToolTip('SophiaLocal')
+    tray.setToolTip('Sophia')
 
     const contextMenu = Menu.buildFromTemplate([
       {
@@ -267,7 +268,24 @@ if (!app.requestSingleInstanceLock()) {
       })
     })
 
-    const dataRoot = join(app.getPath('userData'), 'SophiaLocal')
+    // 品牌迁移：sophia → sophia。Electron 的 userData 路径随
+    // app name 变化，把旧用户目录整体搬到新位置（数据/窗口状态/备份一次
+    // 搬完）。迁移失败时回退继续使用旧目录，数据始终不丢。
+    try {
+      const migrate = await migrateLegacyUserData(
+        app.getPath('appData'),
+        app.getPath('userData')
+      )
+      if (migrate.migrated) {
+        console.log('[migrate] 已迁移旧用户数据目录')
+      } else if (migrate.reason) {
+        console.warn('[migrate] 未迁移：', migrate.reason)
+      }
+    } catch (err) {
+      console.warn('[migrate] 迁移检查失败：', err)
+    }
+
+    const dataRoot = join(app.getPath('userData'), 'Sophia')
     const { candidatesDir, worldPresetPath } = resolveReferencePaths(app.getAppPath())
 
     // Initialize local data layout (idempotent — safe to call on every start)

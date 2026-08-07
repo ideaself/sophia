@@ -14,7 +14,7 @@ const AUTO_BACKUP_KEEP = 5
 
 /** Backups live OUTSIDE dataRoot so the zip never contains itself. */
 export function backupsDir(dataRoot: string): string {
-  return join(dataRoot, '..', 'SophiaLocal-backups')
+  return join(dataRoot, '..', 'Sophia-backups')
 }
 
 export async function maybeAutoBackup(dataRoot: string): Promise<void> {

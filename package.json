@@ -1,12 +1,12 @@
 {
   "name": "sophia",
   "version": "0.1.0",
-  "description": "SophiaLocal: AI Socratic learning companion",
+  "description": "Sophia: 苏格拉底式启发学习伙伴（本地优先）",
   "author": "Sophia",
   "main": "./out/main/index.js",
   "build": {
-    "appId": "com.sophia.sophialocal",
-    "productName": "SophiaLocal",
+    "appId": "com.sophia.app",
+    "productName": "Sophia",
     "directories": {
       "output": "release"
     },
@@ -29,7 +29,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "SophiaLocal"
+      "shortcutName": "Sophia"
     }
   },
   "scripts": {

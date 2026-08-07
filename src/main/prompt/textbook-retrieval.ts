@@ -1,7 +1,7 @@
 /**
  * Deterministic cross-chapter textbook retrieval.
  *
- * Inspired by Sophia 4.0.0's "whole-book teaching": when a concept spans
+ * Inspired by whole-book teaching's "whole-book teaching": when a concept spans
  * chapters, echoes an earlier idea, or calls for checking previous material,
  * the companion should be able to draw on relevant passages from anywhere in
  * the textbook — not just the current reading window.

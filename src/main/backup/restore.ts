@@ -27,7 +27,7 @@ export async function restoreFromBackup(dataRoot: string, zipPath: string): Prom
   const parent = join(dataRoot, '..')
 
   // 1. Snapshot current data before touching anything
-  const preRestore = join(parent, `SophiaLocal-pre-restore-${stamp}.zip`)
+  const preRestore = join(parent, `Sophia-pre-restore-${stamp}.zip`)
   await createBackupZip(dataRoot, preRestore)
 
   // 2. Extract into a temp dir
@@ -44,7 +44,7 @@ export async function restoreFromBackup(dataRoot: string, zipPath: string): Prom
     }
 
     // 4. Swap dataRoot ↔ temp (atomic-ish: rename is same-volume)
-    const oldData = join(parent, `SophiaLocal-data-${stamp}`)
+    const oldData = join(parent, `Sophia-data-${stamp}`)
     await rename(dataRoot, oldData)
     try {
       await rename(tmp, dataRoot)

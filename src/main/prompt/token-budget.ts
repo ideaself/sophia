@@ -4,8 +4,8 @@
  * Provides rough token estimation based on CJK/non-CJK character proportions,
  * content truncation with markers, and conversation history windowing.
  *
- * The token estimation formula mirrors Sophia v2.1.1's approach
- * (reference/prompt-结构/tool-definitions.md):
+ * The token estimation formula mirrors an earlier Socratic prompt design's approach
+ * (kept in sync with the prompt tool definitions):
  *   - CJK characters = 1 token each
  *   - Non-CJK characters ≈ 0.25 tokens each (4 chars ≈ 1 token)
  *

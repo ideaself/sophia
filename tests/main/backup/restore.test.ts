@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -12,7 +12,7 @@ const tempBase = join(tmpdir(), TEST_ID)
 let dataRoot: string
 
 beforeEach(async () => {
-  dataRoot = join(tempBase, 'SophiaLocal')
+  dataRoot = join(tempBase, 'Sophia')
   await mkdir(join(dataRoot, 'config'), { recursive: true })
   await mkdir(join(dataRoot, 'profiles', 'profile_default'), { recursive: true })
   await writeFile(join(dataRoot, 'config', 'providers.json'), JSON.stringify({ current: 'A' }))

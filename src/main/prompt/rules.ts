@@ -1,7 +1,7 @@
 /**
  * Static prompt rule fragments for the Socratic teaching system.
  *
- * Content sourced from reference/prompt-结构/ documentation.
+ * Original Socratic teaching rules, refined for this project.
  * All functions are pure — no fs/electron imports.
  */
 

@@ -13,7 +13,7 @@ let backupRoot: string
 
 beforeEach(async () => {
   dataRoot = join(tempBase, 'data')
-  backupRoot = join(tempBase, 'SophiaLocal-backups')
+  backupRoot = join(tempBase, 'Sophia-backups')
   await mkdir(dataRoot, { recursive: true })
   await writeFile(join(dataRoot, 'hello.txt'), 'hello')
 })

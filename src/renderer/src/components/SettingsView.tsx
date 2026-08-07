@@ -506,7 +506,7 @@ export function SettingsView(): React.ReactElement {
             将全部学习数据（对话、产物、教材、闪卡复习状态等）打包为一个 zip 文件，用于本地备份。
           </p>
           <p className="mt-2 text-xs text-text-muted">
-            应用每次启动时会自动检查备份：每 7 天自动备份一次，保留最近 5 份（位于用户数据目录的 SophiaLocal-backups 文件夹）。
+            应用每次启动时会自动检查备份：每 7 天自动备份一次，保留最近 5 份（位于用户数据目录的 Sophia-backups 文件夹）。
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button

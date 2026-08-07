@@ -151,6 +151,7 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
     }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 每次渲染同步最新 handleRate 到 ref（键盘连答需要最新闭包）
   useEffect(() => {
     handleRateRef.current = handleRate
   }, [handleRate])
