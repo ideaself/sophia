@@ -14,6 +14,7 @@ import { ConceptStore } from '../learning-memory/concept-store'
 import { extractConceptUpdates } from '../learning-memory/concept-extractor'
 import { parseFlashcards, rebuildArtifactContent } from '../../shared/flashcard-utils'
 import { estimateDailyStudyMinutes } from '../../shared/study-time'
+import { countDueFlashcards } from '../stats/due-flashcards'
 import { extractText, getEpubChapters, epubChaptersToText } from '../parsers'
 import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
 import { DeepSeekClient } from '../llm/deepseek-client'
@@ -812,6 +813,38 @@ export function registerConversationIpc(
     await mkdir(dataRoot, { recursive: true })
     await atomicWriteFile(favoritesPath, JSON.stringify(parsed), 'utf-8')
     return { success: true }
+  })
+
+  // Aggregated due-card count for the nav badge. The renderer used to pull
+  // every artifact of every ended conversation over IPC just to count; this
+  // returns one number instead.
+  ipcMain.handle('stats:due-flashcards', async () => {
+    try {
+      const conversations = await conversationStore.list()
+      const artifacts: Array<{ id: string; type: string; content: string }> = []
+      for (const conv of conversations) {
+        if (!conv.endedAt) continue
+        try {
+          const list = await artifactStore.list(conv.id)
+          for (const a of list) {
+            if (a.type === 'flashcards') {
+              artifacts.push({ id: a.id, type: a.type, content: a.content })
+            }
+          }
+        } catch {
+          // One unreadable conversation must not zero the whole result.
+        }
+      }
+      let states: Record<string, { nextReview?: number }> = {}
+      try {
+        states = JSON.parse(await readFile(srsStatePath, 'utf-8'))
+      } catch {
+        // No SRS state yet — every card counts as new/due.
+      }
+      return countDueFlashcards(artifacts, states, Date.now())
+    } catch {
+      return { due: 0, total: 0 }
+    }
   })
 
   // Batch-delete specific cards across flashcards artifacts (2.0.0).

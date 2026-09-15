@@ -407,9 +407,9 @@ export function HistoryView(): React.ReactElement {
                 <button onClick={() => { setSearchResults(null); setSearchQuery('') }} className="text-xs text-text-muted hover:text-text-secondary">清除</button>
               </div>
               {searchResults.results.length === 0 && <p className="px-2 py-2 text-xs text-text-muted">无匹配结果</p>}
-              {searchResults.results.map((r, i) => (
+              {searchResults.results.map((r) => (
                 <button
-                  key={i}
+                  key={r.message.id}
                   onClick={() => { setSearchResults(null); setSearchQuery(''); void selectConversation(r.conversationId) }}
                   className="block w-full truncate rounded px-2 py-1.5 text-left text-xs text-text-secondary hover:bg-bg-elevated"
                   title={r.message.content}

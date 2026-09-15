@@ -178,6 +178,8 @@ export interface DataAPI {
   searchMessages: (query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
   /** Aggregated in the main process: avoids shipping every message over IPC. */
   todayStudyMinutes: () => Promise<number>
+  /** Aggregated in the main process: avoids shipping every artifact over IPC. */
+  dueFlashcardCount: () => Promise<{ due: number; total: number }>
     endConversation: (conversationId: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
     redoArtifacts: (conversationId: string, types: string[]) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
     onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void
@@ -551,6 +553,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('message:search', { query, limit, offset }),
     todayStudyMinutes: () =>
       ipcRenderer.invoke('stats:today-study-minutes'),
+    dueFlashcardCount: () =>
+      ipcRenderer.invoke('stats:due-flashcards'),
     endConversation: (conversationId, classMode) =>
       ipcRenderer.invoke('conversation:end', { conversationId, classMode }),
     redoArtifacts: (conversationId, types) =>

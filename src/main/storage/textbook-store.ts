@@ -1,4 +1,5 @@
 import { mkdir, readFile, access, readdir, rm, copyFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { Textbook } from '../../shared/schemas/textbook'
@@ -41,10 +42,9 @@ function sanitizeFileName(name: string): string {
 
 function computeFileHash(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const fs = require('node:fs')
     const hash = createHash('md5')
-    const stream = fs.createReadStream(filePath)
-    stream.on('data', (chunk: Buffer) => hash.update(chunk))
+    const stream = createReadStream(filePath)
+    stream.on('data', (chunk) => hash.update(chunk))
     stream.on('end', () => resolve(hash.digest('hex')))
     stream.on('error', reject)
   })

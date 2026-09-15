@@ -41,6 +41,7 @@
     "src/shared/concept-mastery.ts",
     "src/shared/next-steps.ts",
     "src/shared/lesson-media.ts",
+    "src/shared/frame-coalescer.ts",
     "src/shared/types/ids.ts"
   ]
 }

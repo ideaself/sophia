@@ -199,28 +199,45 @@ export async function loadAllFlashcards(): Promise<Flashcard[]> {
 }
 
 /**
- * Number of flashcards due for review right now. Refreshes on mount, on
- * window focus, and every minute so the nav badge stays truthful.
+ * Number of flashcards due for review right now, for the nav badge.
+ *
+ * Counting happens in the main process (single IPC returning one number);
+ * this hook only refreshes it on mount, on window focus (debounced), and
+ * every minute — skipping hidden windows entirely.
  */
 export function useDueFlashcardCount(): number {
   const [count, setCount] = useState(0)
 
   const refresh = useCallback(async () => {
+    // No point scanning while the window is in the background.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
     try {
-      const [cards, states] = await Promise.all([loadAllFlashcards(), loadAllSrs()])
-      const now = Date.now()
-      setCount(cards.filter((c) => isDue(states[c.id], now)).length)
+      const { due } = await window.sophia.data.dueFlashcardCount()
+      setCount(due)
     } catch {
       // keep the previous value on failure
     }
   }, [])
 
   useEffect(() => {
-    refresh()
-    window.addEventListener('focus', refresh)
-    const timer = setInterval(refresh, 60_000)
+    void refresh()
+
+    let focusTimer: ReturnType<typeof setTimeout> | null = null
+    const onFocus = (): void => {
+      if (focusTimer) clearTimeout(focusTimer)
+      focusTimer = setTimeout(() => {
+        focusTimer = null
+        void refresh()
+      }, 800)
+    }
+
+    window.addEventListener('focus', onFocus)
+    const timer = setInterval(() => {
+      void refresh()
+    }, 60_000)
     return () => {
-      window.removeEventListener('focus', refresh)
+      if (focusTimer) clearTimeout(focusTimer)
+      window.removeEventListener('focus', onFocus)
       clearInterval(timer)
     }
   }, [refresh])

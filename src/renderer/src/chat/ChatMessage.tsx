@@ -76,11 +76,23 @@ function EventCardBlock({ card }: { card: EventCard }): React.ReactElement {
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [])
+
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null
+        setCopied(false)
+      }, 1500)
     } catch { /* ignore */ }
   }, [text])
   return (

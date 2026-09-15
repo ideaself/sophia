@@ -1078,7 +1078,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 200,
     overscan: 10,
-    getItemKey: (index) => rows[index].key
+    getItemKey: (index) => rows[index]?.key ?? index
   })
 
   // 当前虚拟化总高度（估计 + 已测量）。行高测量更新时该值变化，

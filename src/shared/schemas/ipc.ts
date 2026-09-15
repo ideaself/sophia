@@ -267,7 +267,15 @@ export const IpcListReadingNotesInputSchema = z.object({
 export const IpcUpdateReadingNoteInputSchema = z.object({
   noteId: EntityIdSchema,
   textbookId: EntityIdSchema,
-}).catchall(z.unknown())
+  // Explicit whitelist: unknown keys are stripped instead of flowing into
+  // the note record via a catchall.
+  content: z.string().optional(),
+  position: z.string().optional(),
+  chapter: z.string().optional(),
+  type: z.enum(['highlight', 'underline', 'note', 'bookmark']).optional(),
+  color: z.string().optional(),
+  readerNote: z.string().optional()
+})
 
 export const IpcDeleteReadingNoteInputSchema = z.object({
   noteId: EntityIdSchema,
