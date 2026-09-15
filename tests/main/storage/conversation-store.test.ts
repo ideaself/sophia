@@ -166,4 +166,38 @@ describe('ConversationStore write path', () => {
     const list = await store.list()
     expect(list.map((c) => c.id).sort()).toEqual([a.id, b.id].sort())
   })
+
+  it('concurrent rewrite + appends must not lose messages (write queue)', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
+    const seed = await store.addMessage(conv.id, 'user', 'seed')
+
+    // A whole-file rewrite racing three JSONL appends. Without the per-
+    // conversation write queue the rewrite is built from a stale snapshot
+    // and silently drops the appends.
+    await Promise.all([
+      store.updateMessage(conv.id, seed.id, 'seed-edited'),
+      store.addMessage(conv.id, 'assistant', 'a1'),
+      store.addMessage(conv.id, 'user', 'a2'),
+      store.addMessage(conv.id, 'assistant', 'a3')
+    ])
+
+    const all = await store.getMessages(conv.id)
+    expect(all).toHaveLength(4)
+    expect(all.map((m) => m.content)).toEqual(['seed-edited', 'a1', 'a2', 'a3'])
+  })
+
+  it('concurrent endConversation and addMessage both persist', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
+
+    await Promise.all([
+      store.endConversation(conv.id),
+      store.addMessage(conv.id, 'assistant', 'final')
+    ])
+
+    const got = await store.get(conv.id)
+    expect(got?.endedAt).toBeTruthy()
+    expect(await store.getMessages(conv.id)).toHaveLength(1)
+  })
 })

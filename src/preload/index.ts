@@ -39,8 +39,8 @@ export interface ConceptStateDTO {
   attemptCount: number
   correctCount: number
   lastSeenAt: string
-  updatedAt: string
   evidenceConversationId: string
+  evidenceConversationIds?: string[]
   evidenceMessageIds: string[]
 }
 
@@ -176,6 +176,8 @@ export interface DataAPI {
   deleteMessage: (conversationId: string, messageId: string) => Promise<boolean>
   listMessages: (conversationId: string) => Promise<MessageDTO[]>
   searchMessages: (query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
+  /** Aggregated in the main process: avoids shipping every message over IPC. */
+  todayStudyMinutes: () => Promise<number>
     endConversation: (conversationId: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
     redoArtifacts: (conversationId: string, types: string[]) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
     onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void
@@ -548,6 +550,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('message:list', { conversationId }),
     searchMessages: (query, limit, offset) =>
       ipcRenderer.invoke('message:search', { query, limit, offset }),
+    todayStudyMinutes: () =>
+      ipcRenderer.invoke('stats:today-study-minutes'),
     endConversation: (conversationId, classMode) =>
       ipcRenderer.invoke('conversation:end', { conversationId, classMode }),
     redoArtifacts: (conversationId, types) =>

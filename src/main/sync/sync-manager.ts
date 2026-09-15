@@ -109,6 +109,31 @@ interface LocalFileStat {
 export class SyncManager {
   constructor(private readonly dataRoot: string) {}
 
+  /**
+   * Single-flight guard for mutating sync operations.
+   *
+   * Two concurrent push/pull runs race on sync-state.json (each rebuilds it
+   * from its own snapshot), on the remote trash batches, and on local files
+   * (download-rename vs delete). Reject the second caller instead of
+   * interleaving them.
+   */
+  private runningOp: Promise<unknown> | null = null
+
+  private async runExclusive<T>(label: string, task: () => Promise<T>): Promise<T> {
+    if (this.runningOp) {
+      throw new Error(`同步正在进行中，请等待当前${label}完成`)
+    }
+    const run = (async () => {
+      try {
+        return await task()
+      } finally {
+        this.runningOp = null
+      }
+    })()
+    this.runningOp = run
+    return run
+  }
+
   private createClient(config: WebDavConfig): SyncWebDavClient {
     return new SyncWebDavClient(config)
   }
@@ -402,6 +427,10 @@ export class SyncManager {
    * trash batches. Unchanged files are skipped.
    */
   async push(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
+    return this.runExclusive('推送', () => this.pushUnlocked(config, onProgress))
+  }
+
+  private async pushUnlocked(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
     await this.backupBeforeSync()
     const client = this.createClient(config)
     const plan = await this.buildPushPlan(client)
@@ -478,6 +507,10 @@ export class SyncManager {
    * `-conflict-<ts>` sibling before the remote version overwrites it.
    */
   async pull(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
+    return this.runExclusive('拉取', () => this.pullUnlocked(config, onProgress))
+  }
+
+  private async pullUnlocked(config: WebDavConfig, onProgress?: SyncProgressCallback): Promise<SyncResult> {
     await this.backupBeforeSync()
     const client = this.createClient(config)
     const plan = await this.buildPullPlan(client)
@@ -584,6 +617,10 @@ export class SyncManager {
 
   /** Permanently delete everything in the remote trash. */
   async emptyRemoteTrash(config: WebDavConfig): Promise<{ success: boolean; deletedBatches: number }> {
+    return this.runExclusive('清理回收站', () => this.emptyRemoteTrashUnlocked(config))
+  }
+
+  private async emptyRemoteTrashUnlocked(config: WebDavConfig): Promise<{ success: boolean; deletedBatches: number }> {
     const client = this.createClient(config)
     let deletedBatches = 0
     try {

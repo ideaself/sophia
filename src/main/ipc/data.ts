@@ -13,6 +13,7 @@ import { restoreFromBackup } from '../backup/restore'
 import { ConceptStore } from '../learning-memory/concept-store'
 import { extractConceptUpdates } from '../learning-memory/concept-extractor'
 import { parseFlashcards, rebuildArtifactContent } from '../../shared/flashcard-utils'
+import { estimateDailyStudyMinutes } from '../../shared/study-time'
 import { extractText, getEpubChapters, epubChaptersToText } from '../parsers'
 import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
 import { DeepSeekClient } from '../llm/deepseek-client'
@@ -333,6 +334,34 @@ export function registerConversationIpc(
       parsed.limit,
       parsed.offset
     )
+  })
+
+  // Aggregated today-study-minutes. Computed in the main process so the
+  // renderer never has to pull every message of every conversation over IPC
+  // (the old renderer-side loop shipped the whole history through the bridge).
+  ipcMain.handle('stats:today-study-minutes', async () => {
+    try {
+      const conversations = await conversationStore.list()
+      const start = new Date()
+      start.setHours(0, 0, 0, 0)
+      const startMs = start.getTime()
+      let totalMs = 0
+      for (const conv of conversations) {
+        try {
+          const msgs = await conversationStore.getMessages(conv.id)
+          const times = msgs
+            .map((m) => new Date(m.createdAt).getTime())
+            .filter((t) => Number.isFinite(t) && t >= startMs)
+          if (times.length === 0) continue
+          for (const v of estimateDailyStudyMinutes(times).values()) totalMs += v
+        } catch {
+          // One unreadable conversation must not zero the whole result.
+        }
+      }
+      return Math.round(totalMs / 60000)
+    } catch {
+      return 0
+    }
   })
 
   ipcMain.handle('message:update', async (_event, input: unknown) => {

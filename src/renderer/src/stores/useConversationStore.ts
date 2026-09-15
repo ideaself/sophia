@@ -13,26 +13,47 @@ export const useConversationStore = create<ConversationStore>((set) => ({
     try {
       const convs = await window.sophia.data.listConversations()
       const active = convs.filter((c) => !c.endedAt)
-      const enriched: ActiveConversation[] = []
-      for (const c of active) {
-        try {
-          const comp = await window.sophia.companions.get(c.companionId)
-          let tbTitle: string | null = null
-          if (c.textbookId) {
-            const tb = await window.sophia.data.getTextbook(c.textbookId)
-            tbTitle = tb?.title ?? null
-          }
-          enriched.push({
-            id: c.id, companionId: c.companionId, companionName: comp?.name ?? '未知角色',
-            textbookId: c.textbookId, textbookTitle: tbTitle, title: c.title, updatedAt: c.updatedAt
+
+      // Batch + dedupe lookups: conversations commonly share companions and
+      // textbooks, and the old per-conversation loop issued them serially.
+      const companionIds = [...new Set(active.map((c) => c.companionId))]
+      const textbookIds = [
+        ...new Set(active.map((c) => c.textbookId).filter((id): id is string => !!id))
+      ]
+
+      const [companions, textbooks] = await Promise.all([
+        Promise.all(
+          companionIds.map(async (id) => {
+            try {
+              return [id, await window.sophia.companions.get(id)] as const
+            } catch {
+              return [id, null] as const
+            }
           })
-        } catch {
-          enriched.push({
-            id: c.id, companionId: c.companionId, companionName: '未知角色',
-            textbookId: c.textbookId, textbookTitle: null, title: c.title, updatedAt: c.updatedAt
+        ),
+        Promise.all(
+          textbookIds.map(async (id) => {
+            try {
+              return [id, await window.sophia.data.getTextbook(id)] as const
+            } catch {
+              return [id, null] as const
+            }
           })
-        }
-      }
+        )
+      ])
+
+      const companionMap = new Map(companions)
+      const textbookMap = new Map(textbooks)
+
+      const enriched: ActiveConversation[] = active.map((c) => ({
+        id: c.id,
+        companionId: c.companionId,
+        companionName: companionMap.get(c.companionId)?.name ?? '未知角色',
+        textbookId: c.textbookId,
+        textbookTitle: c.textbookId ? textbookMap.get(c.textbookId)?.title ?? null : null,
+        title: c.title,
+        updatedAt: c.updatedAt
+      }))
       set({ activeConversations: enriched })
     } catch {
       set({ activeConversations: [] })

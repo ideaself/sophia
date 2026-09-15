@@ -76,6 +76,50 @@ describe('ConceptStore.applyEvidence', () => {
     expect(list.map((c) => c.name)).toEqual(['A'])
   })
 
+  it('概念在其他会话被再次命中后，仍归属于原会话的复盘页', async () => {
+    await store.applyEvidence(evidence({ conversationId: 'conv_a', updates: [{ name: '傅里叶变换', performance: 'correct' }] }))
+    await store.applyEvidence(evidence({ conversationId: 'conv_b', updates: [{ name: '傅里叶变换', performance: 'partial' }] }))
+
+    const inA = await store.listByConversation('conv_a')
+    const inB = await store.listByConversation('conv_b')
+    expect(inA.map((c) => c.name)).toContain('傅里叶变换')
+    expect(inB.map((c) => c.name)).toContain('傅里叶变换')
+
+    const state = (await store.load())[0]
+    expect(state.evidenceConversationId).toBe('conv_b')
+    expect(state.evidenceConversationIds).toEqual(['conv_a', 'conv_b'])
+  })
+
+  it('并发 applyEvidence 不丢更新（写队列串行化）', async () => {
+    const calls = Array.from({ length: 10 }, (_, i) =>
+      store.applyEvidence(
+        evidence({
+          conversationId: 'conv_a',
+          messageIds: [`m${i}`],
+          updates: [{ name: '卷积', performance: 'correct' }]
+        })
+      )
+    )
+    await Promise.all(calls)
+
+    const all = await store.load()
+    expect(all).toHaveLength(1)
+    // Every one of the 10 increments must have landed.
+    expect(all[0].attemptCount).toBe(10)
+    expect(all[0].correctCount).toBe(10)
+    expect(all[0].evidenceMessageIds).toHaveLength(10)
+  })
+
+  it('并发写后文件仍是合法 JSON（原子写无残留）', async () => {
+    await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        store.applyEvidence(evidence({ messageIds: [`x${i}`], updates: [{ name: `概念${i}`, performance: 'unclear' }] }))
+      )
+    )
+    const all = await store.load()
+    expect(all).toHaveLength(5)
+  })
+
   it('持久化：重新实例化后数据仍在', async () => {
     await store.applyEvidence(evidence({ updates: [{ name: '导数', performance: 'correct' }] }))
     const reloaded = new ConceptStore(dataRoot)

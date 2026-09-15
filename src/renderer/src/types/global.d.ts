@@ -121,6 +121,7 @@ declare global {
     lastSeenAt: string
     updatedAt: string
     evidenceConversationId: string
+    evidenceConversationIds?: string[]
     evidenceMessageIds: string[]
   }
 
@@ -174,6 +175,7 @@ declare global {
     deleteMessage: (conversationId: string, messageId: string) => Promise<boolean>
     listMessages: (conversationId: string) => Promise<MessageDTO[]>
     searchMessages: (query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
+    todayStudyMinutes: () => Promise<number>
     endConversation: (conversationId: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
     redoArtifacts: (conversationId: string, types: string[]) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
     onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void

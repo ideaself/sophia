@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
+import { memo, useMemo, useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { useTTS, stripMarkdown } from '../hooks/useTTS'
 import { TTSControlPanel } from '../components/TTSControlPanel'
 import { MermaidBlock } from '../components/MermaidBlock'
@@ -227,7 +227,7 @@ function SpeakButton({ text }: { text: string }) {
   )
 }
 
-export function ChatMessage({
+export const ChatMessage = memo(function ChatMessage({
   id,
   role,
   content,
@@ -242,7 +242,6 @@ export function ChatMessage({
   onRewind
 }: ChatMessageProps): React.ReactElement {
   const isUser = role === 'user'
-  const eventCard = isUser ? null : parseEventCard(content)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(content)
   const editRef = useRef<HTMLTextAreaElement>(null)
@@ -268,6 +267,10 @@ export function ChatMessage({
     setEditing(false)
   }
   const rendered = useMemo(() => {
+    // Event-card parsing scans the whole message with regexes and returns a
+    // fresh object — keeping it inside this memo (keyed on `content`) is what
+    // stops every token tick from re-parsing every visible message.
+    const eventCard = isUser ? null : parseEventCard(content)
     // 课堂测验卡片化（里程碑 2）：assistant 回复若含 **自测 N：** 结构化题目，渲染为逐级揭晓卡片
     const questions = isUser || eventCard ? [] : parseSelfTestQuestions(content)
     const quizMode = questions.length > 0
@@ -343,7 +346,7 @@ export function ChatMessage({
         {body}
       </div>
     )
-  }, [content, isUser, textbookId, eventCard])
+  }, [content, isUser, textbookId])
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} group`}>
@@ -454,7 +457,7 @@ export function ChatMessage({
       </div>
     </div>
   )
-}
+})
 
 function extractText(node: React.ReactNode): string {
   if (typeof node === 'string') return node

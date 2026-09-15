@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isNotFoundError } from '../storage/fs-errors'
+import { atomicWriteFile } from '../storage/atomic-write'
 
 export type ConceptPerformance = 'correct' | 'partial' | 'incorrect' | 'unclear'
 
@@ -17,6 +18,11 @@ export interface ConceptState {
   updatedAt: string
   /** 最近一次接触该概念的会话（复盘页按会话过滤展示）。 */
   evidenceConversationId: string
+  /**
+   * 曾接触过该概念的全部会话。单值字段只保留"最近一次"，会导致概念在
+   * 其他会话被再次命中后从原会话的复盘页消失。
+   */
+  evidenceConversationIds?: string[]
   /** 证据消息 ID —— 可溯源"这条掌握度来自哪次对话"。 */
   evidenceMessageIds: string[]
 }
@@ -56,6 +62,23 @@ function conceptId(name: string): string {
 export class ConceptStore {
   constructor(private readonly dataRoot: string) {}
 
+  /**
+   * Serializes read-modify-write cycles. Two concurrent applyEvidence calls
+   * would otherwise both load the same snapshot and overwrite each other,
+   * losing one side's mastery updates.
+   */
+  private writeChain: Promise<unknown> = Promise.resolve()
+
+  private enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.writeChain.then(task, task)
+    // Keep the chain alive after a failed write so later writes still queue.
+    this.writeChain = run.then(
+      () => undefined,
+      () => undefined
+    )
+    return run
+  }
+
   private get filePath(): string {
     return join(this.dataRoot, 'concepts.json')
   }
@@ -73,7 +96,12 @@ export class ConceptStore {
 
   async listByConversation(conversationId: string): Promise<ConceptState[]> {
     const all = await this.load()
-    return all.filter((c) => c.evidenceConversationId === conversationId)
+    return all.filter(
+      (c) =>
+        c.evidenceConversationId === conversationId ||
+        (Array.isArray(c.evidenceConversationIds) &&
+          c.evidenceConversationIds.includes(conversationId))
+    )
   }
 
   /**
@@ -81,6 +109,11 @@ export class ConceptStore {
    * 返回全部概念（供事件推送后刷新）。
    */
   async applyEvidence(evidence: ConceptEvidence): Promise<ConceptState[]> {
+    // Serialize: read-modify-write must not interleave with other writers.
+    return this.enqueueWrite(() => this.applyEvidenceLocked(evidence))
+  }
+
+  private async applyEvidenceLocked(evidence: ConceptEvidence): Promise<ConceptState[]> {
     const states = await this.load()
     const now = new Date().toISOString()
     const msgIds = evidence.messageIds
@@ -102,6 +135,7 @@ export class ConceptStore {
           lastSeenAt: now,
           updatedAt: now,
           evidenceConversationId: evidence.conversationId,
+          evidenceConversationIds: [evidence.conversationId],
           evidenceMessageIds: msgIds
         }
         states.push(s)
@@ -112,7 +146,9 @@ export class ConceptStore {
       }
       s.lastSeenAt = now
       s.updatedAt = now
+      const priorConversations = s.evidenceConversationIds ?? [s.evidenceConversationId]
       s.evidenceConversationId = evidence.conversationId
+      s.evidenceConversationIds = [...new Set([...priorConversations, evidence.conversationId])]
       s.evidenceMessageIds = [...new Set([...s.evidenceMessageIds, ...msgIds])]
 
       switch (u.performance) {
@@ -136,7 +172,8 @@ export class ConceptStore {
     }
 
     await mkdir(this.dataRoot, { recursive: true })
-    await writeFile(this.filePath, JSON.stringify(states, null, 2), 'utf-8')
+    // Atomic write: a crash mid-save must not truncate concepts.json.
+    await atomicWriteFile(this.filePath, JSON.stringify(states, null, 2), 'utf-8')
     return states
   }
 }

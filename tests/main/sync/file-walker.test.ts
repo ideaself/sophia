@@ -77,4 +77,13 @@ describe('collectSyncableFiles', () => {
     const files = await collected()
     expect(files).toEqual(['profiles/prof_default/worlds/world_default/story.md'])
   })
+
+  it('excludes pull conflict copies from the sync set', async () => {
+    await touch('conversations/c_1/messages.json')
+    await touch('conversations/c_1/messages.conflict-1722600000000.json')
+    await touch('learner.conflict-1722600000001.md')
+
+    const files = await collected()
+    expect(files).toEqual(['conversations/c_1/messages.json'])
+  })
 })

@@ -12,7 +12,11 @@ const EXCLUDE_PATTERNS = [
   /(^|[/\\])\.sync-cache[/\\]/,
   // Remote trash (deleted files parked on the server before removal) is
   // invisible to sync: never downloaded, never re-deleted as junk.
-  /(^|[/\\])\.trash[/\\]/
+  /(^|[/\\])\.trash[/\\]/,
+  // Conflict copies created by pull (local + remote both changed) are
+  // local recovery artifacts. Syncing them would upload junk and make every
+  // other device download it; keep them out of the sync set in both directions.
+  /\.conflict-\d+/
 ]
 
 export interface SyncableFile {

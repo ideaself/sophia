@@ -786,3 +786,75 @@ async function walkLocal(dir: string): Promise<string[]> {
   return out
 }
 
+// ---------------------------------------------------------------------------
+// Single-flight lock — mutating sync ops must not interleave
+// ---------------------------------------------------------------------------
+
+describe('SyncManager — single-flight lock', () => {
+  class GatedClient extends FakeClient {
+    private gate: Promise<void> | null = null
+    private release: (() => void) | null = null
+
+    arm(): void {
+      this.gate = new Promise((resolve) => {
+        this.release = resolve
+      })
+    }
+
+    releaseGate(): void {
+      this.release?.()
+      this.release = null
+    }
+
+    override async listFiles(dir: string): Promise<WebDavFile[]> {
+      if (this.gate) await this.gate
+      return super.listFiles(dir)
+    }
+  }
+
+  it('rejects a second op while the first is still running, then accepts new ones', async () => {
+    const fake = new GatedClient()
+    await touch('a.md', 'A')
+    const manager = makeManager(dataRoot, fake)
+
+    fake.arm()
+    const first = manager.push(CONFIG)
+
+    // Let the first push actually reach the gated remote listing.
+    await new Promise((r) => setTimeout(r, 10))
+    await expect(manager.pull(CONFIG)).rejects.toThrow(/同步正在进行中/)
+    await expect(manager.push(CONFIG)).rejects.toThrow(/同步正在进行中/)
+    await expect(manager.emptyRemoteTrash(CONFIG)).rejects.toThrow(/同步正在进行中/)
+
+    fake.releaseGate()
+    await expect(first).resolves.toMatchObject({ success: true })
+
+    // Lock released: the next run is accepted.
+    const after = await manager.pull(CONFIG)
+    expect(after.success).toBe(true)
+  })
+
+  it('releases the lock after a failing run', async () => {
+    class FailOnceClient extends FakeClient {
+      private failed = false
+      override async listAllFilesDetailed(dir: string): Promise<WebDavRemoteFile[]> {
+        if (!this.failed) {
+          this.failed = true
+          throw new Error('boom')
+        }
+        return super.listAllFilesDetailed(dir)
+      }
+    }
+
+    const fake = new FailOnceClient()
+    await touch('a.md', 'A')
+    const manager = makeManager(dataRoot, fake)
+
+    await expect(manager.push(CONFIG)).rejects.toThrow('boom')
+    // The failure must not leave the lock stuck.
+    const result = await manager.push(CONFIG)
+    expect(result.success).toBe(true)
+  })
+})
+
+

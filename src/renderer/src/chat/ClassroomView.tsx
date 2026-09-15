@@ -8,7 +8,7 @@ import { loadTabs, saveTabs, serializeTabs } from '../../../shared/tab-persisten
 import { useAppStore } from '../stores/useAppStore'
 import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-templates'
 import { detectVoiceTrigger, loadVoiceTriggers } from '../../../shared/voice-trigger'
-import { estimateDailyStudyMinutes } from '../../../shared/study-time'
+import { useTodayStudyMinutes } from '../hooks/useTodayStudyMinutes'
 import { loadThinkingMode, shouldUseThinking } from '../../../shared/thinking'
 import { isKnowledgeQuestion, hasTextbookCitation } from '../../../shared/grounding'
 
@@ -122,51 +122,6 @@ const QUICK_ACTIONS: Array<{ label: string; prompt: string; title: string }> = [
     title: '标记概念进入复习（以记忆卡片呈现）'
   }
 ]
-
-/**
- * 今日已学习时长（分钟）。挂载、窗口聚焦时刷新，另每 5 分钟轮询一次，
- * 供顶栏「每日目标」进度环使用（估算口径与统计页一致）。
- */
-function useTodayStudyMinutes(): number {
-  const [minutes, setMinutes] = useState(0)
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      try {
-        const convs = await window.sophia.data.listConversations() as Array<{ id: string }>
-        const start = new Date()
-        start.setHours(0, 0, 0, 0)
-        const startMs = start.getTime()
-        let total = 0
-        await Promise.all(convs.map(async (c) => {
-          try {
-            const msgs = await window.sophia.data.listMessages(c.id)
-            const times = msgs
-              .map((m) => new Date(m.createdAt).getTime())
-              .filter((t) => Number.isFinite(t) && t >= startMs)
-            for (const v of estimateDailyStudyMinutes(times).values()) total += v
-          } catch {
-            // 单个会话读取失败不影响整体
-          }
-        }))
-        if (!cancelled) setMinutes(Math.round(total / 60000))
-      } catch {
-        // 保留上次值
-      }
-    }
-    load()
-    window.addEventListener('focus', load)
-    const timer = setInterval(load, 5 * 60_000)
-    return () => {
-      cancelled = true
-      window.removeEventListener('focus', load)
-      clearInterval(timer)
-    }
-  }, [])
-
-  return minutes
-}
 
 const MATH_SYMBOL_GROUPS: Array<{ id: string; label: string; items: string[] }> = [
   {
@@ -914,9 +869,10 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     setEditingTitle(false)
   }
 
-  const handleEditMessage = async (messageId: string, content: string) => {
-    if (!activeTab.conversationId) return
-    await window.sophia.data.updateMessage(activeTab.conversationId, messageId, content)
+  const handleEditMessage = useCallback(async (messageId: string, content: string) => {
+    const conversationId = tabsRef.current[activeIdx]?.conversationId
+    if (!conversationId) return
+    await window.sophia.data.updateMessage(conversationId, messageId, content)
     setTabs((prev) => {
       const next = [...prev]
       const t = next[activeIdx]
@@ -925,21 +881,22 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       }
       return next
     })
-  }
+  }, [activeIdx])
 
-  const handleDeleteMessage = async (messageId: string) => {
-    if (!activeTab.conversationId) return
-    await window.sophia.data.deleteMessage(activeTab.conversationId, messageId)
+  const handleDeleteMessage = useCallback(async (messageId: string) => {
+    const conversationId = tabsRef.current[activeIdx]?.conversationId
+    if (!conversationId) return
+    await window.sophia.data.deleteMessage(conversationId, messageId)
     setTabs((prev) => {
       const next = [...prev]
       const t = next[activeIdx]
       if (t) t.messages = t.messages.filter((m) => m.id !== messageId)
       return next
     })
-  }
+  }, [activeIdx])
 
-  const handleRewind = async (messageId: string) => {
-    const conversationId = activeTab.conversationId
+  const handleRewind = useCallback(async (messageId: string) => {
+    const conversationId = tabsRef.current[activeIdx]?.conversationId
     if (!conversationId) return
     const ok = await window.sophia.dialog.confirm({
       message: '将删除这条消息之后的所有对话并从这一点继续，确定吗？',
@@ -959,10 +916,18 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       })
       setStickToBottom(true)
     }
-  }
+  }, [activeIdx])
 
-  const handleRegenerate = async (messageId: string) => {
-    const msgs = activeTab.messages
+  // Latest-value ref so the memoized handlers below stay identity-stable
+  // across stream ticks (the chatStream object changes on every token).
+  const handleSendRef = useRef(handleSend)
+  useEffect(() => {
+    handleSendRef.current = handleSend
+  })
+
+  const handleRegenerate = useCallback(async (messageId: string) => {
+    const tab = tabsRef.current[activeIdx]
+    const msgs = tab?.messages ?? []
     const msgIdx = msgs.findIndex((m) => m.id === messageId)
     if (msgIdx < 0) return
 
@@ -979,12 +944,12 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       return next
     })
 
-    if (activeTab.conversationId) {
+    if (tab?.conversationId) {
       try {
         // Truncate through the user message: removes the assistant reply and
         // any later messages that the UI just dropped (deleteMessage alone
         // would leave them orphaned in the store).
-        await window.sophia.data.truncateConversation(activeTab.conversationId, lastUserMsg.id)
+        await window.sophia.data.truncateConversation(tab.conversationId, lastUserMsg.id)
       } catch {
         // The local list is already consistent; a failed truncate must not
         // block the regeneration attempt.
@@ -993,8 +958,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
     // resend: the user message is already persisted — handleSend must not
     // persist it again nor append it to the UI list a second time.
-    await handleSend({ input: lastUserMsg.content, resend: true })
-  }
+    await handleSendRef.current({ input: lastUserMsg.content, resend: true })
+  }, [activeIdx])
 
   const handleSendFromContent = async (content: string) => {
     await handleSend({ input: content })
