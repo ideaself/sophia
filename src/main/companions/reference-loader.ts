@@ -19,6 +19,50 @@ export interface LoadCompanionsResult {
 }
 
 /**
+ * Tombstones for deleted candidate companions. The index is rebuilt from
+ * the shipped .md files on every start, so without this marker a deleted
+ * candidate would silently resurrect after a restart.
+ */
+const DELETED_CANDIDATES_FILE = '.deleted-candidates.json'
+
+async function readDeletedCandidateIds(companionDir: string): Promise<Set<string>> {
+  try {
+    const raw = await readFile(join(companionDir, DELETED_CANDIDATES_FILE), 'utf-8')
+    const parsed: unknown = JSON.parse(raw)
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((id): id is string => typeof id === 'string')
+        : []
+    )
+  } catch {
+    return new Set()
+  }
+}
+
+/** Mark a candidate companion as deleted so the loader never re-adds it. */
+export async function recordDeletedCandidate(companionDir: string, companionId: string): Promise<void> {
+  const ids = await readDeletedCandidateIds(companionDir)
+  if (ids.has(companionId)) return
+  ids.add(companionId)
+  await atomicWriteFile(
+    join(companionDir, DELETED_CANDIDATES_FILE),
+    JSON.stringify([...ids], null, 2),
+    'utf-8'
+  )
+}
+
+/** Clear the tombstone (used when an archived companion is restored). */
+export async function clearDeletedCandidate(companionDir: string, companionId: string): Promise<void> {
+  const ids = await readDeletedCandidateIds(companionDir)
+  if (!ids.delete(companionId)) return
+  await atomicWriteFile(
+    join(companionDir, DELETED_CANDIDATES_FILE),
+    JSON.stringify([...ids], null, 2),
+    'utf-8'
+  )
+}
+
+/**
  * Parse a character markdown file into a Companion metadata object.
  *
  * Expected format:
@@ -178,6 +222,19 @@ export async function loadReferenceCompanions(
   // Ensure companion directory exists
   await mkdir(companionDir, { recursive: true })
 
+  // Read the existing index first: its records carry user edits and custom
+  // companions that the .md rebuild must not clobber.
+  const indexPath = join(companionDir, 'index.json')
+  let existing: Companion[] = []
+  try {
+    const raw = await readFile(indexPath, 'utf-8')
+    existing = CompanionSchema.array().parse(JSON.parse(raw)) as Companion[]
+  } catch {
+    // No existing index — that's fine
+  }
+  const existingById = new Map(existing.map((c) => [c.id, c]))
+  const deletedIds = await readDeletedCandidateIds(companionDir)
+
   // Find all .md files
   const entries = await readdir(candidatesDir)
   const mdFiles = entries.filter(e => e.endsWith('.md'))
@@ -189,6 +246,8 @@ export async function loadReferenceCompanions(
     const destPath = join(companionDir, filename)
     const content = await readFile(sourcePath, 'utf-8')
     const id = fileToCompanionId(filename)
+
+    if (deletedIds.has(id)) continue
 
     const companion = parseCompanionMarkdown(content, id, filename)
 
@@ -206,23 +265,26 @@ export async function loadReferenceCompanions(
     await copyFile(sourcePath, destPath)
   }
 
-  // Merge with existing index.json — preserve custom companions
-  const indexPath = join(companionDir, 'index.json')
-  let existing: Companion[] = []
-  try {
-    const raw = await readFile(indexPath, 'utf-8')
-    existing = CompanionSchema.array().parse(JSON.parse(raw)) as Companion[]
-  } catch {
-    // No existing index — that's fine
-  }
-  const customOnes = existing.filter((c) => c.source === 'custom')
-  const merged = [...companions, ...customOnes]
+  // Merge:
+  // - candidates edited in-app (version > 1) win over the freshly parsed v1
+  //   .md record — otherwise every restart silently rolls edits back;
+  // - custom companions are always preserved;
+  // - the .md stays the source of truth for never-edited candidates, so
+  //   app updates that ship improved character files still take effect.
+  const mergedBase = companions.map((base) => {
+    const current = existingById.get(base.id)
+    return current && (current.version ?? 1) > (base.version ?? 1) ? current : base
+  })
+  const customOnes = existing.filter(
+    (c) => c.source === 'custom' && !mergedBase.some((b) => b.id === c.id)
+  )
+  const merged = [...mergedBase, ...customOnes]
 
   // Write merged index.json
   await atomicWriteFile(indexPath, JSON.stringify(merged, null, 2), 'utf-8')
 
   return {
-    companions,
-    count: companions.length
+    companions: mergedBase,
+    count: mergedBase.length
   }
 }

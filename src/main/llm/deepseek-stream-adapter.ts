@@ -24,12 +24,20 @@ import type {
 } from './stream-types'
 import { AppError, mapDeepSeekError } from './errors'
 import { assertHttpsEndpoint } from './endpoint'
+import { sleepWithAbort, createAbortError } from './sleep'
 
 // ---------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------
 
 const DEFAULT_ENDPOINT = 'https://api.deepseek.com/chat/completions'
+
+/**
+ * Abort when the provider sends no bytes for this long. The session-level
+ * 5-minute cap only bounds total duration; without an idle guard a hung
+ * connection keeps the user waiting for the full cap.
+ */
+const DEFAULT_IDLE_TIMEOUT_MS = 90_000
 
 // ---------------------------------------------------------------
 // Factory
@@ -38,15 +46,18 @@ const DEFAULT_ENDPOINT = 'https://api.deepseek.com/chat/completions'
 /**
  * Create a DeepSeekStreamAdapter.
  *
- * @param options.endpoint  Override the default API endpoint URL.
- * @param options.fetchImpl Inject a custom fetch implementation (for testing).
+ * @param options.endpoint      Override the default API endpoint URL.
+ * @param options.fetchImpl     Inject a custom fetch implementation (for testing).
+ * @param options.idleTimeoutMs Abort after this long without data (0 disables).
  */
 export function createDeepSeekStreamAdapter(options?: {
   endpoint?: string
   fetchImpl?: typeof fetch
+  idleTimeoutMs?: number
 }): DeepSeekStreamAdapter {
   const defaultEndpoint = options?.endpoint ?? DEFAULT_ENDPOINT
   const fetchImpl = options?.fetchImpl ?? fetch
+  const idleTimeoutMs = options?.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS
 
   assertHttpsEndpoint(defaultEndpoint)
 
@@ -72,9 +83,7 @@ export function createDeepSeekStreamAdapter(options?: {
 
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (params.signal?.aborted) {
-          const err = new Error('The operation was aborted')
-          err.name = 'AbortError'
-          throw err
+          throw createAbortError()
         }
 
         try {
@@ -139,10 +148,12 @@ export function createDeepSeekStreamAdapter(options?: {
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let skippedLines = 0
+      let warnedSkipped = false
 
       try {
         while (true) {
-          const result = await reader.read()
+          const result = await readWithIdleTimeout(reader, idleTimeoutMs)
 
           if (result.done) {
             // Flush decoder for any multi-byte leftovers, then
@@ -151,6 +162,11 @@ export function createDeepSeekStreamAdapter(options?: {
             buffer += decoder.decode()
             const outcome = processLines(buffer, true)
             for (const chunk of outcome.chunks) yield chunk
+            skippedLines += outcome.skipped
+            if (skippedLines > 0 && !warnedSkipped) {
+              warnedSkipped = true
+              console.warn(`[stream] skipped ${skippedLines} malformed SSE line(s)`)
+            }
             return
           }
 
@@ -166,8 +182,19 @@ export function createDeepSeekStreamAdapter(options?: {
           buffer = outcome.remainder
 
           for (const chunk of outcome.chunks) yield chunk
+          skippedLines += outcome.skipped
+          if (skippedLines > 0 && !warnedSkipped) {
+            warnedSkipped = true
+            console.warn(`[stream] skipped ${skippedLines} malformed SSE line(s)`)
+          }
           if (outcome.doneReceived) return
         }
+      } catch (err) {
+        // Detach the stalled connection before surfacing the timeout.
+        if (err instanceof AppError && err.code === 'STREAM_IDLE_TIMEOUT') {
+          await reader.cancel().catch(() => {})
+        }
+        throw err
       } finally {
         // Release the reader lock so the underlying connection can
         // be torn down.
@@ -182,28 +209,33 @@ export function createDeepSeekStreamAdapter(options?: {
 }
 
 // ---------------------------------------------------------------
-// Retry helpers
+// Read helpers
 // ---------------------------------------------------------------
 
 /**
- * Sleep for `ms`, rejecting early with an AbortError if `signal` fires.
- * Used for exponential backoff between retry attempts.
+ * Race a stream read against an idle timeout. A provider that connects but
+ * then goes silent surfaces as a clear STREAM_IDLE_TIMEOUT instead of
+ * hanging until the session's total cap.
  */
-function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms))
-  if (signal.aborted) {
-    const err = new Error('The operation was aborted')
-    err.name = 'AbortError'
-    return Promise.reject(err)
-  }
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    signal.addEventListener('abort', () => {
-      clearTimeout(timer)
-      const err = new Error('The operation was aborted')
-      err.name = 'AbortError'
-      reject(err)
-    }, { once: true })
+function readWithIdleTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs: number
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  if (timeoutMs <= 0) return reader.read()
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new AppError(
+          'STREAM_IDLE_TIMEOUT',
+          0,
+          `模型 ${Math.round(timeoutMs / 1000)} 秒未返回数据，已自动中止`
+        )
+      )
+    }, timeoutMs)
+  })
+  return Promise.race([reader.read(), timeout]).finally(() => {
+    if (timer) clearTimeout(timer)
   })
 }
 
@@ -215,6 +247,8 @@ interface ProcessResult {
   chunks: DeepSeekStreamChunk[]
   doneReceived: boolean
   remainder: string
+  /** Malformed data lines that were skipped instead of failing the stream. */
+  skipped: number
 }
 
 /**
@@ -226,10 +260,14 @@ interface ProcessResult {
  *
  * When `isFinal` is false the element after the last \n is kept as
  * the `remainder` for the next read cycle.
+ *
+ * A single malformed line (proxy keep-alive noise, truncated chunk) is
+ * skipped and counted — one bad line must not throw away a whole answer.
  */
 function processLines(buffer: string, isFinal: boolean): ProcessResult {
   const lines = buffer.split('\n')
   const chunks: DeepSeekStreamChunk[] = []
+  let skipped = 0
 
   // The last element may be an incomplete line — skip it unless
   // this is the final flush.
@@ -245,9 +283,14 @@ function processLines(buffer: string, isFinal: boolean): ProcessResult {
     if (trimmed.startsWith('data: ')) {
       const data = trimmed.slice(6)
       if (data === '[DONE]') {
-        return { chunks, doneReceived: true, remainder: '' }
+        return { chunks, doneReceived: true, remainder: '', skipped }
       }
-      chunks.push(parseChunk(data))
+      const chunk = parseChunk(data)
+      if (chunk) {
+        chunks.push(chunk)
+      } else {
+        skipped++
+      }
     }
   }
 
@@ -255,7 +298,7 @@ function processLines(buffer: string, isFinal: boolean): ProcessResult {
   const lastIdx = buffer.lastIndexOf('\n')
   const remainder = lastIdx === -1 ? buffer : buffer.slice(lastIdx + 1)
 
-  return { chunks, doneReceived: false, remainder }
+  return { chunks, doneReceived: false, remainder, skipped }
 }
 
 // ---------------------------------------------------------------
@@ -265,16 +308,13 @@ function processLines(buffer: string, isFinal: boolean): ProcessResult {
 /**
  * Parse a data string into a DeepSeekStreamChunk.
  *
- * Malformed JSON produces a sanitised Error — the raw data is
- * never included in the error message to avoid leaking API keys
- * or other sensitive payloads.
+ * Malformed JSON returns null (the line is skipped by the caller) — the raw
+ * data is never surfaced in errors to avoid leaking API keys or payloads.
  */
-function parseChunk(data: string): DeepSeekStreamChunk {
+function parseChunk(data: string): DeepSeekStreamChunk | null {
   try {
     return JSON.parse(data) as DeepSeekStreamChunk
   } catch {
-    throw new Error(
-      'Failed to parse streaming response from DeepSeek API'
-    )
+    return null
   }
 }

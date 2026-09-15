@@ -282,6 +282,59 @@ describe('Error mapping', () => {
       retryable: true
     })
   })
+
+  it('passes the abort signal through to the adapter', async () => {
+    let received: AbortSignal | undefined
+    const adapter: DeepSeekApiAdapter = {
+      chatCompletion: async (params) => {
+        received = params.signal
+        return { ok: true, data: stubCompletion }
+      }
+    }
+    const controller = new AbortController()
+
+    await new DeepSeekClient(testApiKey, adapter).chat(testMessages, { signal: controller.signal })
+
+    expect(received).toBe(controller.signal)
+  })
+
+  it('is cancellable during retry backoff (does not wait out the delay)', async () => {
+    // Every attempt gets a retryable error; without an abortable sleep the
+    // call would sit through 1s + 2s of backoff before failing.
+    const adapter = createMockAdapter({
+      ok: false,
+      status: 429,
+      body: { error: { message: 'busy' } }
+    })
+    const client = new DeepSeekClient(testApiKey, adapter)
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(), 20)
+
+    const startedAt = Date.now()
+    await expect(
+      client.chat(testMessages, { signal: controller.signal })
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(Date.now() - startedAt).toBeLessThan(900)
+  })
+
+  it('reports reasoning-only responses with a distinct truncation message', async () => {
+    const adapter = createMockAdapter({
+      ok: true,
+      data: {
+        model: 'deepseek-v4-pro',
+        choices: [
+          {
+            message: { role: 'assistant', content: '', reasoning_content: 'long thinking...' },
+            finish_reason: 'length'
+          }
+        ]
+      }
+    })
+
+    await expect(new DeepSeekClient(testApiKey, adapter).chat(testMessages)).rejects.toThrowError(
+      /思考/
+    )
+  })
 })
 
 // ---------------------------------------------------------------

@@ -49,7 +49,7 @@ export interface DeepSeekCompletionData {
   model?: string
   choices?: Array<{
     index?: number
-    message?: { role?: string; content?: string }
+    message?: { role?: string; content?: string; reasoning_content?: string }
     finish_reason?: string
   }>
   usage?: {
@@ -79,6 +79,8 @@ export interface DeepSeekApiParams {
   model: string
   messages: DeepSeekChatMessage[]
   apiKey: string
+  /** Optional caller-owned abort signal (quit/cancel — also interrupts backoff). */
+  signal?: AbortSignal
 }
 
 /**

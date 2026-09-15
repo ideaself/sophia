@@ -66,6 +66,13 @@ export function createDeepSeekHttpAdapter(
       params: DeepSeekApiParams
     ): Promise<DeepSeekApiResult> {
       try {
+        // Caller-owned signal (quit/cancel) combined with the request
+        // timeout — either one aborts the fetch.
+        const timeoutSignal = AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
+        const signal = params.signal
+          ? AbortSignal.any([timeoutSignal, params.signal])
+          : timeoutSignal
+
         const response = await fetchImpl(endpoint, {
           method: 'POST',
           headers: {
@@ -77,7 +84,7 @@ export function createDeepSeekHttpAdapter(
             messages: params.messages,
             stream: false
           }),
-          signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
+          signal
         })
 
         if (response.ok) {
@@ -94,8 +101,11 @@ export function createDeepSeekHttpAdapter(
         }
 
         return { ok: false, status: response.status, body }
-      } catch {
-        // Any network-level error (DNS, connection refused, timeout, etc.).
+      } catch (err) {
+        // Caller-initiated cancellation propagates so upstream can react to
+        // it instead of seeing a generic network failure. Internal timeouts
+        // (no caller signal) keep the existing non-retryable mapping.
+        if (params.signal?.aborted) throw err
         // Never attach the raw Error object — it could contain the request
         // URL which includes the API key in the Authorization header.
         return { ok: false, status: 0 }

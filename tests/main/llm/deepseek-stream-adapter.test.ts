@@ -557,41 +557,56 @@ describe('DeepSeekStreamAdapter — abort signal', () => {
 // ---------------------------------------------------------------
 
 describe('DeepSeekStreamAdapter — malformed JSON', () => {
-  it('throws on unparseable data lines without leaking the API key', async () => {
+  it('skips unparseable data lines and keeps streaming the rest', async () => {
     const { fetchFn } = mockFetch(200, [
       'data: {"choices":[{"delta":{"content":"good"}}]}\n\n',
       'data: {this is not json}\n\n',
+      'data: {"choices":[{"delta":{"content":"still-good"}}]}\n\n',
       'data: [DONE]\n\n'
     ])
 
     const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
-    const params = streamParams()
+    const chunks = await collectChunks(adapter, streamParams())
 
-    await expect(collectChunks(adapter, params)).rejects.toThrow()
-
-    // Collect the actual error
-    try {
-      await collectChunks(adapter, params)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      // Must not leak the key
-      expect(message).not.toContain(testApiKey)
-      expect(message).not.toContain('sk-')
-      // Must be a sane error message
-      expect(message.length).toBeGreaterThan(0)
-    }
+    const tokens = chunks
+      .map((c) => c.choices?.[0]?.delta?.content)
+      .filter((t): t is string => Boolean(t))
+    expect(tokens).toEqual(['good', 'still-good'])
   })
 
-  it('throws with a sanitized message (no raw data)', async () => {
+  it('does not leak malformed line contents or the API key', async () => {
     const { fetchFn } = mockFetch(200, [
-      'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
-      'data: definitely-not-json!!!!\n\n'
+      'data: definitely-not-json!!!!\n\n',
+      'data: [DONE]\n\n'
     ])
 
     const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
+    const chunks = await collectChunks(adapter, streamParams())
+
+    // No chunk is emitted for the bad line — nothing to leak.
+    expect(chunks).toHaveLength(0)
+    expect(JSON.stringify(chunks)).not.toContain('definitely-not-json')
+    expect(JSON.stringify(chunks)).not.toContain(testApiKey)
+  })
+
+  it('aborts with STREAM_IDLE_TIMEOUT when the provider goes silent', async () => {
+    // A stream that emits one event and then never closes: the idle guard
+    // must abort instead of hanging until the session cap.
+    const encoder = new TextEncoder()
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n')
+        )
+        // Never closes — simulates a stalled connection.
+      }
+    })
+    const fetchFn = (() => Promise.resolve(new Response(stalled, { status: 200 }))) as unknown as typeof fetch
+
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn, idleTimeoutMs: 50 })
 
     await expect(collectChunks(adapter, streamParams())).rejects.toSatisfy((err: Error) => {
-      return !err.message.includes('definitely-not-json')
+      return err instanceof AppError && err.code === 'STREAM_IDLE_TIMEOUT'
     })
   })
 })

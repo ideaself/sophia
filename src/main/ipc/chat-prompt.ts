@@ -61,6 +61,63 @@ async function loadConceptMasterySegment(
 }
 
 // ---------------------------------------------------------------
+// Prompt caches (module scope so conversation deletion can clear them)
+// ---------------------------------------------------------------
+
+/** Upper bound per cache — long-running apps would otherwise grow forever. */
+const MAX_PROMPT_CACHE_ENTRIES = 50
+
+/**
+ * Cache the latest teaching-coach assessment per conversation so it
+ * persists between turns until the next analysis interval triggers.
+ * { formatted segment string, round number }
+ */
+const coachCache = new Map<string, { segment: string; round: number; contentProgress: string }>()
+/** 防止异步教练分析叠加（同一会话同时只跑一个） */
+const coachAnalysisInFlight = new Set<string>()
+
+/**
+ * Cache compressed summaries per conversation to avoid re-calling the
+ * LLM on every turn. Keyed by window size AND a content fingerprint so
+ * editing/rewinding messages cannot hit a stale summary.
+ */
+const compressionCache = new Map<string, { windowSize: number; summary: string }>()
+
+function setCapped<V>(map: Map<string, V>, key: string, value: V): void {
+  if (map.size >= MAX_PROMPT_CACHE_ENTRIES && !map.has(key)) {
+    const oldest = map.keys().next().value
+    if (oldest !== undefined) map.delete(oldest)
+  }
+  map.set(key, value)
+}
+
+/** Cheap stable fingerprint (djb2) over role+content of a message window. */
+function messagesFingerprint(messages: DeepSeekChatMessage[]): string {
+  let h = 5381
+  for (const m of messages) {
+    const s = `${m.role}\u0000${m.content}`
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) + h + s.charCodeAt(i)) | 0
+    }
+  }
+  return (h >>> 0).toString(36)
+}
+
+/**
+ * Drop every cached prompt artifact for a conversation. Called when its
+ * history changes materially (delete / truncate / edit) so summaries and
+ * coach assessments can never describe content that no longer exists.
+ */
+export function clearConversationPromptCaches(conversationId: string): void {
+  coachCache.delete(conversationId)
+  coachAnalysisInFlight.delete(conversationId)
+  const prefix = `${conversationId}:`
+  for (const key of [...compressionCache.keys()]) {
+    if (key.startsWith(prefix)) compressionCache.delete(key)
+  }
+}
+
+// ---------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------
 
@@ -79,18 +136,6 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
   const textbookStore = new TextbookStore(dataRoot)
   const conversationStore = new ConversationStore(dataRoot)
   const artifactStore = new ArtifactStore(dataRoot)
-
-  // Cache the latest teaching-coach assessment per conversation so it
-  // persists between turns until the next analysis interval triggers.
-  // { formatted segment string, round number }
-  const coachCache = new Map<string, { segment: string; round: number; contentProgress: string }>()
-  // 防止异步教练分析叠加（同一会话同时只跑一个）
-  const coachAnalysisInFlight = new Set<string>()
-
-  // Cache compressed summaries per conversation to avoid re-calling the
-  // LLM on every turn.  Keyed by the number of messages in the compression
-  // window - if the window hasn't grown, the summary is reused.
-  const compressionCache = new Map<string, { windowSize: number; summary: string }>()
 
   ipcMain.handle('chat:get-prompt-messages', async (_event, input: unknown) => {
     const params = IpcChatPromptMessagesInputSchema.parse(input)
@@ -177,7 +222,10 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
           const apiKey = await providerStore.readApiKey(active.id)
           if (apiKey) {
             const { toCompress, toKeep } = splitCompressionWindowByTokens(history, HISTORY_WINDOW)
-            const cacheKey = `${params.conversationId}:${toCompress.length}`
+            // Fingerprint the window contents, not just its size: an edit or
+            // rewind that keeps the count identical must not reuse the old
+            // summary of different messages.
+            const cacheKey = `${params.conversationId}:${toCompress.length}:${messagesFingerprint(toCompress)}`
             const cached = compressionCache.get(cacheKey)
             let summary: string | null = null
 
@@ -190,7 +238,7 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
                 model: active.selectedModel || 'deepseek-v4-flash'
               })
               if (summary) {
-                compressionCache.set(cacheKey, { windowSize: toCompress.length, summary })
+                setCapped(compressionCache, cacheKey, { windowSize: toCompress.length, summary })
               }
             }
 
@@ -229,7 +277,7 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
               if (assessment) {
                 const round = userMsgCount / ANALYSIS_INTERVAL
                 const segment = formatAssessment(assessment, round)
-                coachCache.set(params.conversationId, { segment, round, contentProgress: assessment.contentProgress })
+                setCapped(coachCache, params.conversationId, { segment, round, contentProgress: assessment.contentProgress })
                 console.log(`[teaching-coach] Analysis injected for ${params.conversationId} (round ${round})`)
               }
             }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { readFile, mkdir, rm } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -8,7 +8,10 @@ import { CompanionSource } from '../../../src/shared/types/ids'
 
 // We import the yet-to-be-implemented modules.
 // Tests will fail (RED) until implementation exists.
-import { loadReferenceCompanions } from '../../../src/main/companions/reference-loader'
+import {
+  loadReferenceCompanions,
+  recordDeletedCandidate
+} from '../../../src/main/companions/reference-loader'
 
 const TEST_ID = `sophia-loader-${randomUUID()}`
 const tempDir = join(tmpdir(), TEST_ID)
@@ -151,5 +154,48 @@ describe('loadReferenceCompanions', () => {
         companionDir: join(tempDir, 'out')
       })
     ).rejects.toThrow()
+  })
+})
+
+describe('loadReferenceCompanions — merge survives restarts', () => {
+  const mergeDir = join(tempDir, 'merge')
+
+  async function loadOnce(): Promise<void> {
+    await loadReferenceCompanions({ candidatesDir, companionDir: mergeDir })
+  }
+
+  async function readIndex(): Promise<Array<{ id: string; name: string; version?: number; source: string }>> {
+    return JSON.parse(await readFile(join(mergeDir, 'index.json'), 'utf-8'))
+  }
+
+  it('keeps user edits to a candidate across reloads (no silent rollback)', async () => {
+    await loadOnce()
+
+    // Simulate companion:update — version bumped, name edited.
+    const index = await readIndex()
+    const alice = index.find((c) => c.id === 'comp_alice')!
+    alice.name = '爱丽丝（已编辑）'
+    alice.version = 2
+    await writeFile(join(mergeDir, 'index.json'), JSON.stringify(index, null, 2), 'utf-8')
+
+    const result = await loadReferenceCompanions({ candidatesDir, companionDir: mergeDir })
+    const reloadedAlice = result.companions.find((c) => c.id === 'comp_alice')
+    expect(reloadedAlice?.name).toBe('爱丽丝（已编辑）')
+    expect(reloadedAlice?.version).toBe(2)
+
+    const persisted = (await readIndex()).find((c) => c.id === 'comp_alice')
+    expect(persisted?.name).toBe('爱丽丝（已编辑）')
+  })
+
+  it('does not resurrect a deleted candidate after a restart', async () => {
+    await loadOnce()
+    await recordDeletedCandidate(mergeDir, 'comp_holmes')
+
+    const result = await loadReferenceCompanions({ candidatesDir, companionDir: mergeDir })
+
+    expect(result.companions.some((c) => c.id === 'comp_holmes')).toBe(false)
+    expect(result.count).toBe(8)
+    const persisted = await readIndex()
+    expect(persisted.some((c) => c.id === 'comp_holmes')).toBe(false)
   })
 })

@@ -9,6 +9,7 @@ import {
   type ArchiveEntry
 } from '../storage/archive-store'
 import { companionDir } from '../storage/app-data'
+import { clearDeletedCandidate } from '../companions/reference-loader'
 import { CompanionSchema } from '../../shared/schemas/companion'
 import { IpcArchiveEntryIdInputSchema } from '../../shared/schemas/ipc'
 import { atomicWriteFile } from '../storage/atomic-write'
@@ -40,6 +41,9 @@ async function restoreCompanion(dataRoot: string, entry: ArchiveEntry): Promise<
   existing.push(companion as unknown as { id: string })
   await mkdir(companionDir(dataRoot), { recursive: true })
   await atomicWriteFile(indexPath, JSON.stringify(existing, null, 2), 'utf-8')
+  // The id must also be un-tombstoned, or the next start would filter it
+  // out of the rebuilt candidate list again.
+  await clearDeletedCandidate(companionDir(dataRoot), companion.id)
   await rm(join(archiveDir(dataRoot), entry.id), { recursive: true, force: true })
   await purgeArchiveItem(dataRoot, entry.id)
   return true

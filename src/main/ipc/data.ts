@@ -20,6 +20,7 @@ import { DeepSeekClient } from '../llm/deepseek-client'
 import { createDeepSeekHttpAdapter } from '../llm/deepseek-http-adapter'
 import { PickedFileRegistry } from './picked-files'
 import { safeSend } from './safe-send'
+import { clearConversationPromptCaches } from './chat-prompt'
 import { createBackupZip } from '../backup/backup'
 import {
   learnerPath,
@@ -197,7 +198,13 @@ export function registerConversationIpc(
     } catch (err) {
       console.warn(`Archive conversation ${parsed.conversationId} failed:`, err)
     }
-    return conversationStore.delete(parsed.conversationId)
+    const deleted = await conversationStore.delete(parsed.conversationId)
+    if (deleted) {
+      // Nothing may keep referring to a conversation that no longer exists.
+      clearConversationPromptCaches(parsed.conversationId)
+      lastConceptUpdateAt.delete(parsed.conversationId)
+    }
+    return deleted
   })
 
   ipcMain.handle('conversation:update-title', async (_event, input: unknown) => {
@@ -208,10 +215,12 @@ export function registerConversationIpc(
   // Rewind a conversation to a message: drop everything after it
   ipcMain.handle('conversation:truncate', async (_event, input: unknown) => {
     const parsed = IpcTruncateConversationInputSchema.parse(input)
-    return conversationStore.truncateAfter(
+    const truncated = await conversationStore.truncateAfter(
       parsed.conversationId,
       parsed.messageId
     )
+    if (truncated) clearConversationPromptCaches(parsed.conversationId)
+    return truncated
   })
 
   ipcMain.handle('conversation:end', async (_event, input: unknown) => {
@@ -368,12 +377,17 @@ export function registerConversationIpc(
 
   ipcMain.handle('message:update', async (_event, input: unknown) => {
     const parsed = IpcUpdateMessageInputSchema.parse(input)
-    return conversationStore.updateMessage(parsed.conversationId, parsed.messageId, parsed.content)
+    const updated = await conversationStore.updateMessage(parsed.conversationId, parsed.messageId, parsed.content)
+    // Edited content invalidates cached summaries/assessments for this class.
+    if (updated) clearConversationPromptCaches(parsed.conversationId)
+    return updated
   })
 
   ipcMain.handle('message:delete', async (_event, input: unknown) => {
     const parsed = IpcDeleteMessageInputSchema.parse(input)
-    return conversationStore.deleteMessage(parsed.conversationId, parsed.messageId)
+    const deleted = await conversationStore.deleteMessage(parsed.conversationId, parsed.messageId)
+    if (deleted) clearConversationPromptCaches(parsed.conversationId)
+    return deleted
   })
 
   // --- File Dialog ---

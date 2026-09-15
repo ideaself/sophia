@@ -3,8 +3,10 @@ import { readFile, access, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CompanionSchema } from '../../shared/schemas/companion'
 import type { z } from 'zod'
+import { CompanionSource } from '../../shared/types/ids'
 import { companionDir } from '../storage/app-data'
 import { archiveCompanion } from '../storage/archive-store'
+import { recordDeletedCandidate } from '../companions/reference-loader'
 import { atomicWriteFile } from '../storage/atomic-write'
 
 type CompanionData = z.infer<typeof CompanionSchema>
@@ -97,6 +99,15 @@ export function registerCompanionIpc(dataRoot: string): void {
         await archiveCompanion(dataRoot, companionId, target.name || companionId, target)
       } catch (err) {
         console.warn(`Archive companion ${companionId} failed:`, err)
+      }
+      // Candidate companions are rebuilt from the shipped .md files on every
+      // start — tombstone the id so the delete survives a restart.
+      if (target.source === CompanionSource.Candidate) {
+        try {
+          await recordDeletedCandidate(companionDir(dataRoot), companionId)
+        } catch (err) {
+          console.warn(`Record deleted candidate ${companionId} failed:`, err)
+        }
       }
     }
     await writeIndex(dataRoot, filtered)

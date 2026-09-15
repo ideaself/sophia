@@ -18,6 +18,7 @@ import type {
 } from './types'
 import { DEEPSEEK_V4_PRO } from './types'
 import { AppError, mapDeepSeekError } from './errors'
+import { sleepWithAbort } from './sleep'
 
 export class DeepSeekClient {
   private readonly apiKey: string
@@ -53,25 +54,27 @@ export class DeepSeekClient {
    * first assistant choice as a typed response.
    *
    * Retries up to 2 times on transient errors (429, 500, 503) with
-   * exponential backoff (1s, 2s).
+   * exponential backoff (1s, 2s). The backoff is abortable: when
+   * `options.signal` fires, the wait ends immediately with an AbortError.
    *
    * @param messages  Ordered conversation messages (system/user/assistant).
-   * @param options   Optional overrides (currently: model).
+   * @param options   Optional overrides (model, abort signal).
    */
   async chat(
     messages: DeepSeekChatMessage[],
-    options?: { model?: DeepSeekModel }
+    options?: { model?: DeepSeekModel; signal?: AbortSignal }
   ): Promise<DeepSeekChatResponse> {
     const model = options?.model ?? this.defaultModel
+    const signal = options?.signal
     const maxRetries = 2
 
-    let lastError: unknown
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const result = await this.adapter.chatCompletion({
           model,
           messages,
-          apiKey: this.apiKey
+          apiKey: this.apiKey,
+          signal
         })
 
         if (!result.ok) {
@@ -80,17 +83,17 @@ export class DeepSeekClient {
 
         return extractChatResponse(result.data)
       } catch (err) {
-        lastError = err
         if (err instanceof AppError && err.retryable && attempt < maxRetries) {
           const delayMs = 1000 * Math.pow(2, attempt)
-          await new Promise((resolve) => setTimeout(resolve, delayMs))
+          await sleepWithAbort(delayMs, signal)
           continue
         }
         throw err
       }
     }
 
-    throw lastError
+    // Unreachable: the loop either returns or throws. Kept for exhaustiveness.
+    throw new AppError('UNKNOWN_ERROR', 0, 'DeepSeek request failed')
   }
 }
 
@@ -101,7 +104,7 @@ export class DeepSeekClient {
 function extractChatResponse(data: {
   model?: string
   choices?: Array<{
-    message?: { role?: string; content?: string }
+    message?: { role?: string; content?: string; reasoning_content?: string }
     finish_reason?: string
   }>
   usage?: {
@@ -113,10 +116,16 @@ function extractChatResponse(data: {
   const choice = data.choices?.[0]
 
   if (!choice?.message?.content) {
+    // A thinking model that exhausts its token budget mid-reasoning returns
+    // reasoning_content with empty content. Surface that distinctly so the
+    // caller can tell a truncation apart from a truly malformed response.
+    const hasReasoning = Boolean(choice?.message?.reasoning_content)
     throw new AppError(
       'EMPTY_RESPONSE',
       0,
-      'DeepSeek returned an empty or malformed response'
+      hasReasoning
+        ? '模型只输出了思考内容（可能被 max_tokens 截断），未生成回答'
+        : 'DeepSeek returned an empty or malformed response'
     )
   }
 
