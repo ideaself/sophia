@@ -8,8 +8,8 @@ export function SelfTestBlock({ questions }: { questions: SelfTestQuestion[] }):
   const nextLabel = (i: number) => {
     const r = revealed[i] ?? 0
     const q = questions[i]
-    if (r === 0) return '显示提示 1'
-    if (r <= q.hints.length) return `显示提示 ${r + 1}`
+    if (r === 0) return q.hints.length > 0 ? '显示提示 1' : '显示答案'
+    if (r < q.hints.length) return `显示提示 ${r + 1}`
     return '显示答案'
   }
 

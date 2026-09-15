@@ -2,7 +2,8 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    include: ['tests/**/*.test.ts'],
+    // .tsx test files opt into jsdom per-file via @vitest-environment.
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     globals: false,
     coverage: {
       provider: 'v8',
