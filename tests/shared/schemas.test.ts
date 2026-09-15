@@ -3,8 +3,7 @@ import {
   CompanionSource,
   CompanionGender,
   MessageRole,
-  ArtifactType,
-  TextbookFormat
+  ArtifactType
 } from '../../src/shared/types/ids'
 import type {
   CompanionId,
@@ -22,9 +21,9 @@ import { MessageSchema, type Message } from '../../src/shared/schemas/message'
 import { ArtifactSchema, type Artifact } from '../../src/shared/schemas/artifact'
 import {
   EntityIdSchema,
-  IpcCreateTextbookInputSchema,
   IpcCreateConversationInputSchema,
   IpcSendMessageInputSchema,
+  IpcUpdateMessageInputSchema,
   IpcEndClassInputSchema,
   IpcRedoArtifactsInputSchema,
   IpcTruncateConversationInputSchema,
@@ -32,14 +31,16 @@ import {
   IpcTextbookSearchExcerptInputSchema,
   IpcTextbookTranslateExcerptInputSchema,
   IpcExportBackupInputSchema,
+  IpcRestoreBackupInputSchema,
+  IpcConceptsListInputSchema,
+  IpcFlashcardSrsStateInputSchema,
+  IpcFlashcardFavoritesInputSchema,
   IpcGetConversationInputSchema,
-  IpcListConversationsInputSchema,
   IpcGetMessagesInputSchema,
   IpcGetArtifactInputSchema,
   IpcUpdateArtifactInputSchema,
   IpcListArtifactsInputSchema,
   IpcDeleteConversationInputSchema,
-  IpcUpdateTextbookContentInputSchema,
   IpcSearchMessagesInputSchema,
   IpcGetTextbookInputSchema,
   IpcDeleteReadingNoteInputSchema,
@@ -364,42 +365,6 @@ describe('ArtifactSchema', () => {
 describe('IPC input schemas', () => {
 
 
-  describe('IpcCreateTextbookInputSchema', () => {
-    it('accepts valid file import input', () => {
-      const result = IpcCreateTextbookInputSchema.safeParse({
-            title: 'Chemistry 101',
-        format: TextbookFormat.Markdown,
-        sourceFile: '/books/chem.md'
-      })
-      expect(result.success).toBe(true)
-    })
-
-    it('accepts valid pasted text input', () => {
-      const result = IpcCreateTextbookInputSchema.safeParse({
-            title: 'My Notes',
-        format: TextbookFormat.Text,
-        sourceFile: '',
-        content: 'This is pasted content.'
-      })
-      expect(result.success).toBe(true)
-    })
-
-    it('rejects missing title', () => {
-      const result = IpcCreateTextbookInputSchema.safeParse({
-            format: TextbookFormat.Text
-      })
-      expect(result.success).toBe(false)
-    })
-
-    it('rejects unsupported format', () => {
-      const result = IpcCreateTextbookInputSchema.safeParse({
-            title: 'Doc',
-        format: 'docx'
-      })
-      expect(result.success).toBe(false)
-    })
-  })
-
   describe('IpcCreateConversationInputSchema', () => {
     it('accepts valid input with textbook', () => {
       const result = IpcCreateConversationInputSchema.safeParse({
@@ -641,24 +606,6 @@ describe('IPC input schemas', () => {
     })
   })
 
-  describe('IpcUpdateTextbookContentInputSchema', () => {
-    it('accepts valid input', () => {
-      const result = IpcUpdateTextbookContentInputSchema.safeParse({
-        textbookId: 'tb_001',
-        content: '# Updated\n\nNew content here.'
-      })
-      expect(result.success).toBe(true)
-    })
-
-    it('rejects empty content', () => {
-      const result = IpcUpdateTextbookContentInputSchema.safeParse({
-        textbookId: 'tb_001',
-        content: ''
-      })
-      expect(result.success).toBe(false)
-    })
-  })
-
   describe('IpcSearchMessagesInputSchema', () => {
     it('accepts valid input', () => {
       const result = IpcSearchMessagesInputSchema.safeParse({
@@ -768,5 +715,61 @@ describe('Provider IPC schemas', () => {
   it('rejects empty API keys', () => {
     const result = IpcProviderSetApiKeyInputSchema.safeParse({ id: 'prov_1', apiKey: '' })
     expect(result.success).toBe(false)
+  })
+})
+
+// ============================================================
+// Write-boundary schemas (message trim, restore, concepts, SRS)
+// ============================================================
+
+describe('write-boundary schemas', () => {
+  it('rejects whitespace-only messages on send and update', () => {
+    const send = IpcSendMessageInputSchema.safeParse({
+      conversationId: 'conv_1',
+      content: '   \n  '
+    })
+    expect(send.success).toBe(false)
+
+    const update = IpcUpdateMessageInputSchema.safeParse({
+      conversationId: 'conv_1',
+      messageId: 'msg_1',
+      content: '   '
+    })
+    expect(update.success).toBe(false)
+  })
+
+  it('trims message content on the way in', () => {
+    const result = IpcSendMessageInputSchema.safeParse({
+      conversationId: 'conv_1',
+      content: '  hi  '
+    })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.content).toBe('hi')
+  })
+
+  it('validates the restore-backup path argument', () => {
+    expect(IpcRestoreBackupInputSchema.safeParse('C:\\backups\\a.zip').success).toBe(true)
+    expect(IpcRestoreBackupInputSchema.safeParse('').success).toBe(false)
+    expect(IpcRestoreBackupInputSchema.safeParse(123).success).toBe(false)
+  })
+
+  it('accepts a conversation id or empty string for concepts:list', () => {
+    expect(IpcConceptsListInputSchema.safeParse('conv_1').success).toBe(true)
+    expect(IpcConceptsListInputSchema.safeParse('').success).toBe(true)
+    expect(IpcConceptsListInputSchema.safeParse('../x').success).toBe(false)
+  })
+
+  it('caps flashcard SRS state shape and size', () => {
+    expect(IpcFlashcardSrsStateInputSchema.safeParse({ k1: { due: 1 } }).success).toBe(true)
+    expect(IpcFlashcardSrsStateInputSchema.safeParse(['not', 'a', 'map']).success).toBe(false)
+    // > 2 MB payload is rejected
+    const huge: Record<string, string> = { k: 'x'.repeat(3 * 1024 * 1024) }
+    expect(IpcFlashcardSrsStateInputSchema.safeParse(huge).success).toBe(false)
+  })
+
+  it('caps favorites: bounded keys and count', () => {
+    expect(IpcFlashcardFavoritesInputSchema.safeParse(['conv_1::art_1::0']).success).toBe(true)
+    expect(IpcFlashcardFavoritesInputSchema.safeParse([123]).success).toBe(false)
+    expect(IpcFlashcardFavoritesInputSchema.safeParse(['x'.repeat(600)]).success).toBe(false)
   })
 })

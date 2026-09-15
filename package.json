@@ -60,9 +60,9 @@
   "dependencies": {
     "archiver": "^8.0.0",
     "epub": "^2.1.1",
-    "extract-zip": "^2.0.1",
     "katex": "^0.18.1",
     "unpdf": "^1.8.0",
+    "unzipper": "^0.12.5",
     "webdav": "^5.10.0",
     "zod": "^4.4.3"
   },
@@ -84,6 +84,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^17.9.0",
+    "jszip": "^3.10.1",
     "mermaid": "^11.16.0",
     "pdfjs-dist": "^6.1.200",
     "postcss": "^8.5.3",
@@ -97,7 +98,6 @@
     "tailwindcss": "^4.1.6",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.66.0",
-    "unzipper": "^0.12.5",
     "vite": "^6.3.5",
     "vitest": "^4.1.10",
     "zustand": "^5.0.14"

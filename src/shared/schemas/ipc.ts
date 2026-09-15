@@ -20,25 +20,6 @@ export const IpcArtifactTypeSchema = z.enum(ArtifactType)
 
 // --- IPC: Companion ---
 
-// --- IPC: Textbook ---
-
-export const IpcCreateTextbookInputSchema = z.object({
-  title: z.string().min(1),
-  format: z.enum([
-    TextbookFormat.Markdown,
-    TextbookFormat.Text,
-    TextbookFormat.Pdf,
-    TextbookFormat.Epub
-  ]),
-  sourceFile: z.string().optional().default(''),
-  content: z.string().optional()
-})
-
-export const IpcUpdateTextbookContentInputSchema = z.object({
-  textbookId: EntityIdSchema,
-  content: z.string().min(1)
-})
-
 // --- IPC: Conversation ---
 
 export const IpcCreateConversationInputSchema = z.object({
@@ -46,9 +27,6 @@ export const IpcCreateConversationInputSchema = z.object({
   companionVersion: z.number().int().min(1).optional(),
   textbookId: EntityIdSchema.optional(),
   title: z.string().min(1)
-})
-
-export const IpcListConversationsInputSchema = z.object({
 })
 
 // --- IPC: Message ---
@@ -103,7 +81,9 @@ export const IpcDeleteConversationInputSchema = z.object({
 
 export const IpcSendMessageInputSchema = z.object({
   conversationId: EntityIdSchema,
-  content: z.string().min(1),
+  // trim: whitespace-only content would persist as a line that the read-side
+  // MessageSchema (trim + min 1) then silently drops.
+  content: z.string().trim().min(1),
   role: z.enum(['user', 'assistant', 'system']).optional(),
 })
 
@@ -114,7 +94,7 @@ export const IpcGetMessagesInputSchema = z.object({
 export const IpcUpdateMessageInputSchema = z.object({
   conversationId: EntityIdSchema,
   messageId: EntityIdSchema,
-  content: z.string(),
+  content: z.string().trim().min(1),
 })
 
 export const IpcDeleteMessageInputSchema = z.object({
@@ -157,6 +137,25 @@ export const IpcFlashcardRefSchema = z.object({
 export const IpcFlashcardDeleteCardsInputSchema = z.object({
   cards: z.array(IpcFlashcardRefSchema).min(1),
 })
+
+/** Hard cap so a runaway renderer cannot write arbitrarily large state files. */
+const MAX_FLASHCARD_STATE_BYTES = 2 * 1024 * 1024
+
+/**
+ * SRS state is an opaque map keyed by card key. Shape-checked (plain object)
+ * and size-capped; undefined/oversized payloads are rejected at the boundary.
+ */
+export const IpcFlashcardSrsStateInputSchema = z
+  .record(z.string().max(512), z.unknown())
+  .refine(
+    (value) => JSON.stringify(value).length <= MAX_FLASHCARD_STATE_BYTES,
+    { message: 'SRS state payload too large' }
+  )
+
+/** Favorite card keys (bounded strings, bounded count). */
+export const IpcFlashcardFavoritesInputSchema = z
+  .array(z.string().min(1).max(512))
+  .max(20_000)
 
 // --- IPC: Archive (回收站) ---
 
@@ -218,9 +217,6 @@ export const IpcCreateTextbookFullInputSchema = z.object({
 
 export const IpcGetTextbookInputSchema = z.object({
   textbookId: EntityIdSchema,
-})
-
-export const IpcListTextbooksInputSchema = z.object({
 })
 
 export const IpcUpdateTextbookInputSchema = z.object({
@@ -288,6 +284,12 @@ export const IpcWriteTextFileInputSchema = z.object({
 export const IpcExportBackupInputSchema = z.object({
   filePath: z.string().min(1)
 })
+
+/** Restore source path — must come from the open dialog (checked via picked-files). */
+export const IpcRestoreBackupInputSchema = z.string().min(1).max(4096)
+
+/** Concept list query: a conversation id, or '' for all concepts. */
+export const IpcConceptsListInputSchema = z.union([EntityIdSchema, z.literal('')])
 
 export const IpcDialogFileFiltersSchema = z.array(z.object({
   name: z.string(),

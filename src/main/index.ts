@@ -16,6 +16,23 @@ import { resolveReferencePaths } from './storage/resolve-paths'
 import { createDeepSeekStreamAdapter } from './llm/deepseek-stream-adapter'
 import { maybeAutoBackup } from './backup/auto-backup'
 
+/**
+ * Last-resort process-level guards.
+ *
+ * Without these, an unhandled rejection in the main process is silent (and an
+ * uncaught exception can leave a zombie window with no trace). Log and keep
+ * the app alive: a background artifact/sync task failing must not kill an
+ * in-progress class.
+ */
+function installProcessGuards(): void {
+  process.on('uncaughtException', (err) => {
+    console.error('[main] uncaughtException:', err)
+  })
+  process.on('unhandledRejection', (reason) => {
+    console.error('[main] unhandledRejection:', reason)
+  })
+}
+
 function makeIcon(size: number): Electron.NativeImage {
   const buf = Buffer.alloc(size * size * 4)
   const m = Math.max(1, Math.floor(size * 0.2))
@@ -110,8 +127,16 @@ function createWindow(): void {
       console.error(`Renderer failed to load: ${errorCode} - ${errorDescription}`)
     })
 
+    // Reload after a renderer crash so the user is not stuck on a white
+    // window; the cooldown prevents a crash loop from spinning forever.
+    let lastRendererRecoveryAt = 0
     mainWindow.webContents.on('render-process-gone', (_event, details) => {
       console.error(`Renderer process gone: ${details.reason}`)
+      const now = Date.now()
+      if (!mainWindow.isDestroyed() && now - lastRendererRecoveryAt > 30_000) {
+        lastRendererRecoveryAt = now
+        mainWindow.webContents.reload()
+      }
     })
 
     mainWindow.on('ready-to-show', () => {
@@ -146,6 +171,18 @@ function createWindow(): void {
         mainWindow.hide()
       }
     })
+
+    // The debounced state save must not fire against a destroyed window.
+    mainWindow.on('closed', () => {
+      if (saveTimer) {
+        clearTimeout(saveTimer)
+        saveTimer = null
+      }
+    })
+  }).catch((err) => {
+    // BrowserWindow creation failed (e.g. no display) — log instead of
+    // turning into an unhandled rejection.
+    console.error('Failed to create main window:', err)
   })
 }
 
@@ -204,6 +241,8 @@ function makeTraySized(src: Electron.NativeImage): Electron.NativeImage {
 }
 
 let isQuitting = false
+
+installProcessGuards()
 
 // Single-instance lock: a second launch focuses the existing window instead
 // of spawning a competing process over the same data directory.

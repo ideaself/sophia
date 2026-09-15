@@ -787,6 +787,48 @@ async function walkLocal(dir: string): Promise<string[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Nested trash targets — parent collections must exist before MOVE
+// ---------------------------------------------------------------------------
+
+describe('SyncManager.push — nested trash targets', () => {
+  class DirectoryStrictClient extends FakeClient {
+    private ensuredDirs = new Set<string>()
+
+    override async ensureDir(dir: string): Promise<void> {
+      this.ensuredDirs.add(dir)
+    }
+
+    override async moveFile(path: string, target: string): Promise<void> {
+      const parent = target.slice(0, target.lastIndexOf('/'))
+      if (!this.ensuredDirs.has(parent)) {
+        throw new Error(`WebDAV MOVE failed: parent collection missing: ${parent}`)
+      }
+      return super.moveFile(path, target)
+    }
+  }
+
+  it('trashes nested files instead of falling back to permanent DELETE', async () => {
+    const fake = new DirectoryStrictClient()
+    const rel = 'conversations/c_1/artifacts/art_1.json'
+    fake.setRemote(R(rel), '{}', 'mod-1')
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: { [rel]: entry({ size: 2, mtimeMs: 123 }, { size: 2, lastmod: 'mod-1' }) }
+    })
+
+    const result = await makeManager(dataRoot, fake).push(CONFIG)
+
+    expect(result.trashed).toBe(1)
+    expect(result.deleted).toBe(0)
+    // Empty-dir pruning may delete collections, but the file itself is moved.
+    expect(fake.deletions).not.toContain(R(rel))
+    expect(fake.moves[0].target).toMatch(
+      /^\/sophia\/\.trash\/[^/]+\/conversations\/c_1\/artifacts\/art_1\.json$/
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Single-flight lock — mutating sync ops must not interleave
 // ---------------------------------------------------------------------------
 

@@ -476,7 +476,12 @@ export class SyncManager {
           file: del.relPath
         })
         try {
-          await client.moveFile(del.remotePath, `${batch}/${del.relPath}`)
+          const target = `${batch}/${del.relPath}`
+          // Nested relPaths (conversations/<id>/messages.json) need their
+          // parent collections to exist — WebDAV MOVE into a missing parent
+          // fails, which used to fall back to a permanent DELETE.
+          await client.ensureDir(dirname(target).replace(/\\/g, '/'))
+          await client.moveFile(del.remotePath, target)
           trashed++
         } catch {
           try {

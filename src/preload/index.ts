@@ -199,7 +199,6 @@ export interface DataAPI {
     searchTextbookExcerpt: (textbookId: string, chapter: string) => Promise<{ chapter: string; excerpt: string } | null>
     translateTextbookExcerpt: (textbookId: string, chapter: string) => Promise<{ chapter: string; excerpt: string; translation: string } | null>
   listTextbooks: () => Promise<TextbookDTO[]>
-  updateTextbookContent: (textbookId: string, content: string) => Promise<TextbookDTO | null>
   updateTextbook: (textbookId: string, updates: { title?: string; content?: string }) => Promise<TextbookDTO | null>
   deleteTextbook: (textbookId: string) => Promise<boolean>
   createArtifact: (input: {
@@ -576,8 +575,6 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('textbook:translate-excerpt', { textbookId, chapter }),
     listTextbooks: () =>
       ipcRenderer.invoke('textbook:list', { }),
-    updateTextbookContent: (textbookId, content) =>
-      ipcRenderer.invoke('textbook:update-content', { textbookId, content }),
     updateTextbook: (textbookId, updates) =>
       ipcRenderer.invoke('textbook:update', { textbookId, ...updates }),
     deleteTextbook: (textbookId) =>

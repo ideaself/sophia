@@ -29,6 +29,9 @@ export async function createBackupZip(
       if (entry.type === 'file') fileCount++
     })
   })
+  // If finalize() rejects first, `done` may reject with nobody awaiting it —
+  // mark it handled so a failure surfaces as a normal throw, not a crash.
+  done.catch(() => {})
 
   archive.pipe(output)
   // `false` = add the directory contents at the zip root (no wrapper folder)

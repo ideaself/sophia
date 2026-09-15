@@ -193,7 +193,6 @@ declare global {
     searchTextbookExcerpt: (textbookId: string, chapter: string) => Promise<{ chapter: string; excerpt: string } | null>
     translateTextbookExcerpt: (textbookId: string, chapter: string) => Promise<{ chapter: string; excerpt: string; translation: string } | null>
     listTextbooks: () => Promise<TextbookDTO[]>
-    updateTextbookContent: (textbookId: string, content: string) => Promise<TextbookDTO | null>
     updateTextbook: (textbookId: string, updates: { title?: string; content?: string }) => Promise<TextbookDTO | null>
     deleteTextbook: (textbookId: string) => Promise<boolean>
     createArtifact: (input: {

@@ -9,7 +9,7 @@
 
 import { mkdir, readdir, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import extract from 'extract-zip'
+import { extractZipSafely } from './safe-extract'
 import { createBackupZip } from './backup'
 
 /** Top-level dirs a valid Sophia data root must contain. */
@@ -30,11 +30,12 @@ export async function restoreFromBackup(dataRoot: string, zipPath: string): Prom
   const preRestore = join(parent, `Sophia-pre-restore-${stamp}.zip`)
   await createBackupZip(dataRoot, preRestore)
 
-  // 2. Extract into a temp dir
+  // 2. Extract into a temp dir (safe extractor: no symlinks, no traversal,
+  //    size-capped — see safe-extract.ts)
   const tmp = join(parent, `.restore-${stamp}`)
   try {
     await mkdir(tmp, { recursive: true })
-    await extract(zipPath, { dir: tmp })
+    await extractZipSafely(zipPath, tmp)
 
     // 3. Validate the backup actually contains a data root
     const entries = new Set(await readdir(tmp))

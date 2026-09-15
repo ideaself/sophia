@@ -35,7 +35,6 @@ import { archiveItem } from '../storage/archive-store'
 import {
   IpcCreateConversationInputSchema,
   IpcGetConversationInputSchema,
-  IpcListConversationsInputSchema,
   IpcDeleteConversationInputSchema,
   IpcUpdateTitleInputSchema,
   IpcEndClassInputSchema,
@@ -52,7 +51,6 @@ import {
   IpcListArtifactsInputSchema,
   IpcCreateTextbookFullInputSchema,
   IpcGetTextbookInputSchema,
-  IpcListTextbooksInputSchema,
   IpcUpdateTextbookInputSchema,
   IpcUpdateTextbookProgressInputSchema,
   IpcDeleteTextbookInputSchema,
@@ -66,6 +64,10 @@ import {
   IpcDeleteReadingNoteInputSchema,
   IpcWriteTextFileInputSchema,
   IpcExportBackupInputSchema,
+  IpcRestoreBackupInputSchema,
+  IpcConceptsListInputSchema,
+  IpcFlashcardSrsStateInputSchema,
+  IpcFlashcardFavoritesInputSchema,
   IpcOpenFileDialogInputSchema,
   IpcSaveFileDialogInputSchema,
   IpcConfirmDialogInputSchema,
@@ -310,7 +312,7 @@ export function registerConversationIpc(
   }
 
   ipcMain.handle('concepts:list', async (_event, input: unknown) => {
-    const conversationId = typeof input === 'string' ? input : ''
+    const conversationId = IpcConceptsListInputSchema.parse(input)
     return conversationId ? conceptStore.listByConversation(conversationId) : conceptStore.load()
   })
 
@@ -751,7 +753,8 @@ export function registerConversationIpc(
 
   // Restore from a backup zip (validated path from the open dialog)
   ipcMain.handle('data:restore-backup', async (_event, input: unknown) => {
-    const zipPath = typeof input === 'string' ? input : ''
+    const parsed = IpcRestoreBackupInputSchema.safeParse(input)
+    const zipPath = parsed.success ? parsed.data : ''
     if (!zipPath || !pickedFiles.has(zipPath)) {
       return { success: false, error: '请通过文件选择框选择备份文件' }
     }
@@ -773,8 +776,9 @@ export function registerConversationIpc(
   })
 
   ipcMain.handle('flashcard:save-srs-state', async (_event, input: unknown) => {
+    const parsed = IpcFlashcardSrsStateInputSchema.parse(input)
     await mkdir(dataRoot, { recursive: true })
-    await atomicWriteFile(srsStatePath, JSON.stringify(input), 'utf-8')
+    await atomicWriteFile(srsStatePath, JSON.stringify(parsed), 'utf-8')
     return { success: true }
   })
 
@@ -790,8 +794,9 @@ export function registerConversationIpc(
   })
 
   ipcMain.handle('flashcard:save-favorites', async (_event, input: unknown) => {
+    const parsed = IpcFlashcardFavoritesInputSchema.parse(input)
     await mkdir(dataRoot, { recursive: true })
-    await atomicWriteFile(favoritesPath, JSON.stringify(Array.isArray(input) ? input : []), 'utf-8')
+    await atomicWriteFile(favoritesPath, JSON.stringify(parsed), 'utf-8')
     return { success: true }
   })
 
@@ -831,7 +836,7 @@ export function registerConversationIpc(
   // --- Diary (monthly files) ---
 
   ipcMain.handle('diary:list-months', async (_event, input: unknown) => {
-    const parsed = IpcDiaryListMonthsInputSchema.parse(input)
+    IpcDiaryListMonthsInputSchema.parse(input)
     return diaryStore.listMonths()
   })
 
