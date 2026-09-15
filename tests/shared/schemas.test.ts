@@ -21,6 +21,7 @@ import { ConversationSchema, type Conversation } from '../../src/shared/schemas/
 import { MessageSchema, type Message } from '../../src/shared/schemas/message'
 import { ArtifactSchema, type Artifact } from '../../src/shared/schemas/artifact'
 import {
+  EntityIdSchema,
   IpcCreateTextbookInputSchema,
   IpcCreateConversationInputSchema,
   IpcSendMessageInputSchema,
@@ -39,7 +40,13 @@ import {
   IpcListArtifactsInputSchema,
   IpcDeleteConversationInputSchema,
   IpcUpdateTextbookContentInputSchema,
-  IpcSearchMessagesInputSchema
+  IpcSearchMessagesInputSchema,
+  IpcGetTextbookInputSchema,
+  IpcDeleteReadingNoteInputSchema,
+  IpcProviderCreateInputSchema,
+  IpcProviderUpdateInputSchema,
+  IpcProviderSetApiKeyInputSchema,
+  ProviderBaseUrlSchema
 } from '../../src/shared/schemas/ipc'
 
 // ============================================================
@@ -331,6 +338,13 @@ describe('ArtifactSchema', () => {
       content: '## 学习者讲解了什么\n学习者解释了不确定性原理。'
     })
     expect(result.success).toBe(true)
+  })
+
+  it('accepts every ArtifactType value (no type may be dropped on read)', () => {
+    for (const type of Object.values(ArtifactType)) {
+      const result = ArtifactSchema.safeParse({ ...validArtifact(), type })
+      expect(result.success, `ArtifactSchema rejected ${type}`).toBe(true)
+    }
   })
 
   it('rejects an artifact with invalid type', () => {
@@ -666,5 +680,93 @@ describe('IPC input schemas', () => {
       })
       expect(result.success).toBe(false)
     })
+  })
+})
+
+// ============================================================
+// Entity ID Schema Tests
+// ============================================================
+
+describe('EntityIdSchema', () => {
+  it('accepts realistic domain ids', () => {
+    for (const id of ['conv_1720000000000_1', 'msg_abc-XYZ_9', 'comp_alice', 'tb_001', 'art_1', 'rn_2']) {
+      expect(EntityIdSchema.safeParse(id).success, id).toBe(true)
+    }
+  })
+
+  it('rejects path traversal and separators', () => {
+    for (const id of ['../config', '..\\config', 'a/b', 'a\\b', '..', '.', 'a b', 'a.b', '爱丽丝']) {
+      expect(EntityIdSchema.safeParse(id).success, id).toBe(false)
+    }
+  })
+
+  it('rejects empty and overlong ids', () => {
+    expect(EntityIdSchema.safeParse('').success).toBe(false)
+    expect(EntityIdSchema.safeParse('a'.repeat(129)).success).toBe(false)
+  })
+
+  it('is enforced on traversal-capable IPC inputs', () => {
+    expect(IpcDeleteConversationInputSchema.safeParse({ conversationId: '../../config' }).success).toBe(false)
+    expect(IpcGetArtifactInputSchema.safeParse({ artifactId: '..\\x', conversationId: 'conv_1' }).success).toBe(false)
+    expect(IpcGetTextbookInputSchema.safeParse({ textbookId: '../..' }).success).toBe(false)
+    expect(IpcDeleteReadingNoteInputSchema.safeParse({ noteId: 'x', textbookId: '../x' }).success).toBe(false)
+  })
+})
+
+// ============================================================
+// Provider IPC Schema Tests
+// ============================================================
+
+describe('Provider IPC schemas', () => {
+  function validProviderCreate() {
+    return {
+      name: 'DeepSeek',
+      type: 'deepseek' as const,
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'sk-test'
+    }
+  }
+
+  it('accepts a valid provider create payload', () => {
+    expect(IpcProviderCreateInputSchema.safeParse(validProviderCreate()).success).toBe(true)
+  })
+
+  it('allows creating a provider without an API key (key can be added later)', () => {
+    const result = IpcProviderCreateInputSchema.safeParse({ ...validProviderCreate(), apiKey: '' })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects a plain http:// base URL', () => {
+    const result = IpcProviderCreateInputSchema.safeParse({
+      ...validProviderCreate(),
+      baseUrl: 'http://api.deepseek.com'
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects mixed-case HTTP:// base URLs (case-insensitive scheme)', () => {
+    for (const baseUrl of ['HTTP://evil.example', 'HtTp://evil.example', 'hTTp://evil.example']) {
+      const result = IpcProviderCreateInputSchema.safeParse({ ...validProviderCreate(), baseUrl })
+      expect(result.success, `${baseUrl} must be rejected`).toBe(false)
+    }
+  })
+
+  it('rejects non-https protocols and malformed URLs', () => {
+    for (const baseUrl of ['ftp://example.com', 'ws://example.com', 'not-a-url', '']) {
+      expect(ProviderBaseUrlSchema.safeParse(baseUrl).success, `${baseUrl} must be rejected`).toBe(false)
+    }
+  })
+
+  it('validates base URL updates too', () => {
+    const result = IpcProviderUpdateInputSchema.safeParse({
+      id: 'prov_1',
+      baseUrl: 'http://api.example.com'
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects empty API keys', () => {
+    const result = IpcProviderSetApiKeyInputSchema.safeParse({ id: 'prov_1', apiKey: '' })
+    expect(result.success).toBe(false)
   })
 })

@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { ReadingNoteId } from '../../shared/types/ids'
-import { textbookNotesDir } from './app-data'
+import { textbookNotesDir, safeSegment } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
 import { atomicWriteFile } from './atomic-write'
 
@@ -42,7 +42,7 @@ export class ReadingNoteStore {
   constructor(private readonly dataRoot: string) {}
 
   private notePath(textbookId: string, noteId: string): string {
-    return join(textbookNotesDir(this.dataRoot, textbookId), `${noteId}.json`)
+    return join(textbookNotesDir(this.dataRoot, textbookId), `${safeSegment(noteId)}.json`)
   }
 
   async create(input: CreateReadingNoteInput): Promise<ReadingNote> {

@@ -15,6 +15,20 @@ import { join } from 'node:path'
  *     handoff_meta.json
  */
 
+/**
+ * Ids embed directly into file/directory names. IPC already validates ids
+ * (see EntityIdSchema), but every path builder re-checks here so a future
+ * caller cannot bypass the gate and escape the data root.
+ */
+const SAFE_SEGMENT_RE = /^[A-Za-z0-9_-]{1,128}$/
+
+export function safeSegment(id: string): string {
+  if (typeof id !== 'string' || !SAFE_SEGMENT_RE.test(id)) {
+    throw new Error('Invalid id for path')
+  }
+  return id
+}
+
 export function learnerPath(dataRoot: string): string {
   return join(dataRoot, 'learner.md')
 }
@@ -29,11 +43,11 @@ export function palMomentsPath(dataRoot: string): string {
  * 避免上一门课（如傅里叶光学）的互动内容串进新教材（微积分）课堂。
  */
 export function palMomentsPathForTextbook(dataRoot: string, textbookId: string): string {
-  return join(dataRoot, `pal_moments_${textbookId}.md`)
+  return join(dataRoot, `pal_moments_${safeSegment(textbookId)}.md`)
 }
 
 export function relationPath(dataRoot: string, companionId: string): string {
-  return join(dataRoot, `relation_${companionId}.md`)
+  return join(dataRoot, `relation_${safeSegment(companionId)}.md`)
 }
 
 export function handoffMetaPath(dataRoot: string): string {
@@ -65,7 +79,7 @@ export function textbooksDir(dataRoot: string): string {
 }
 
 export function textbookDir(dataRoot: string, textbookId: string): string {
-  return join(textbooksDir(dataRoot), textbookId)
+  return join(textbooksDir(dataRoot), safeSegment(textbookId))
 }
 
 export function textbookPath(dataRoot: string, textbookId: string): string {
@@ -97,7 +111,7 @@ export function conversationsDir(dataRoot: string): string {
 }
 
 export function conversationDir(dataRoot: string, conversationId: string): string {
-  return join(conversationsDir(dataRoot), conversationId)
+  return join(conversationsDir(dataRoot), safeSegment(conversationId))
 }
 
 export function conversationPath(dataRoot: string, conversationId: string): string {
@@ -115,5 +129,5 @@ export function artifactsDir(dataRoot: string, conversationId: string): string {
 }
 
 export function artifactPath(dataRoot: string, conversationId: string, artifactId: string): string {
-  return join(artifactsDir(dataRoot, conversationId), `${artifactId}.json`)
+  return join(artifactsDir(dataRoot, conversationId), `${safeSegment(artifactId)}.json`)
 }

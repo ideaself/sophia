@@ -573,15 +573,19 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     return () => document.removeEventListener('mousedown', handler)
   }, [templateOpen])
 
-  const handleSend = async (retryInput?: string) => {
+  const handleSend = async (options?: { input?: string; resend?: boolean }) => {
     // 发送防重：从按下发送到流式真正开始的间隙（构建 prompt 可能要一两秒）
     // 期间没有 isStreaming 标记，连按 Enter 会重复创建会话/发送多条。
     if (sendingRef.current) return
     sendingRef.current = true
     try {
-      const tab = tabs[activeIdx]
+      // 从 ref 读最新状态：重试/重新生成会在 await 后回调本次发送，
+      // 渲染闭包里的 tabs 可能已经过期（会复活被删消息、重复 user 消息）。
+      const tab = tabsRef.current[activeIdx]
       if (!tab) return
-      const userMessage = retryInput ?? tab.input.trim()
+      const userMessage = options?.input ?? tab.input.trim()
+      // resend：该用户消息已在库中（重试 / 重新生成），不能重复持久化、重复上屏。
+      const isResend = options?.resend === true
       if (!userMessage || !companion) return
       if (userMessage.length > MAX_INPUT_LENGTH) {
         setSendError(`消息过长（上限 ${MAX_INPUT_LENGTH} 字），请分段发送`)
@@ -592,7 +596,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         // 其他标签正在回复：先确认，避免静默打断对方的回复。
         const ownerIdx = streamOwnerIdxRef.current
         if (ownerIdx !== null && ownerIdx !== activeIdx) {
-          const ownerTab = tabs[ownerIdx]
+          const ownerTab = tabsRef.current[ownerIdx]
           const ok = await window.sophia.dialog.confirm({
             message: `「${ownerTab?.title ?? '其他标签'}」正在回复中，发送将中断它的回复。确定继续吗？`,
             confirmLabel: '中断并发送'
@@ -609,6 +613,10 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
       let convId = tab.conversationId
       if (!convId) {
+        if (isResend) {
+          setSendError('对话状态异常，请重新开始课堂')
+          return
+        }
         // 默认课堂名：MM-DD 角色名（与课堂浏览器的显示规则一致）
         const now = new Date()
         const mm = String(now.getMonth() + 1).padStart(2, '0')
@@ -629,42 +637,56 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         }
       }
 
-      try {
-        await window.sophia.data.sendMessage({
-          conversationId: convId,
-          content: userMessage,
-          role: 'user',
-        })
-      } catch {
+      if (isResend) {
+        // 消息已在库中：只清理重试/重新生成状态，不重复入库、不重复上屏。
+        updateTab(activeIdx, { retryMessage: null })
+      } else {
         try {
-          const now = new Date()
-          const mm = String(now.getMonth() + 1).padStart(2, '0')
-          const dd = String(now.getDate()).padStart(2, '0')
-          const defaultTitle = `${mm}-${dd} ${companion.name}`
-          const conv = await window.sophia.data.createConversation({
-            companionId: companion.id,
-            companionVersion: (companion as { version?: number }).version ?? undefined,
-            textbookId: textbook?.id,
-            title: defaultTitle
-          })
-          convId = conv.id
-          updateTab(activeIdx, { conversationId: convId, title: defaultTitle })
           await window.sophia.data.sendMessage({
             conversationId: convId,
             content: userMessage,
             role: 'user',
           })
         } catch {
-          setSendError('发送消息失败，对话可能已被删除')
-          return
+          try {
+            const now = new Date()
+            const mm = String(now.getMonth() + 1).padStart(2, '0')
+            const dd = String(now.getDate()).padStart(2, '0')
+            const defaultTitle = `${mm}-${dd} ${companion.name}`
+            const conv = await window.sophia.data.createConversation({
+              companionId: companion.id,
+              companionVersion: (companion as { version?: number }).version ?? undefined,
+              textbookId: textbook?.id,
+              title: defaultTitle
+            })
+            convId = conv.id
+            updateTab(activeIdx, { conversationId: convId, title: defaultTitle })
+            await window.sophia.data.sendMessage({
+              conversationId: convId,
+              content: userMessage,
+              role: 'user',
+            })
+          } catch {
+            setSendError('发送消息失败，对话可能已被删除')
+            return
+          }
         }
-      }
 
-      const updatedMessages: DisplayMessage[] = [
-        ...tab.messages,
-        { id: `local-${Date.now()}`, role: 'user', content: userMessage, createdAt: new Date().toISOString() }
-      ]
-      updateTab(activeIdx, { messages: updatedMessages, input: '', retryMessage: null })
+        // 函数式更新：即使期间有其他状态变化也不会丢消息或重复 user 消息。
+        setTabs((prev) => {
+          const next = [...prev]
+          const t = next[activeIdx]
+          if (t) {
+            t.messages = [
+              ...t.messages,
+              { id: `local-${Date.now()}`, role: 'user', content: userMessage, createdAt: new Date().toISOString() }
+            ]
+            t.input = ''
+            t.retryMessage = null
+          }
+          return next
+        })
+      }
       setStickToBottom(true)
 
       let builtMessages
@@ -944,8 +966,12 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     const msgIdx = msgs.findIndex((m) => m.id === messageId)
     if (msgIdx < 0) return
 
-    // Remove this assistant message and find the last user message before it
+    // Drop this assistant message and everything after it (both UI and DB),
+    // then let the model answer the same user turn again.
     const newMessages = msgs.slice(0, msgIdx)
+    const lastUserMsg = [...newMessages].reverse().find((m) => m.role === 'user')
+    if (!lastUserMsg) return
+
     setTabs((prev) => {
       const next = [...prev]
       const t = next[activeIdx]
@@ -953,22 +979,25 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       return next
     })
 
-    // Delete the assistant message from DB
     if (activeTab.conversationId) {
-      await window.sophia.data.deleteMessage(activeTab.conversationId, messageId)
+      try {
+        // Truncate through the user message: removes the assistant reply and
+        // any later messages that the UI just dropped (deleteMessage alone
+        // would leave them orphaned in the store).
+        await window.sophia.data.truncateConversation(activeTab.conversationId, lastUserMsg.id)
+      } catch {
+        // The local list is already consistent; a failed truncate must not
+        // block the regeneration attempt.
+      }
     }
 
-    // Find the last user message to resend
-    const lastUserMsg = [...newMessages].reverse().find((m) => m.role === 'user')
-    if (lastUserMsg) {
-      await handleSendFromContent(lastUserMsg.content)
-    }
+    // resend: the user message is already persisted — handleSend must not
+    // persist it again nor append it to the UI list a second time.
+    await handleSend({ input: lastUserMsg.content, resend: true })
   }
 
   const handleSendFromContent = async (content: string) => {
-    // handleSend takes the content directly (retryInput), so there's no
-    // need to round-trip it through tab input state or defer with setTimeout.
-    await handleSend(content)
+    await handleSend({ input: content })
   }
 
   const handleNewTab = () => {
@@ -1444,7 +1473,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                         </div>
                         {activeTab.retryMessage && (
                           <button
-                            onClick={() => handleSend(activeTab.retryMessage!.input)}
+                            onClick={() => handleSend({ input: activeTab.retryMessage!.input, resend: true })}
                             className="rounded bg-red-700 px-3 py-1 text-xs text-white hover:bg-red-600"
                           >
                             重试
@@ -1641,7 +1670,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
               if (action === 'send') {
                 updateTab(activeIdx, { input: stripped })
                 if (stripped.trim()) {
-                  void handleSend(stripped)
+                  void handleSend({ input: stripped })
                 }
               } else if (action === 'clear') {
                 updateTab(activeIdx, { input: '' })

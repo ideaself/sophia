@@ -1,5 +1,22 @@
 import { z } from 'zod'
-import { TextbookFormat } from '../types/ids'
+import { ArtifactType, TextbookFormat } from '../types/ids'
+
+// --- Shared ---
+
+/**
+ * Domain ids double as file/directory names in the data root. Restricting
+ * them to plain path segments prevents a compromised renderer from
+ * smuggling path traversal (e.g. "../../config") through IPC into storage
+ * paths, where ids are joined directly.
+ */
+export const EntityIdSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/, 'Invalid id')
+
+/** All artifact types the pipeline may generate (derived from ArtifactType). */
+export const IpcArtifactTypeSchema = z.enum(ArtifactType)
 
 // --- IPC: Companion ---
 
@@ -18,16 +35,16 @@ export const IpcCreateTextbookInputSchema = z.object({
 })
 
 export const IpcUpdateTextbookContentInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
   content: z.string().min(1)
 })
 
 // --- IPC: Conversation ---
 
 export const IpcCreateConversationInputSchema = z.object({
-  companionId: z.string().min(1),
+  companionId: EntityIdSchema,
   companionVersion: z.number().int().min(1).optional(),
-  textbookId: z.string().optional(),
+  textbookId: EntityIdSchema.optional(),
   title: z.string().min(1)
 })
 
@@ -45,99 +62,95 @@ export const IpcSearchMessagesInputSchema = z.object({
 // --- IPC: Conversation (additional) ---
 
 export const IpcUpdateTitleInputSchema = z.object({
-  conversationId: z.string().min(1),
+  conversationId: EntityIdSchema,
   title: z.string().min(1),
 })
 
 export const IpcEndClassInputSchema = z.object({
-  conversationId: z.string().min(1),
+  conversationId: EntityIdSchema,
   classMode: z.enum(['standard', 'feynman']).optional()
 })
 
 export const IpcRedoArtifactsInputSchema = z.object({
-  conversationId: z.string().min(1),
-  types: z.array(z.string().min(1)).min(1)
+  conversationId: EntityIdSchema,
+  types: z.array(IpcArtifactTypeSchema).min(1)
 })
 
 export const IpcTruncateConversationInputSchema = z.object({
-  conversationId: z.string().min(1),
-  messageId: z.string().min(1),
+  conversationId: EntityIdSchema,
+  messageId: EntityIdSchema,
 })
 
 export const IpcTextbookSearchExcerptInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
   chapter: z.string().min(1),
 })
 
 export const IpcTextbookTranslateExcerptInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
   chapter: z.string().min(1),
 })
 
 export const IpcGetConversationInputSchema = z.object({
-  conversationId: z.string().min(1),
+  conversationId: EntityIdSchema,
 })
 
 export const IpcDeleteConversationInputSchema = z.object({
-  conversationId: z.string().min(1),
+  conversationId: EntityIdSchema,
 })
 
 // --- IPC: Message (additional) ---
 
 export const IpcSendMessageInputSchema = z.object({
-  conversationId: z.string().min(1),
+  conversationId: EntityIdSchema,
   content: z.string().min(1),
   role: z.enum(['user', 'assistant', 'system']).optional(),
 })
 
 export const IpcGetMessagesInputSchema = z.object({
-  conversationId: z.string().min(1),
+  conversationId: EntityIdSchema,
 })
 
 export const IpcUpdateMessageInputSchema = z.object({
-  conversationId: z.string().min(1),
-  messageId: z.string().min(1),
+  conversationId: EntityIdSchema,
+  messageId: EntityIdSchema,
   content: z.string(),
 })
 
 export const IpcDeleteMessageInputSchema = z.object({
-  conversationId: z.string().min(1),
-  messageId: z.string().min(1),
+  conversationId: EntityIdSchema,
+  messageId: EntityIdSchema,
 })
 
 // --- IPC: Artifact (additional) ---
 
-export const IpcArtifactTypeSchema = z.enum([
-  'lesson_summary', 'flashcards', 'diary', 'progress', 'handoff_tail', 'farewell', 'learner_profile', 'pal_moments', 'relation', 'companion_note'
-])
-
 export const IpcCreateArtifactInputSchema = z.object({
-  conversationId: z.string().min(1),
+  conversationId: EntityIdSchema,
   type: IpcArtifactTypeSchema,
   content: z.string()
 })
 
 export const IpcGetArtifactInputSchema = z.object({
-  artifactId: z.string().min(1),
-  conversationId: z.string().min(1),
+  artifactId: EntityIdSchema,
+  conversationId: EntityIdSchema,
 })
 
 export const IpcUpdateArtifactInputSchema = z.object({
-  artifactId: z.string().min(1),
-  conversationId: z.string().min(1),
+  artifactId: EntityIdSchema,
+  conversationId: EntityIdSchema,
   content: z.string().min(1),
 })
 
 export const IpcListArtifactsInputSchema = z.object({
-  conversationId: z.string().min(1),
+  conversationId: EntityIdSchema,
 })
 
 // --- IPC: Flashcard (additional) ---
 
 /** One card to delete, identified by its artifact + index within it. */
 export const IpcFlashcardRefSchema = z.object({
-  conversationId: z.string().min(1),
-  artifactId: z.string().min(1),
+  conversationId: EntityIdSchema,
+  artifactId: EntityIdSchema,
   cardIndex: z.number().int().min(0)
 })
 
@@ -148,7 +161,7 @@ export const IpcFlashcardDeleteCardsInputSchema = z.object({
 // --- IPC: Archive (回收站) ---
 
 export const IpcArchiveEntryIdInputSchema = z.object({
-  entryId: z.string().min(1)
+  entryId: EntityIdSchema
 })
 
 // --- IPC: PDF export (课堂记录/笔记导出) ---
@@ -174,7 +187,7 @@ export const IpcAiComposeInputSchema = z.object({
 // --- IPC: EPUB 内容重新提取（导入时正文为空时修复用） ---
 
 export const IpcReparseEpubInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
 })
 
 // --- IPC: Profile lock (档案锁) ---
@@ -204,14 +217,14 @@ export const IpcCreateTextbookFullInputSchema = z.object({
 })
 
 export const IpcGetTextbookInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
 })
 
 export const IpcListTextbooksInputSchema = z.object({
 })
 
 export const IpcUpdateTextbookInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
   title: z.string().optional(),
   author: z.string().optional(),
   description: z.string().optional(),
@@ -220,7 +233,7 @@ export const IpcUpdateTextbookInputSchema = z.object({
 })
 
 export const IpcUpdateTextbookProgressInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
   currentPage: z.number().int().min(0).optional(),
   totalPages: z.number().int().min(0).nullable().optional(),
   readingPercentage: z.number().min(0).max(1).optional(),
@@ -228,21 +241,21 @@ export const IpcUpdateTextbookProgressInputSchema = z.object({
 })
 
 export const IpcDeleteTextbookInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
 })
 
 export const IpcReadOriginalInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
 })
 
 export const IpcReadEpubChaptersInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
 })
 
 // --- IPC: Reading Note ---
 
 export const IpcCreateReadingNoteInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
   content: z.string(),
   position: z.string(),
   chapter: z.string().optional(),
@@ -252,17 +265,17 @@ export const IpcCreateReadingNoteInputSchema = z.object({
 })
 
 export const IpcListReadingNotesInputSchema = z.object({
-  textbookId: z.string().min(1),
+  textbookId: EntityIdSchema,
 })
 
 export const IpcUpdateReadingNoteInputSchema = z.object({
-  noteId: z.string().min(1),
-  textbookId: z.string().min(1),
+  noteId: EntityIdSchema,
+  textbookId: EntityIdSchema,
 }).catchall(z.unknown())
 
 export const IpcDeleteReadingNoteInputSchema = z.object({
-  noteId: z.string().min(1),
-  textbookId: z.string().min(1),
+  noteId: EntityIdSchema,
+  textbookId: EntityIdSchema,
 })
 
 // --- IPC: File I/O ---
@@ -299,8 +312,8 @@ export const IpcConfirmDialogInputSchema = z.object({
 // --- IPC: Chat Prompt ---
 
 export const IpcChatPromptMessagesInputSchema = z.object({
-  conversationId: z.string().min(1),
-  companionId: z.string().min(1),
+  conversationId: EntityIdSchema,
+  companionId: EntityIdSchema,
   textbookId: z.string().nullable().optional(),
   userMessage: z.string().min(1),
   classMode: z.enum(['standard', 'feynman']).optional(),
@@ -333,4 +346,61 @@ export const IpcWebDavConfigInputSchema = z.object({
 
 export const IpcSetWebDavPasswordInputSchema = z.object({
   password: z.string().min(1, 'Password must not be empty')
+})
+
+// --- IPC: API Providers ---
+
+export const ApiProviderTypeSchema = z.enum(['deepseek', 'mimo', 'custom'])
+
+/**
+ * Any endpoint that receives an API key must use HTTPS. Parsed with `new
+ * URL` so mixed-case schemes ("HTTP://…") cannot bypass the check.
+ */
+export const ProviderBaseUrlSchema = z
+  .string()
+  .min(1, 'Base URL must not be empty')
+  .max(2048)
+  .refine(
+    (url) => {
+      try {
+        return new URL(url).protocol === 'https:'
+      } catch {
+        return false
+      }
+    },
+    { message: 'Endpoint must use HTTPS' }
+  )
+
+export const IpcProviderIdInputSchema = z.object({
+  id: EntityIdSchema
+})
+
+export const IpcProviderCreateInputSchema = z.object({
+  name: z.string().min(1).max(100),
+  type: ApiProviderTypeSchema,
+  baseUrl: ProviderBaseUrlSchema,
+  // May be empty: providers can be created first and given a key later.
+  apiKey: z.string().max(4096),
+  models: z.array(z.string()).optional(),
+  selectedModel: z.string().optional()
+})
+
+export const IpcProviderUpdateInputSchema = z.object({
+  id: EntityIdSchema,
+  name: z.string().min(1).max(100).optional(),
+  type: ApiProviderTypeSchema.optional(),
+  baseUrl: ProviderBaseUrlSchema.optional(),
+  models: z.array(z.string()).optional(),
+  selectedModel: z.string().optional(),
+  isActive: z.boolean().optional()
+})
+
+export const IpcProviderSetApiKeyInputSchema = z.object({
+  id: EntityIdSchema,
+  apiKey: z.string().min(1)
+})
+
+export const IpcProviderEndpointInputSchema = z.object({
+  baseUrl: ProviderBaseUrlSchema,
+  apiKey: z.string().min(1)
 })

@@ -21,6 +21,7 @@ import { ipcMain, type WebContents } from 'electron'
 import { z } from 'zod'
 import { StreamChatSession } from '../llm/stream-chat'
 import type { DeepSeekStreamParams } from '../llm/stream-types'
+import { safeSend } from './safe-send'
 import {
   CHAT_STREAM_START,
   CHAT_STREAM_CANCEL,
@@ -183,32 +184,32 @@ export function registerChatStreamIpc(
       (event) => {
         switch (event.type) {
           case 'token':
-            wc.send(CHAT_STREAM_EVENT.token, {
+            safeSend(wc, CHAT_STREAM_EVENT.token, {
               sessionId,
               token: event.token
             } satisfies TokenPayload)
             break
           case 'thinking':
-            wc.send(CHAT_STREAM_EVENT.thinking, {
+            safeSend(wc, CHAT_STREAM_EVENT.thinking, {
               sessionId,
               text: event.text
             } satisfies ThinkingPayload)
             break
           case 'error':
-            wc.send(CHAT_STREAM_EVENT.error, {
+            safeSend(wc, CHAT_STREAM_EVENT.error, {
               sessionId,
               code: event.code,
               message: event.message
             } satisfies ErrorPayload)
             break
           case 'end':
-            wc.send(CHAT_STREAM_EVENT.end, {
+            safeSend(wc, CHAT_STREAM_EVENT.end, {
               sessionId,
               finishReason: event.finishReason
             } satisfies EndPayload)
             break
           case 'usage':
-            wc.send(CHAT_STREAM_EVENT.usage, {
+            safeSend(wc, CHAT_STREAM_EVENT.usage, {
               sessionId,
               promptTokens: event.promptTokens,
               completionTokens: event.completionTokens,
@@ -221,11 +222,18 @@ export function registerChatStreamIpc(
 
     sessions.set(sessionId, session)
 
-    // Start the stream (fire-and-forget; errors are caught inside Session)
-    session.start().finally(() => {
-      // Clean up after stream completes
-      sessions.delete(sessionId)
-    })
+    // Start the stream (fire-and-forget; errors are caught inside Session,
+    // but a destroyed window during shutdown can still reject — swallow it
+    // so it never becomes an unhandled rejection).
+    void session
+      .start()
+      .catch((err) => {
+        console.error('[chat-stream] session error:', err)
+      })
+      .finally(() => {
+        // Clean up after stream completes
+        sessions.delete(sessionId)
+      })
 
     return sessionId
   })

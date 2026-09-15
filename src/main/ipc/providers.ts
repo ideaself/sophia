@@ -2,6 +2,13 @@ import { ipcMain } from 'electron'
 import { ProviderStore } from '../storage/provider-store'
 import type { SafeStorageAdapter } from '../security/secure-key-store'
 import { assertHttpsEndpoint } from '../llm/endpoint'
+import {
+  IpcProviderCreateInputSchema,
+  IpcProviderEndpointInputSchema,
+  IpcProviderIdInputSchema,
+  IpcProviderSetApiKeyInputSchema,
+  IpcProviderUpdateInputSchema
+} from '../../shared/schemas/ipc'
 
 /** Timeout for provider discovery/connectivity probes. */
 const PROVIDER_REQUEST_TIMEOUT_MS = 15_000
@@ -32,7 +39,7 @@ export function registerProviderIpc(
   })
 
   ipcMain.handle('providers:get', async (_event, input: unknown) => {
-    const { id } = input as { id: string }
+    const { id } = IpcProviderIdInputSchema.parse(input)
     return store.get(id)
   })
 
@@ -41,52 +48,41 @@ export function registerProviderIpc(
   })
 
   ipcMain.handle('providers:create', async (_event, input: unknown) => {
-    const { name, type, baseUrl, apiKey, models, selectedModel } = input as {
-      name: string
-      type: 'deepseek' | 'mimo' | 'custom'
-      baseUrl: string
-      apiKey: string
-      models?: string[]
-      selectedModel?: string
-    }
-    return store.create({ name, type, baseUrl, apiKey, models, selectedModel })
+    const parsed = IpcProviderCreateInputSchema.parse(input)
+    // Defense-in-depth: the schema already enforces HTTPS, re-check at the
+    // store boundary so a future schema edit cannot silently downgrade.
+    assertHttpsEndpoint(parsed.baseUrl)
+    return store.create(parsed)
   })
 
   ipcMain.handle('providers:update', async (_event, input: unknown) => {
-    const { id, ...updates } = input as {
-      id: string
-      name?: string
-      type?: 'deepseek' | 'mimo' | 'custom'
-      baseUrl?: string
-      models?: string[]
-      selectedModel?: string
-      isActive?: boolean
-    }
+    const { id, ...updates } = IpcProviderUpdateInputSchema.parse(input)
+    if (updates.baseUrl !== undefined) assertHttpsEndpoint(updates.baseUrl)
     return store.update(id, updates)
   })
 
   ipcMain.handle('providers:delete', async (_event, input: unknown) => {
-    const { id } = input as { id: string }
+    const { id } = IpcProviderIdInputSchema.parse(input)
     return store.delete(id)
   })
 
   ipcMain.handle('providers:set-active', async (_event, input: unknown) => {
-    const { id } = input as { id: string }
+    const { id } = IpcProviderIdInputSchema.parse(input)
     return store.update(id, { isActive: true })
   })
 
   ipcMain.handle('providers:set-api-key', async (_event, input: unknown) => {
-    const { id, apiKey } = input as { id: string; apiKey: string }
+    const { id, apiKey } = IpcProviderSetApiKeyInputSchema.parse(input)
     await store.setApiKey(id, apiKey)
   })
 
   ipcMain.handle('providers:has-api-key', async (_event, input: unknown) => {
-    const { id } = input as { id: string }
+    const { id } = IpcProviderIdInputSchema.parse(input)
     return store.hasApiKey(id)
   })
 
   ipcMain.handle('providers:fetch-models', async (_event, input: unknown) => {
-    const { baseUrl, apiKey } = input as { baseUrl: string; apiKey: string }
+    const { baseUrl, apiKey } = IpcProviderEndpointInputSchema.parse(input)
     assertHttpsEndpoint(baseUrl)
     const modelsUrl = `${baseUrl.replace(/\/$/, '')}/models`
 
@@ -112,7 +108,14 @@ export function registerProviderIpc(
   })
 
   ipcMain.handle('providers:test-connection', async (_event, input: unknown) => {
-    const { baseUrl, apiKey } = input as { baseUrl: string; apiKey: string }
+    const parsed = IpcProviderEndpointInputSchema.safeParse(input)
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message ?? 'Invalid connection parameters'
+      }
+    }
+    const { baseUrl, apiKey } = parsed.data
     try {
       assertHttpsEndpoint(baseUrl)
     } catch (err) {

@@ -1,3 +1,5 @@
+import type { ArtifactType } from '../../../shared/types/ids'
+
 export {}
 
 declare global {
@@ -95,7 +97,7 @@ declare global {
   interface ArtifactDTO {
     id: string
     conversationId: string
-    type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note' | 'knowledge_graph'
+    type: ArtifactType
     content: string
     createdAt: string
   }

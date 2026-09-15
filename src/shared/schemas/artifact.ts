@@ -2,6 +2,11 @@ import { z } from 'zod'
 import type { ArtifactId, ConversationId } from '../types/ids'
 import { ArtifactType } from '../types/ids'
 
+// Derive from the single source of truth (ArtifactType) so every artifact
+// type the pipeline can generate is also readable back. A previous hand-kept
+// list silently dropped lesson_audio / lesson_timeline / lesson_faq on read.
+const artifactTypeSchema = z.enum(ArtifactType)
+
 export interface Artifact {
   id: ArtifactId
   conversationId: ConversationId
@@ -9,21 +14,6 @@ export interface Artifact {
   content: string
   createdAt: string
 }
-
-const artifactTypeSchema = z.enum([
-  ArtifactType.LessonSummary,
-  ArtifactType.Flashcards,
-  ArtifactType.Diary,
-  ArtifactType.Progress,
-  ArtifactType.HandoffTail,
-  ArtifactType.Farewell,
-  ArtifactType.LearnerProfile,
-  ArtifactType.PalMoments,
-  ArtifactType.Relation,
-  ArtifactType.CompanionNote,
-  ArtifactType.FeynmanNote,
-  ArtifactType.KnowledgeGraph
-])
 
 const isoDatetime = z.string().datetime({ offset: true })
 

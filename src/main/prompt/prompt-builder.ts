@@ -400,6 +400,27 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
 }
 
 /**
+ * Drop the trailing history message when it is the exact same user turn as
+ * `userMessage`.
+ *
+ * The renderer persists the user message before building the prompt, so the
+ * loaded history already ends with it; appending `userMessage` again would
+ * send the model a duplicated final turn every round (wasted tokens and
+ * confusing role alternation). Only the exact trailing match is removed —
+ * a historical identical question earlier in the conversation is kept.
+ */
+export function stripTrailingDuplicateUser(
+  history: DeepSeekChatMessage[],
+  userMessage: string
+): DeepSeekChatMessage[] {
+  const last = history[history.length - 1]
+  if (last && last.role === 'user' && last.content === userMessage) {
+    return history.slice(0, -1)
+  }
+  return history
+}
+
+/**
  * Build the full message array for a DeepSeek chat completion request.
  *
  * Returns `[system, ...windowed history, user]`.
@@ -416,7 +437,7 @@ export function buildMessages(params: BuildMessagesParams): DeepSeekChatMessage[
 
   const systemContent = buildSystemPrompt(systemParams)
 
-  const windowed = windowMessages(history, maxHistoryTokens)
+  const windowed = windowMessages(stripTrailingDuplicateUser(history, userMessage), maxHistoryTokens)
 
   return [
     { role: 'system', content: systemContent },

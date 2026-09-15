@@ -5,7 +5,7 @@ import type { DeepSeekChatMessage } from '../../../src/main/llm/types'
 import type { CompanionId } from '../../../src/shared/types/ids'
 import { CompanionSource, CompanionGender } from '../../../src/shared/types/ids'
 import { loadReferenceCompanions } from '../../../src/main/companions/reference-loader'
-import { buildSystemPrompt, buildMessages } from '../../../src/main/prompt/prompt-builder'
+import { buildSystemPrompt, buildMessages, stripTrailingDuplicateUser } from '../../../src/main/prompt/prompt-builder'
 
 const projectsRoot = join(__dirname, '..', '..', '..')
 const candidatesDir = join(projectsRoot, 'reference', '角色设定', 'candidates')
@@ -319,6 +319,61 @@ describe('buildMessages', () => {
       expect(typeof msg.content).toBe('string')
       expect(['system', 'user', 'assistant']).toContain(msg.role)
     }
+  })
+
+  it('does not duplicate the current user message when history already ends with it', () => {
+    const history: DeepSeekChatMessage[] = [
+      { role: 'user', content: 'Q1' },
+      { role: 'assistant', content: 'A1' },
+      { role: 'user', content: 'Q2' }
+    ]
+
+    const msgs = buildMessages({
+      companion: alice(),
+      userMessage: 'Q2',
+      history
+    })
+
+    // system + Q1 + A1 + Q2 — the trailing Q2 is not sent twice.
+    expect(msgs).toHaveLength(4)
+    expect(msgs.filter((m) => m.role === 'user')).toHaveLength(2)
+    expect(msgs[msgs.length - 1].content).toBe('Q2')
+  })
+
+  it('keeps an earlier identical question when it is not the trailing message', () => {
+    const history: DeepSeekChatMessage[] = [
+      { role: 'user', content: 'Q1' },
+      { role: 'assistant', content: 'A1' }
+    ]
+
+    const msgs = buildMessages({
+      companion: alice(),
+      userMessage: 'Q1',
+      history
+    })
+
+    expect(msgs).toHaveLength(4)
+    expect(msgs.filter((m) => m.content === 'Q1')).toHaveLength(2)
+  })
+})
+
+describe('stripTrailingDuplicateUser', () => {
+  it('removes an exact trailing user match', () => {
+    const history: DeepSeekChatMessage[] = [
+      { role: 'user', content: 'Q1' },
+      { role: 'user', content: 'Q2' }
+    ]
+    expect(stripTrailingDuplicateUser(history, 'Q2')).toEqual([{ role: 'user', content: 'Q1' }])
+  })
+
+  it('leaves history untouched when the last message differs in role or content', () => {
+    const history: DeepSeekChatMessage[] = [
+      { role: 'user', content: 'Q1' },
+      { role: 'assistant', content: 'A1' }
+    ]
+    expect(stripTrailingDuplicateUser(history, 'A1')).toEqual(history)
+    expect(stripTrailingDuplicateUser(history, 'other')).toEqual(history)
+    expect(stripTrailingDuplicateUser([], 'anything')).toEqual([])
   })
 })
 

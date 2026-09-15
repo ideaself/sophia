@@ -11,6 +11,7 @@
  * - Timeout: sessions auto-cancel after configurable timeout.
  */
 import { describe, it, expect, vi } from 'vitest'
+import { getEventListeners } from 'node:events'
 
 import type {
   DeepSeekStreamAdapter,
@@ -348,6 +349,95 @@ describe('StreamChatSession — AbortSignal (true cancellation)', () => {
     const errorEvent = events.find((e) => e.type === 'error')
     expect(errorEvent).toBeDefined()
     expect((errorEvent as { code: string }).code).toBe('ABORTED')
+  })
+})
+
+// ---------------------------------------------------------------
+// Abort listener hygiene + generator cleanup
+// ---------------------------------------------------------------
+
+describe('StreamChatSession — listener hygiene and iterator cleanup', () => {
+  it('does not accumulate abort listeners over a long stream', async () => {
+    const chunks: DeepSeekStreamChunk[] = []
+    for (let i = 0; i < 50; i++) chunks.push(tokenChunk(`t${i}`))
+    chunks.push(finishChunk('stop'))
+
+    const adapter = mockStreamAdapter(chunks)
+    const { start } = createSession(adapter)
+    await start()
+
+    const signal = adapter.lastParams?.signal
+    expect(signal).toBeDefined()
+    expect(getEventListeners(signal!, 'abort')).toHaveLength(0)
+  })
+
+  it('removes the abort listener after cancellation', async () => {
+    let capturedSignal: AbortSignal | null = null
+    const adapter: DeepSeekStreamAdapter = {
+      streamChat: async function* (params) {
+        capturedSignal = params.signal ?? null
+        yield tokenChunk('one')
+        await new Promise(() => {})
+      }
+    }
+
+    const events: StreamEvent[] = []
+    const session = new StreamChatSession(
+      'listener-cleanup',
+      { messages: testMessages, model: 'deepseek-v4-pro', apiKey: testApiKey },
+      adapter,
+      (event: StreamEvent) => { events.push(event) }
+    )
+
+    const startPromise = session.start()
+    await vi.waitFor(() => capturedSignal !== null && events.length >= 1, { timeout: 100 })
+    session.cancel()
+    await startPromise
+
+    expect(getEventListeners(capturedSignal!, 'abort')).toHaveLength(0)
+    // Sanity: the capture actually observed the session signal.
+    expect(capturedSignal!.aborted).toBe(true)
+  })
+
+  it('calls iterator.return() when cancelled, freeing adapter resources', async () => {
+    let returnCalled = false
+    const adapter: DeepSeekStreamAdapter = {
+      // Custom async iterable whose iterator never settles on next() —
+      // simulates a stalled connection that ignores abort.
+      streamChat: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => new Promise<IteratorResult<DeepSeekStreamChunk>>(() => {}),
+          return: async (): Promise<IteratorResult<DeepSeekStreamChunk>> => {
+            returnCalled = true
+            return { done: true, value: undefined as never }
+          }
+        })
+      })
+    }
+
+    const { session, events, start } = createSession(adapter)
+    const run = start()
+
+    await vi.waitFor(() => session.isRunning, { timeout: 100 })
+    session.cancel()
+    await run
+
+    expect(returnCalled).toBe(true)
+    const errorEvent = events.find((e) => e.type === 'error')
+    expect((errorEvent as { code?: string } | undefined)?.code).toBe('ABORTED')
+  })
+
+  it('emits end (not error) and returns the iterator on normal completion', async () => {
+    const adapter = mockStreamAdapter([
+      tokenChunk('hi'),
+      finishChunk('stop')
+    ])
+
+    const { events, start } = createSession(adapter)
+    await start()
+
+    expect(events.some((e) => e.type === 'end')).toBe(true)
+    expect(events.some((e) => e.type === 'error')).toBe(false)
   })
 })
 

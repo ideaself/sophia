@@ -41,22 +41,41 @@ const DEFAULT_TIMEOUT_MS = 300_000
  * Create a promise that rejects with an AbortError when the given
  * AbortSignal is aborted. Used with Promise.race to break out of
  * hanging async iterators on cancellation.
+ *
+ * The listener is registered exactly once (not per iteration) and the
+ * returned `dispose` removes it, so a stream of N tokens no longer
+ * accumulates N listeners on the same signal.
  */
-function abortSignalToRejectingPromise(signal: AbortSignal): Promise<never> {
-  return new Promise((_resolve, reject) => {
-    if (signal.aborted) {
+function createAbortRejection(signal: AbortSignal): {
+  promise: Promise<never>
+  dispose: () => void
+} {
+  let onAbort: (() => void) | null = null
+
+  const promise = new Promise<never>((_resolve, reject) => {
+    const abortError = (): Error => {
       const err = new Error('The operation was aborted')
       err.name = 'AbortError'
-      reject(err)
+      return err
+    }
+    if (signal.aborted) {
+      reject(abortError())
       return
     }
-    const onAbort = (): void => {
-      const err = new Error('The operation was aborted')
-      err.name = 'AbortError'
-      reject(err)
-    }
+    onAbort = () => reject(abortError())
     signal.addEventListener('abort', onAbort, { once: true })
   })
+
+  // A late abort (after the race has already settled) must not surface as
+  // an unhandled rejection.
+  promise.catch(() => {})
+
+  return {
+    promise,
+    dispose: () => {
+      if (onAbort) signal.removeEventListener('abort', onAbort)
+    }
+  }
 }
 
 export class StreamChatSession {
@@ -110,17 +129,16 @@ export class StreamChatSession {
     }, this.timeoutMs)
 
     let finishReason = 'stop'
+    let iterator: AsyncIterator<DeepSeekStreamChunk> | null = null
+    const abort = createAbortRejection(this.controller.signal)
 
     try {
       const stream = this.adapter.streamChat(this.params)
-      const iterator = stream[Symbol.asyncIterator]()
+      iterator = stream[Symbol.asyncIterator]()
 
       // Iterate manually so we can race each next() against abort
       while (true) {
-        const result = await Promise.race([
-          iterator.next(),
-          abortSignalToRejectingPromise(this.controller.signal)
-        ])
+        const result = await Promise.race([iterator.next(), abort.promise])
 
         if (result.done) break
 
@@ -167,18 +185,29 @@ export class StreamChatSession {
         this.emitError(STREAM_ERROR_CODE, message)
       }
       // Error path — skip end event
+      return
+    } finally {
+      // Release the adapter's resources (fetch reader lock, etc.) even on
+      // the abort path — without this the generator is never returned.
+      // Deliberately NOT awaited: a generator suspended on a never-settling
+      // await would make return() hang forever and stall session completion.
+      abort.dispose()
       this.clearTimeout()
       this.running = false
-      return
+      if (iterator && typeof iterator.return === 'function') {
+        const returnIterator = iterator.return.bind(iterator)
+        void Promise.resolve()
+          .then(returnIterator)
+          .catch(() => {
+            // Best-effort cleanup — a throwing return() must not surface.
+          })
+      }
     }
 
     // Normal completion — emit end if not aborted
     if (!this.controller.signal.aborted) {
       this.emitEnd(finishReason)
     }
-
-    this.clearTimeout()
-    this.running = false
   }
 
   /**

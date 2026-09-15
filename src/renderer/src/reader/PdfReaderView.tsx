@@ -32,6 +32,8 @@ interface NoteHighlight {
   className: string
 }
 
+type PdfTextContent = Awaited<ReturnType<pdfjs.PDFPageProxy['getTextContent']>>
+
 const PROGRESS_KEY = (id: string) => `pdf-progress-${id}`
 
 /** 批注在页面位图上的高亮样式（页面是白色位图，用半透明暖色）。 */
@@ -73,6 +75,15 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
   const [searchHits, setSearchHits] = useState<SearchHit[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
   const pageTextCache = useRef<Record<number, string>>({})
+  // The active loading task/document must be destroyed on unmount or book
+  // switch — otherwise the pdfjs worker keeps the document alive forever.
+  const loadingTaskRef = useRef<pdfjs.PDFDocumentLoadingTask | null>(null)
+  // The in-flight canvas render task; cancelled when the page/scale changes
+  // so a stale render cannot paint over the new one (or leak).
+  const renderTaskRef = useRef<pdfjs.RenderTask | null>(null)
+  // Search term that has actually been applied (Enter / 搜索按钮), not the
+  // raw input value — typing must not re-render the page bitmap.
+  const [appliedSearch, setAppliedSearch] = useState('')
   // Bottom-right pager: editable page number input
   const [pageInput, setPageInput] = useState('1')
   const pageInputRef = useRef<HTMLInputElement>(null)
@@ -128,6 +139,8 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
   // Load the document once
   useEffect(() => {
     let cancelled = false
+    // Cache is per-document: never carry page text across books.
+    pageTextCache.current = {}
     ;(async () => {
       try {
         const result = await window.sophia.data.readTextbookOriginal(textbookId)
@@ -136,8 +149,13 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
           setError('该教材没有原件')
           return
         }
-        const loaded = await pdfjs.getDocument({ data: result.data }).promise
-        if (cancelled) return
+        const task = pdfjs.getDocument({ data: result.data })
+        loadingTaskRef.current = task
+        const loaded = await task.promise
+        if (cancelled) {
+          void task.destroy().catch(() => {})
+          return
+        }
         setDoc(loaded)
         setPageCount(loaded.numPages)
       } catch (err) {
@@ -146,6 +164,16 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
     })()
     return () => {
       cancelled = true
+      // Drop the old document + text layer so nothing keeps rendering it.
+      setDoc(null)
+      textLayerInstanceRef.current?.cancel()
+      textLayerInstanceRef.current = null
+      textLayerPageRef.current = null
+      const task = loadingTaskRef.current
+      loadingTaskRef.current = null
+      if (task) {
+        void task.destroy().catch(() => {})
+      }
     }
   }, [textbookId])
 
@@ -154,93 +182,112 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
     if (!doc || !canvasRef.current) return
     let cancelled = false
     ;(async () => {
-      const page = await doc.getPage(pageNum)
-      if (cancelled) return
-      const viewport = page.getViewport({ scale })
-      const canvas = canvasRef.current!
-      // 与 TextLayer 保持同一坐标系：TextLayer 内部按 viewport.scale ×
-      // devicePixelRatio 定位文本，canvas 必须做同样的 DPR 高清渲染，
-      // 否则高 DPI 屏上文本层与位图错位（且页面会模糊）。
-      const outputScale = new pdfjs.OutputScale()
-      canvas.width = Math.floor(viewport.width * outputScale.sx)
-      canvas.height = Math.floor(viewport.height * outputScale.sy)
-      canvas.style.width = `${viewport.width}px`
-      canvas.style.height = `${viewport.height}px`
-      await page.render({
-        canvas,
-        viewport,
-        transform: outputScale.scaled ? [outputScale.sx, 0, 0, outputScale.sy, 0, 0] : undefined
-      }).promise
-      if (cancelled) return
+      try {
+        // A stale render must never finish on top of a newer one.
+        renderTaskRef.current?.cancel()
+        renderTaskRef.current = null
 
-      // --- Text layer: transparent selectable text over the bitmap ---
-      const textLayerDiv = textLayerRef.current
-      if (textLayerDiv) {
-        textLayerDiv.style.width = `${viewport.width}px`
-        textLayerDiv.style.height = `${viewport.height}px`
-        // span 字形大小 = --total-scale-factor × --font-height（PDF 单位），
-        // 必须与位图保持同一缩放，否则缩放页面时文本层字号不变而错位。
-        textLayerDiv.style.setProperty('--total-scale-factor', String(viewport.scale))
-        const existing = textLayerInstanceRef.current
-        try {
-          if (existing && textLayerPageRef.current === pageNum) {
-            // Same page: just re-layout for the new scale.
-            existing.update({ viewport })
-          } else {
-            // New page: drop the previous layer and rebuild.
-            existing?.cancel()
-            textLayerInstanceRef.current = null
-            textLayerDiv.innerHTML = ''
-            const instance = new pdfjs.TextLayer({
-              textContentSource: page.streamTextContent(),
-              container: textLayerDiv,
-              viewport
-            })
-            textLayerPageRef.current = pageNum
-            textLayerInstanceRef.current = instance
-            await instance.render()
-            if (cancelled) {
-              instance.cancel()
+        const page = await doc.getPage(pageNum)
+        if (cancelled) return
+        const viewport = page.getViewport({ scale })
+        const canvas = canvasRef.current!
+        // 与 TextLayer 保持同一坐标系：TextLayer 内部按 viewport.scale ×
+        // devicePixelRatio 定位文本，canvas 必须做同样的 DPR 高清渲染，
+        // 否则高 DPI 屏上文本层与位图错位（且页面会模糊）。
+        const outputScale = new pdfjs.OutputScale()
+        canvas.width = Math.floor(viewport.width * outputScale.sx)
+        canvas.height = Math.floor(viewport.height * outputScale.sy)
+        canvas.style.width = `${viewport.width}px`
+        canvas.style.height = `${viewport.height}px`
+        const renderTask = page.render({
+          canvas,
+          viewport,
+          transform: outputScale.scaled ? [outputScale.sx, 0, 0, outputScale.sy, 0, 0] : undefined
+        })
+        renderTaskRef.current = renderTask
+        await renderTask.promise
+        renderTaskRef.current = null
+        if (cancelled) return
+
+        // --- Text layer: transparent selectable text over the bitmap ---
+        const textLayerDiv = textLayerRef.current
+        if (textLayerDiv) {
+          textLayerDiv.style.width = `${viewport.width}px`
+          textLayerDiv.style.height = `${viewport.height}px`
+          // span 字形大小 = --total-scale-factor × --font-height（PDF 单位），
+          // 必须与位图保持同一缩放，否则缩放页面时文本层字号不变而错位。
+          textLayerDiv.style.setProperty('--total-scale-factor', String(viewport.scale))
+          const existing = textLayerInstanceRef.current
+          try {
+            if (existing && textLayerPageRef.current === pageNum) {
+              // Same page: just re-layout for the new scale.
+              existing.update({ viewport })
+            } else {
+              // New page: drop the previous layer and rebuild.
+              existing?.cancel()
               textLayerInstanceRef.current = null
               textLayerDiv.innerHTML = ''
+              const instance = new pdfjs.TextLayer({
+                textContentSource: page.streamTextContent(),
+                container: textLayerDiv,
+                viewport
+              })
+              textLayerPageRef.current = pageNum
+              textLayerInstanceRef.current = instance
+              await instance.render()
+              if (cancelled) {
+                instance.cancel()
+                textLayerInstanceRef.current = null
+                textLayerDiv.innerHTML = ''
+              }
             }
+          } catch {
+            // best-effort — selection falls back to none on this page
           }
-        } catch {
-          // best-effort — selection falls back to none on this page
         }
-      }
 
-      // Recompute highlights for this page after render
-      const q = searchQuery.trim().toLowerCase()
-      if (q) {
-        const rects = await computeHighlights(page, viewport, q)
-        if (!cancelled) setHighlights(rects)
-      } else {
-        setHighlights([])
-      }
+        // Text content feeds both search and note highlights — fetch it once
+        // per render instead of once per annotation.
+        const textContent = await page.getTextContent()
+        if (cancelled) return
 
-      // 持久化批注高亮：在当前页文本中定位每条批注的矩形
-      const pageNotes = notes.filter((n) => n.position === String(pageNum))
-      const noteRects: NoteHighlight[] = []
-      for (const n of pageNotes) {
-        try {
-          const rs = await computeHighlights(page, viewport, n.content)
+        // Recompute search highlights for this page after render
+        if (appliedSearch) {
+          setHighlights(computeHighlights(textContent, viewport, appliedSearch))
+        } else {
+          setHighlights([])
+        }
+
+        // 持久化批注高亮：在当前页文本中定位每条批注的矩形
+        const pageNotes = notes.filter((n) => n.position === String(pageNum))
+        const noteRects: NoteHighlight[] = []
+        for (const n of pageNotes) {
+          const rs = computeHighlights(textContent, viewport, n.content.trim().toLowerCase())
           if (rs.length > 0) {
             noteRects.push({
               rect: rs[0],
               className: NOTE_HIGHLIGHT_CLASS[n.type] ?? NOTE_HIGHLIGHT_CLASS.highlight
             })
           }
-        } catch {
-          // 定位失败（跨行/跨块选区）——仍可从笔记面板跳转查看
+        }
+        if (!cancelled) setNoteHighlights(noteRects)
+      } catch (err) {
+        // Cancellation (page/scale change or unmount) lands here by design;
+        // anything else is logged without tearing the reader down.
+        if (
+          !cancelled &&
+          !(err instanceof Error && err.name === 'RenderingCancelledException')
+        ) {
+          console.warn('[pdf] page render failed:', err)
         }
       }
-      if (!cancelled) setNoteHighlights(noteRects)
     })()
     return () => {
       cancelled = true
+      renderTaskRef.current?.cancel()
+      renderTaskRef.current = null
     }
-  }, [doc, pageNum, scale, notes]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [doc, pageNum, scale, notes, appliedSearch])
 
   // 选中英文单词 → 自动弹出在线词典；其他选区 → 显示批注工具条
   const handleContentMouseUp = (e: React.MouseEvent) => {
@@ -385,6 +432,7 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
       if (!q) {
         setSearchHits([])
         setHighlights([])
+        setAppliedSearch('')
         return
       }
       const hits: SearchHit[] = []
@@ -405,18 +453,20 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
         if (n > 0) hits.push({ page: p, count: n })
       }
       setSearchHits(hits)
+      // Applying the term triggers the highlight pass even when the current
+      // page already is the first hit (pageNum alone would not change).
+      setAppliedSearch(q)
       if (hits.length > 0) setPageNum(hits[0].page)
     } finally {
       setSearching(false)
     }
   }
 
-  const computeHighlights = async (
-    page: pdfjs.PDFPageProxy,
+  const computeHighlights = (
+    content: PdfTextContent,
     viewport: pdfjs.PageViewport,
     q: string
-  ): Promise<HighlightRect[]> => {
-    const content = await page.getTextContent()
+  ): HighlightRect[] => {
     const rects: HighlightRect[] = []
     for (const item of content.items) {
       if (!('str' in item)) continue

@@ -5,6 +5,7 @@ import {
   CHAT_STREAM_EVENT,
   ARTIFACTS_GENERATED
 } from '../shared/channel-names'
+import type { ArtifactType } from '../shared/types/ids'
 
 // ---------------------------------------------------------------
 // Chat stream event payload types (exposed to renderer)
@@ -100,7 +101,7 @@ export interface ReadingNoteDTO {
 export interface ArtifactDTO {
   id: string
   conversationId: string
-  type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note'
+  type: ArtifactType
   content: string
   createdAt: string
 }

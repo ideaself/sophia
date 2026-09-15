@@ -18,6 +18,7 @@ import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
 import { DeepSeekClient } from '../llm/deepseek-client'
 import { createDeepSeekHttpAdapter } from '../llm/deepseek-http-adapter'
 import { PickedFileRegistry } from './picked-files'
+import { safeSend } from './safe-send'
 import { createBackupZip } from '../backup/backup'
 import {
   learnerPath,
@@ -118,7 +119,7 @@ export function registerConversationIpc(
   ): void {
     const payload = { conversationId, ...extra }
     for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send(ARTIFACTS_GENERATED, payload)
+      safeSend(win.webContents, ARTIFACTS_GENERATED, payload)
     }
   }
 
@@ -126,28 +127,34 @@ export function registerConversationIpc(
     conversationId: string,
     classMode?: ClassMode
   ): void {
-    artifactQueue = artifactQueue.then(async () => {
-      try {
-        const pipeline = await runArtifactPipeline(
-          { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, readingNoteStore, diaryStore },
-          conversationId,
-          { classMode }
-        )
-        notifyArtifactsReady(conversationId, {
-          artifacts: pipeline.artifactCount,
-          farewell: pipeline.farewell,
-          failures: pipeline.failures
-        })
-      } catch (err) {
-        console.error(`Background artifact generation error for ${conversationId}:`, err)
-        notifyArtifactsReady(conversationId, {
-          artifacts: 0,
-          farewell: '',
-          failures: [],
-          error: err instanceof Error ? err.message : String(err)
-        })
-      }
-    })
+    artifactQueue = artifactQueue
+      .then(async () => {
+        try {
+          const pipeline = await runArtifactPipeline(
+            { dataRoot, providerStore, conversationStore, textbookStore, artifactStore, readingNoteStore, diaryStore },
+            conversationId,
+            { classMode }
+          )
+          notifyArtifactsReady(conversationId, {
+            artifacts: pipeline.artifactCount,
+            farewell: pipeline.farewell,
+            failures: pipeline.failures
+          })
+        } catch (err) {
+          console.error(`Background artifact generation error for ${conversationId}:`, err)
+          notifyArtifactsReady(conversationId, {
+            artifacts: 0,
+            farewell: '',
+            failures: [],
+            error: err instanceof Error ? err.message : String(err)
+          })
+        }
+      })
+      // The chain must never become rejected: a rejected tail would skip
+      // every future artifact job silently.
+      .catch((err) => {
+        console.error('[artifacts] queue error (non-fatal):', err)
+      })
   }
 
   // --- Conversation CRUD ---
@@ -207,6 +214,13 @@ export function registerConversationIpc(
   ipcMain.handle('conversation:end', async (_event, input: unknown) => {
     const parsed = IpcEndClassInputSchema.parse(input)
     const { conversationId, classMode } = parsed
+    const conv = await conversationStore.get(conversationId)
+    if (!conv) return { success: false, artifacts: 0 }
+    // Guard against double-end (double click / two windows): regenerating
+    // artifacts would burn tokens and duplicate side effects.
+    if (conv.endedAt) {
+      return { success: true, artifacts: 0, farewell: '', failures: [], pending: false }
+    }
     const success = await conversationStore.endConversation(conversationId)
     if (!success) return { success: false, artifacts: 0 }
     // Generate artifacts in the background; the renderer is notified via
@@ -286,7 +300,7 @@ export function registerConversationIpc(
           updates
         })
         for (const win of BrowserWindow.getAllWindows()) {
-          win.webContents.send('concepts:updated', { conversationId })
+          safeSend(win.webContents, 'concepts:updated', { conversationId })
         }
       } catch (err) {
         console.warn('[concepts] 概念更新失败（非致命）：', err instanceof Error ? err.message : err)

@@ -1,6 +1,6 @@
 import { readFile, mkdir, access } from 'node:fs/promises'
 import { join } from 'node:path'
-import { configDir } from './app-data'
+import { configDir, safeSegment } from './app-data'
 import { isNotFoundError, warnReadFailure } from './fs-errors'
 import { atomicWriteFile } from './atomic-write'
 import type { SafeStorageAdapter } from '../security/secure-key-store'
@@ -130,19 +130,36 @@ export class ProviderStore {
 
   // --- API Key management ---
 
+  /**
+   * Key files are named after the provider id — never join a raw id into
+   * a path (a tampered providers.json could otherwise escape config/).
+   * Returns null for ids that are not plain path segments.
+   */
+  private apiKeyPath(providerId: string): string | null {
+    try {
+      return join(configDir(this.dataRoot), `${safeSegment(providerId)}.key.enc`)
+    } catch {
+      return null
+    }
+  }
+
   async setApiKey(providerId: string, apiKey: string): Promise<void> {
     if (!this.safeStorage.isEncryptionAvailable()) {
       throw new Error('Encryption is not available on this system')
     }
+    const keyPath = this.apiKeyPath(providerId)
+    if (!keyPath) throw new Error('Invalid provider id')
     const dir = configDir(this.dataRoot)
     await mkdir(dir, { recursive: true })
     const encrypted = this.safeStorage.encryptString(apiKey)
-    await atomicWriteFile(join(dir, `${providerId}.key.enc`), encrypted)
+    await atomicWriteFile(keyPath, encrypted)
   }
 
   async readApiKey(providerId: string): Promise<string | null> {
+    const keyPath = this.apiKeyPath(providerId)
+    if (!keyPath) return null
     try {
-      const encrypted = await readFile(join(configDir(this.dataRoot), `${providerId}.key.enc`))
+      const encrypted = await readFile(keyPath)
       return this.safeStorage.decryptString(encrypted)
     } catch (err) {
       if (!isNotFoundError(err)) warnReadFailure(`API key for provider ${providerId}`, err)
@@ -151,8 +168,10 @@ export class ProviderStore {
   }
 
   async hasApiKey(providerId: string): Promise<boolean> {
+    const keyPath = this.apiKeyPath(providerId)
+    if (!keyPath) return false
     try {
-      await access(join(configDir(this.dataRoot), `${providerId}.key.enc`))
+      await access(keyPath)
       return true
     } catch {
       return false
@@ -160,9 +179,11 @@ export class ProviderStore {
   }
 
   async deleteApiKey(providerId: string): Promise<void> {
+    const keyPath = this.apiKeyPath(providerId)
+    if (!keyPath) return
     try {
       const { unlink } = await import('node:fs/promises')
-      await unlink(join(configDir(this.dataRoot), `${providerId}.key.enc`))
+      await unlink(keyPath)
     } catch {
       // File doesn't exist — that's fine
     }
