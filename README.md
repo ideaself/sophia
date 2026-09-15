@@ -20,13 +20,65 @@
 
 ```bash
 npm install
-npm run dev        # 开发模式
-npm run typecheck  # 类型检查
-npm run lint       # ESLint
-npm run test       # 单测 + 安全基线
-npm run build      # 构建
-npm run build:win  # 打包 Windows 安装包
+npm run dev           # 开发模式
+npm run typecheck     # 类型检查（node + web 两份 tsconfig）
+npm run lint          # ESLint
+npm run test          # typecheck + lint + 单测 + 安全基线
+npm run test:coverage # 单测 + 覆盖率报告（含保守门槛，防止覆盖率回退）
+npm run build         # 构建（electron-vite）
+npm run build:win     # 打包 Windows 安装包（NSIS）
+npm run clean         # 清理 out/ release/ coverage/
 ```
+
+Node >= 22.13（见 `engines`；pdfjs-dist / unpdf 的硬性要求）。
+
+## 架构
+
+```
+src/
+  main/        主进程：窗口/托盘/生命周期、IPC、LLM（流式适配）、存储、WebDAV 同步、备份、学习记忆
+  preload/     contextBridge 桥：只暴露 window.sophia（类型化 invoke/订阅）
+  renderer/    React 渲染层：课堂、阅读器、复习、统计、设置（Vite 打包，依赖进 bundle）
+  shared/      两侧共享：Zod schema、IPC 契约、纯逻辑工具（tab 持久化、SRS、事件卡等）
+tests/         Vitest：main / shared / renderer 纯逻辑（无 jsdom 组件测试）
+scripts/       verify-security.mjs（安全基线）、clean.mjs
+```
+
+- 主进程按领域注册 IPC（`src/main/ipc/*.ts`），所有入参在 IPC 边界用 Zod 校验；
+  领域 ID 统一 `EntityIdSchema`（`^[A-Za-z0-9_-]{1,128}$`），路径拼接在 app-data 层二次校验。
+- LLM 调用只发生在主进程：API Key 解密后直接传给适配器，永不进入渲染层。
+- 产物流水线（下课生成总结/卡片/日记等）在后台串行队列执行，完成后通过 IPC 事件通知 UI。
+
+## 数据布局（LocalData）
+
+```
+{dataRoot}/
+  config/           providers.json + *.key.enc（加密的 API Key / WebDAV 密码）
+  companions/       角色（index.json + 候选角色 .md）
+  textbooks/        教材（textbook.json / source.md / 原件 / notes/）
+  conversations/    课堂（conversation.json + messages.json + artifacts/）
+  diary/            学习日记（按月 .md）
+  concepts.json     概念掌握度（EMA + 误解点 + 证据溯源）
+  learner.md / pal_moments_*.md / relation_*.md / handoff_meta.json
+```
+
+`config/*.enc`、`sync-state.json`、`.trash/`、`*.conflict-*` 永不参与 WebDAV 同步。
+
+## 安全模型
+
+- 渲染进程 `contextIsolation + sandbox + nodeIntegration: false`，只通过 preload 的
+  `window.sophia` 通信；API Key 仅有 `has/set/delete`，无读取接口。
+- 出站模型请求强制 HTTPS（`assertHttpsEndpoint`，`new URL` 解析防大小写绕过）。
+- 外部链接仅允许 http(s)（IPC 与 `setWindowOpenHandler` 同一策略）。
+- WebDAV 密码与 API Key 经 Electron `safeStorage` 加密后落盘。
+- `npm run test:security` 验证上述基线（preload 暴露面、窗口配置、IPC 校验）。
+
+## 测试与覆盖率
+
+- `npm run test`：typecheck + lint + 单测 + 安全基线，CI（`.github/workflows/ci.yml`）同款。
+- 覆盖率按"全部源码"口径统计（`all: true`），不是只统计被测试加载过的文件。
+  渲染层组件暂无 jsdom 测试，整体覆盖率因此偏低；`vitest.config.ts` 中设有保守下限，
+  只会随覆盖率提升而上调。
 
 ## 技术栈
 
@@ -35,3 +87,4 @@ npm run build:win  # 打包 Windows 安装包
 - LLM：DeepSeek API（OpenAI-compatible，主进程调用，Key 安全存储）
 - 渲染：react-markdown + KaTeX + rehype-highlight + Mermaid
 - 输入校验：Zod（IPC 边界）
+- 测试：Vitest（v8 覆盖率）

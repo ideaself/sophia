@@ -4,9 +4,17 @@
   "description": "Sophia: 苏格拉底式启发学习伙伴（本地优先）",
   "author": "Sophia",
   "main": "./out/main/index.js",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "build": {
     "appId": "com.sophia.app",
     "productName": "Sophia",
+    "artifactName": "${productName}-${version}-Setup.${ext}",
+    "electronLanguages": [
+      "en-US",
+      "zh-CN"
+    ],
     "directories": {
       "output": "release"
     },
@@ -30,7 +38,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "Sophia",
-      "deleteAppDataOnUninstall": true
+      "deleteAppDataOnUninstall": false
     }
   },
   "scripts": {
@@ -38,6 +46,7 @@
     "build": "electron-vite build",
     "build:win": "npm run build && electron-builder --win",
     "preview": "electron-vite preview",
+    "clean": "node scripts/clean.mjs",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
@@ -46,16 +55,38 @@
     "test:security": "node scripts/verify-security.mjs",
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test": "npm run typecheck && npm run test:unit && npm run test:security"
+    "test": "npm run typecheck && npm run lint && npm run test:unit && npm run test:security"
   },
   "dependencies": {
-    "@tanstack/react-virtual": "^3.14.9",
     "archiver": "^8.0.0",
-    "dompurify": "^3.4.12",
     "epub": "^2.1.1",
+    "extract-zip": "^2.0.1",
     "katex": "^0.18.1",
+    "unpdf": "^1.8.0",
+    "webdav": "^5.10.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@napi-rs/canvas": "^1.0.2",
+    "@tailwindcss/postcss": "^4.3.2",
+    "@tanstack/react-virtual": "^3.14.9",
+    "@types/archiver": "^8.0.0",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "dompurify": "^3.4.12",
+    "electron": "^43.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^3.1.0",
+    "eslint": "^10.8.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.9.0",
     "mermaid": "^11.16.0",
     "pdfjs-dist": "^6.1.200",
+    "postcss": "^8.5.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
@@ -63,33 +94,12 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
-    "unpdf": "^1.8.0",
-    "webdav": "^5.10.0",
-    "zod": "^4.4.3",
-    "zustand": "^5.0.14"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@tailwindcss/postcss": "^4.3.2",
-    "@types/archiver": "^8.0.0",
-    "@types/react": "^19.1.2",
-    "@types/react-dom": "^19.1.2",
-    "@vitejs/plugin-react": "^4.4.1",
-    "@vitest/coverage-v8": "^4.1.10",
-    "autoprefixer": "^10.4.21",
-    "electron": "^43.0.0",
-    "electron-builder": "^26.15.3",
-    "electron-vite": "^3.1.0",
-    "eslint": "^10.8.0",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.3",
-    "extract-zip": "^2.0.1",
-    "globals": "^17.9.0",
-    "postcss": "^8.5.3",
     "tailwindcss": "^4.1.6",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.66.0",
+    "unzipper": "^0.12.5",
     "vite": "^6.3.5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "zustand": "^5.0.14"
   }
 }

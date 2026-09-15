@@ -119,7 +119,14 @@ function createWindow(): void {
     })
 
     mainWindow.webContents.setWindowOpenHandler((details) => {
-      shell.openExternal(details.url)
+      // Match the app:open-external policy — only http(s) may reach the OS
+      // browser. Unvalidated schemes (file:, custom protocol handlers) could
+      // otherwise be launched by a malicious page via window.open.
+      if (/^https?:\/\//i.test(details.url)) {
+        void shell.openExternal(details.url)
+      } else {
+        console.warn(`Blocked window.open for non-http(s) URL: ${details.url}`)
+      }
       return { action: 'deny' }
     })
 
