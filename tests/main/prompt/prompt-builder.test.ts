@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import type { Companion } from '../../../src/shared/schemas/companion'
 import type { DeepSeekChatMessage } from '../../../src/main/llm/types'
 import type { CompanionId } from '../../../src/shared/types/ids'
@@ -15,7 +16,8 @@ let companions: Companion[] = []
 beforeAll(async () => {
   const result = await loadReferenceCompanions({
     candidatesDir,
-    companionDir: join(projectsRoot, 'out', 'test-companions')
+    // Temp dir (not under out/) — anything in out/ gets packed into the app.
+    companionDir: join(tmpdir(), 'sophia-test-companions')
   })
   companions = result.companions
 })

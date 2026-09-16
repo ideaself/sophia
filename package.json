@@ -28,6 +28,7 @@
     },
     "files": [
       "out/**/*",
+      "!out/test-companions/**",
       "reference/**/*"
     ],
     "afterPack": "build/after-pack.cjs",
