@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
 import { useTTS, stopTTS } from '../hooks/useTTS'
 import { TTSControlPanel } from '../components/TTSControlPanel'
@@ -92,6 +92,31 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
   const [chapterSearchCounts, setChapterSearchCounts] = useState<number[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchMarksRef = useRef<HTMLElement[]>([])
+
+  // Chapter plain-text cache (id-keyed): converting HTML → text is the
+  // expensive part of search; without the cache every chapter flip re-parsed
+  // the whole book for the match counts.
+  const chapterTextCacheRef = useRef<Map<string, string>>(new Map())
+  const chapterIndexRef = useRef(chapterIndex)
+  useEffect(() => { chapterIndexRef.current = chapterIndex }, [chapterIndex])
+  // Switching textbooks invalidates the cache (chapter ids may repeat).
+  useEffect(() => { chapterTextCacheRef.current = new Map() }, [textbookId])
+
+  const chapterPlainText = useCallback((ch: EpubChapterData): string => {
+    const cache = chapterTextCacheRef.current
+    let text = cache.get(ch.id)
+    if (text === undefined) {
+      text = htmlToPlainText(ch.html).toLowerCase()
+      cache.set(ch.id, text)
+    }
+    return text
+  }, [])
+
+  // Declared before the search effect that uses it (stable identity).
+  const goToChapter = useCallback((idx: number) => {
+    setChapterIndex(idx)
+    setTocOpen(false)
+  }, [])
 
   // ---- Load chapters ----
   useEffect(() => {
@@ -235,7 +260,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
     }
     const timer = setTimeout(() => {
       const counts = chapters.map((ch) => {
-        const text = htmlToPlainText(ch.html).toLowerCase()
+        const text = chapterPlainText(ch)
         let n = 0
         let i = 0
         while ((i = text.indexOf(q, i)) !== -1) { n++; i += q.length }
@@ -243,13 +268,16 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
       })
       setChapterSearchCounts(counts)
       setSearchCount(counts.reduce((a, b) => a + b, 0))
-      if (counts[chapterIndex] === 0) {
+      // Jump to the first hit only when the query changes (not when the user
+      // navigates to a chapter without matches — that used to bounce back).
+      const currentIdx = chapterIndexRef.current
+      if (counts[currentIdx] === 0) {
         const first = counts.findIndex((c) => c > 0)
         if (first >= 0) goToChapter(first)
       }
     }, 200)
     return () => clearTimeout(timer)
-  }, [searchQuery, chapters, chapterIndex])
+  }, [searchQuery, chapters, chapterPlainText, goToChapter])
 
   const current = chapters[chapterIndex]
   const safeHtml = useMemo(
@@ -397,11 +425,6 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
   const deleteNote = async (note: ReadingNoteDTO) => {
     await window.sophia.data.deleteReadingNote(note.id, textbookId)
     setNotes((prev) => prev.filter((n) => n.id !== note.id))
-  }
-
-  const goToChapter = (idx: number) => {
-    setChapterIndex(idx)
-    setTocOpen(false)
   }
 
   return (
