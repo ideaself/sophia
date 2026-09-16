@@ -67,7 +67,7 @@ function validCompanion(): Companion {
     personality: '十五岁天才少年...',
     speakingStyle: '语速快，思维跳跃',
     emotionalExpressions: '开心时笑得灿烂',
-    originalFile: 'reference/角色设定/candidates/alice.md'
+    originalFile: 'reference/角色设定/candidates/landau.md'
   }
 }
 

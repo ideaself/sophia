@@ -111,5 +111,5 @@ scripts/       verify-security.mjs（安全基线）、clean.mjs
 
 ## 许可
 
-[MIT](LICENSE)。`reference/角色设定/` 中的角色文案均为原创；其中爱丽丝、福尔摩斯、
-孙悟空为公有领域文学形象（仅使用原著设定）。第三方依赖均为 MIT/Apache 类宽松协议。
+[MIT](LICENSE)。内置预设角色（朗道、祖冲之、艾米莉·卡特）文案均为原创；基于历史人物的
+角色仅使用公开生平与学术观点。第三方依赖均为 MIT/Apache 类宽松协议。

@@ -61,7 +61,7 @@ describe('initDataDir', () => {
     expect(raw).toContain('#')
   })
 
-  it('creates companions/ directory with 9 markdown files', async () => {
+  it('creates companions/ directory with 3 markdown files', async () => {
     const opts = buildOptions()
     await initDataDir(opts)
 
@@ -69,7 +69,7 @@ describe('initDataDir', () => {
     const entries = await readdir(companionDir)
 
     const mdFiles = entries.filter(e => e.endsWith('.md'))
-    expect(mdFiles).toHaveLength(9)
+    expect(mdFiles).toHaveLength(3)
   })
 
   it('companions/index.json validates all entries against CompanionSchema', async () => {
@@ -83,7 +83,7 @@ describe('initDataDir', () => {
     const companions = JSON.parse(raw)
 
     expect(Array.isArray(companions)).toBe(true)
-    expect(companions).toHaveLength(9)
+    expect(companions).toHaveLength(3)
 
     for (const companion of companions) {
       const result = CompanionSchema.safeParse(companion)
@@ -94,11 +94,11 @@ describe('initDataDir', () => {
     }
   })
 
-  it('result.companionCount is 9', async () => {
+  it('result.companionCount is 3', async () => {
     const opts = buildOptions()
     const result = await initDataDir(opts)
 
-    expect(result.companionCount).toBe(9)
+    expect(result.companionCount).toBe(3)
   })
 
   it('is idempotent: running twice does not throw and files remain', async () => {
