@@ -13,6 +13,10 @@ import { detectVoiceTrigger, loadVoiceTriggers } from '../../../shared/voice-tri
 import { useTodayStudyMinutes } from '../hooks/useTodayStudyMinutes'
 import { isKnowledgeQuestion, hasTextbookCitation } from '../../../shared/grounding'
 import { useClassroomSend } from './useClassroomSend'
+import { ClassroomTabBar } from './ClassroomTabBar'
+import { ShortcutSheet } from './ShortcutSheet'
+import { MathSymbolPanel } from './MathSymbolPanel'
+import { TemplatePanel } from './TemplatePanel'
 import { MAX_INPUT_LENGTH, type DisplayMessage, type TabState } from './types'
 
 // PDF/EPUB 阅读器体积大（pdfjs 等），打开阅读分栏时才加载
@@ -97,28 +101,6 @@ const QUICK_ACTIONS: Array<{ label: string; prompt: string; title: string }> = [
   }
 ]
 
-const MATH_SYMBOL_GROUPS: Array<{ id: string; label: string; items: string[] }> = [
-  {
-    id: 'greek',
-    label: '希腊字母',
-    items: ['α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'ο', 'π', 'ρ', 'σ', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω', 'Γ', 'Δ', 'Θ', 'Λ', 'Ξ', 'Π', 'Σ', 'Φ', 'Ψ', 'Ω']
-  },
-  {
-    id: 'ops',
-    label: '运算符号',
-    items: ['+', '−', '×', '÷', '±', '∓', '=', '≠', '≈', '<', '>', '≤', '≥', '∞', '∂', '∇', '∫', '∬', '∑', '∏', '√', '∛', '∜', '%', '‰']
-  },
-  {
-    id: 'sets',
-    label: '集合逻辑',
-    items: ['∈', '∉', '⊂', '⊃', '⊆', '⊇', '∪', '∩', '∅', '∧', '∨', '¬', '→', '⇒', '↔', '⇔', '∀', '∃', '∴', '∵', '∥', '⊥']
-  },
-  {
-    id: 'templates',
-    label: '公式模板',
-    items: ['\\frac{a}{b}', '\\sqrt{x}', 'x^{2}', 'x_{i}', '\\sum_{i=1}^{n}', '\\int_{a}^{b}', '\\lim_{x \\to 0}', '\\overrightarrow{AB}', '\\begin{cases} ... \\end{cases}']
-  }
-]
 
 let tabCounter = 0
 function newTabId(): string {
@@ -893,49 +875,13 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   return (
     <div className="flex h-full flex-col">
       {/* Tab bar */}
-      <div className="flex items-center border-b border-surface-border bg-bg-surface px-2 pt-1">
-        <div className="flex-1 flex items-center overflow-x-auto gap-0.5" role="tablist" aria-label="课堂标签页">
-          {tabs.map((tab, idx) => (
-            <div
-              key={tab.id}
-              role="tab"
-              aria-selected={idx === activeIdx}
-              tabIndex={idx === activeIdx ? 0 : -1}
-              onClick={() => setActiveIdx(idx)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  setActiveIdx(idx)
-                }
-              }}
-              className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-t cursor-pointer select-none whitespace-nowrap max-w-[160px] ${
-                idx === activeIdx
-                  ? 'bg-bg-deep text-text-primary border border-b-0 border-surface-border -mb-px'
-                  : 'text-text-muted hover:text-text-secondary hover:bg-bg-elevated'
-              }`}
-            >
-              <span className="truncate">{tab.title}</span>
-              {tabs.length > 1 && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleCloseTab(idx) }}
-                  className="flex-shrink-0 ml-1 w-4 h-4 flex items-center justify-center rounded hover:bg-red-900/30 hover:text-red-400"
-                  aria-label={`关闭标签 ${tab.title}`}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-        <button
-          onClick={handleNewTab}
-          className="flex-shrink-0 px-2 py-1.5 text-xs text-text-muted hover:text-text-secondary hover:bg-bg-elevated rounded"
-          title="新建对话"
-          aria-label="新建对话"
-        >
-          +
-        </button>
-      </div>
+      <ClassroomTabBar
+        tabs={tabs}
+        activeIdx={activeIdx}
+        onSelect={setActiveIdx}
+        onClose={handleCloseTab}
+        onNew={handleNewTab}
+      />
 
       {/* Header */}
       <div className="border-b border-surface-border bg-bg-surface px-6 py-3">
@@ -1280,38 +1226,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         </div>
         <div ref={mathRef} className="relative flex gap-3">
           {mathOpen && (
-            <div className="absolute bottom-full left-0 z-20 mb-2 w-80 rounded-lg border border-surface-border bg-bg-surface p-3 shadow-lg">
-              <div className="mb-2 flex flex-wrap gap-1">
-                {MATH_SYMBOL_GROUPS.map((g) => (
-                  <button
-                    key={g.id}
-                    onClick={() => setMathTab(g.id)}
-                    className={`rounded px-2 py-0.5 text-xs transition-colors ${
-                      mathTab === g.id
-                        ? 'bg-accent text-white'
-                        : 'text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
-                    }`}
-                  >
-                    {g.label}
-                  </button>
-                ))}
-              </div>
-              <div className="grid grid-cols-8 gap-1">
-                {(MATH_SYMBOL_GROUPS.find((g) => g.id === mathTab) ?? MATH_SYMBOL_GROUPS[0]).items.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => insertIntoInput(s)}
-                    className="overflow-hidden rounded border border-surface-border-strong px-1 py-1.5 text-xs text-text-secondary hover:bg-bg-elevated"
-                    title={s}
-                  >
-                    {s.length > 6 ? '模板' : s}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2 text-[10px] text-text-muted">
-                点击插入到输入框；用 $...$ 包裹即可渲染为公式
-              </p>
-            </div>
+            <MathSymbolPanel tab={mathTab} onSelectTab={setMathTab} onInsert={insertIntoInput} />
           )}
           <button
             onClick={() => { setMathOpen((v) => !v); setMathTab('greek') }}
@@ -1326,39 +1241,10 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           </button>
           <div ref={templateRef} className="relative">
             {templateOpen && (
-              <div className="absolute bottom-full left-0 z-20 mb-2 w-80 rounded-lg border border-surface-border bg-bg-surface p-3 shadow-lg">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-medium text-text-muted">常用文本模板（Alt+1..9 插入）</span>
-                  <button
-                    onClick={() => setTemplateOpen(false)}
-                    className="rounded p-1 text-xs text-text-muted hover:bg-bg-elevated"
-                  >
-                    x
-                  </button>
-                </div>
-                {loadTextTemplates().length === 0 ? (
-                  <p className="text-xs text-text-muted">
-                    还没有模板。在「设置 → 常用文本模板」中添加，最多 {MAX_TEXT_TEMPLATES} 条。
-                  </p>
-                ) : (
-                  <ul className="space-y-1">
-                    {loadTextTemplates().map((t, i) => (
-                      <li key={i}>
-                        <button
-                          onClick={() => { insertIntoInput(t); setTemplateOpen(false) }}
-                          className="w-full truncate rounded px-2 py-1 text-left text-xs text-text-secondary hover:bg-bg-elevated"
-                          title={t}
-                        >
-                          <kbd className="mr-1.5 rounded border border-surface-border-strong bg-bg-elevated px-1 py-0.5 font-mono text-[10px] text-text-muted">
-                            Alt+{i + 1}
-                          </kbd>
-                          {t}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              <TemplatePanel
+                onInsert={(t) => { insertIntoInput(t); setTemplateOpen(false) }}
+                onClose={() => setTemplateOpen(false)}
+              />
             )}
             <button
               onClick={() => { setTemplateOpen((v) => !v); setMathOpen(false) }}
@@ -1462,42 +1348,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
       {/* Shortcut cheat sheet */}
       {showShortcuts && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={() => setShowShortcuts(false)}
-        >
-          <div
-            className="w-80 rounded-xl border border-surface-border bg-bg-surface p-5 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-4 text-base font-semibold">键盘快捷键</h3>
-            <div className="space-y-2.5 text-sm">
-              {[
-                ['Ctrl + T', '新建标签页'],
-                ['Ctrl + Shift + W', '关闭当前标签页'],
-                ['Ctrl + Tab', '下一个标签页'],
-                ['Ctrl + Shift + Tab', '上一个标签页'],
-                ['Ctrl + F', '在当前对话中搜索'],
-                ['Ctrl + /', '显示 / 隐藏快捷键'],
-                ['Ctrl + Shift + A', 'AI 代答（示范回复）'],
-                ['Alt + 1..9', '插入常用文本模板']
-              ].map(([keys, desc]) => (
-                <div key={keys} className="flex items-center justify-between gap-3">
-                  <kbd className="rounded border border-surface-border-strong bg-bg-elevated px-2 py-0.5 font-mono text-xs text-text-secondary">
-                    {keys}
-                  </kbd>
-                  <span className="text-xs text-text-muted">{desc}</span>
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={() => setShowShortcuts(false)}
-              className="mt-5 w-full rounded bg-accent py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
-            >
-              关闭 (Esc)
-            </button>
-          </div>
-        </div>
+        <ShortcutSheet onClose={() => setShowShortcuts(false)} />
       )}
     </div>
   )
