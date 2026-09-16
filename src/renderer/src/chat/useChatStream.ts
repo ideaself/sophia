@@ -1,13 +1,13 @@
 /**
- * Chat stream hook — thin React wrapper over the shared controller.
+ * Chat stream hook — thin React wrapper over the app-level stream singleton
+ * (see chat-stream-store.ts).
  *
  * The framework-agnostic controller logic lives in
- * `src/shared/chat-stream-controller.ts`.  This file only provides the
- * React binding (`useChatStream`) and re-exports the shared types and
- * factory for backward compatibility.
+ * `src/shared/chat-stream-controller.ts`. This file re-exports the shared
+ * types and factory, and keeps `useChatStream()` for consumers that need to
+ * subscribe (the classroom uses `useChatStreamTick` + the store directly).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createChatStreamController,
   type ChatMessage,
@@ -16,7 +16,7 @@ import {
   type StreamUsage,
   type CreateChatStreamControllerResult
 } from '../../../shared/chat-stream-controller'
-import { createFrameCoalescer, type FrameCoalescer } from '../../../shared/frame-coalescer'
+import { getChatStreamController, useChatStreamTick } from './chat-stream-store'
 
 // Re-export for backward compatibility
 export { createChatStreamController }
@@ -28,41 +28,7 @@ export type {
   CreateChatStreamControllerResult
 }
 
-// --------------- React hook ---------------
-
 export function useChatStream(): CreateChatStreamControllerResult {
-  const [, setTick] = useState(0)
-  const controllerRef = useRef<CreateChatStreamControllerResult | null>(null)
-  const coalescerRef = useRef<FrameCoalescer | null>(null)
-
-  if (controllerRef.current === null) {
-    const api = window.sophia.chat
-    coalescerRef.current = createFrameCoalescer(() => setTick((n) => n + 1))
-    controllerRef.current = createChatStreamController(api, () => {
-      coalescerRef.current?.schedule()
-    })
-  }
-
-  useEffect(() => {
-    return () => coalescerRef.current?.dispose()
-  }, [])
-
-  const send = useCallback(
-    (messages: ChatMessage[], model?: string, thinking?: boolean) =>
-      controllerRef.current!.send(messages, model, thinking),
-    []
-  )
-
-  const cancel = useCallback(() => controllerRef.current!.cancel(), [])
-
-  return useMemo(() => ({
-    get state() {
-      return controllerRef.current!.state
-    },
-    send,
-    cancel,
-    get streamEnd() {
-      return controllerRef.current!.streamEnd
-    }
-  }), [send, cancel])
+  useChatStreamTick()
+  return getChatStreamController()
 }

@@ -9,6 +9,7 @@ import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-temp
 import { useTodayStudyMinutes } from '../hooks/useTodayStudyMinutes'
 import { isKnowledgeQuestion, hasTextbookCitation } from '../../../shared/grounding'
 import { useClassroomSend } from './useClassroomSend'
+import { useChatStreamTick } from './chat-stream-store'
 import { ClassroomHeader } from './ClassroomHeader'
 import { ConversationSearchBar } from './ConversationSearchBar'
 import { ClassroomTabBar } from './ClassroomTabBar'
@@ -66,6 +67,9 @@ function makeTab(conversationId?: string, title?: string): TabState {
 }
 
 export function ClassroomView({ companion, textbook, chatStream, loadConversationId, onConversationLoaded, freshStartNonce = 0 }: ClassroomViewProps): React.ReactElement {
+  // Re-render (frame-coalesced) while the stream state changes; App no longer
+  // subscribes, so this is the only place tokens trigger a render pass.
+  useChatStreamTick()
   const [initialTabs] = useState(() => freshStartNonce > 0 ? null : loadTabs(localStorage))
   const [tabs, setTabs] = useState<TabState[]>(() =>
     initialTabs

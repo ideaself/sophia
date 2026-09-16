@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { FirstRunGuide } from './components/FirstRunGuide'
 import { ClassroomView } from './chat/ClassroomView'
-import { useChatStream } from './chat/useChatStream'
+import { getChatStreamController } from './chat/chat-stream-store'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
 import { useDueFlashcardCount } from './hooks/useFlashcards'
 import { CompanionEditModal } from './components/CompanionEditModal'
@@ -80,7 +80,9 @@ function App(): React.ReactElement {
 
   const fetchActiveConversations = useConversationStore((s) => s.fetchActive)
 
-  const chatStream = useChatStream()
+  // Stable stream handle: the shell must not re-render per token — the
+  // classroom subscribes via useChatStreamTick instead.
+  const chatStream = getChatStreamController()
   const isOnline = useOnlineStatus()
   const dueFlashcardCount = useDueFlashcardCount()
   const classroomDropdownRef = useRef<HTMLDivElement>(null)
