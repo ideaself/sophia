@@ -1,0 +1,118 @@
+// @vitest-environment jsdom
+/**
+ * SettingsBackupSection + SettingsConfigSection — data backup & settings portability.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
+
+import { SettingsBackupSection } from '../../../src/renderer/src/components/SettingsBackupSection'
+import { SettingsConfigSection } from '../../../src/renderer/src/components/SettingsConfigSection'
+
+const api = {
+  exportBackup: vi.fn(),
+  restoreBackup: vi.fn(),
+  writeTextFile: vi.fn(),
+  openDataDir: vi.fn(),
+  saveFile: vi.fn(),
+  openFile: vi.fn(),
+  confirm: vi.fn()
+}
+
+beforeEach(() => {
+  localStorage.clear()
+  for (const fn of Object.values(api)) fn.mockClear()
+  api.exportBackup.mockResolvedValue({ fileCount: 7 })
+  api.restoreBackup.mockResolvedValue({ success: true })
+  api.writeTextFile.mockResolvedValue({ success: true })
+  api.openDataDir.mockResolvedValue({ success: true })
+  api.saveFile.mockResolvedValue({ canceled: false, filePath: 'C:/out.bin' })
+  api.openFile.mockResolvedValue({ canceled: false, filePaths: ['C:/backup.zip'] })
+  api.confirm.mockResolvedValue(true)
+
+  Object.defineProperty(window, 'sophia', {
+    configurable: true,
+    value: {
+      data: {
+        exportBackup: api.exportBackup,
+        restoreBackup: api.restoreBackup,
+        writeTextFile: api.writeTextFile
+      },
+      app: { openDataDir: api.openDataDir },
+      dialog: {
+        saveFile: api.saveFile,
+        openFile: api.openFile,
+        confirm: api.confirm
+      }
+    }
+  })
+})
+
+afterEach(() => {
+  cleanup()
+})
+
+describe('SettingsBackupSection', () => {
+  it('exports a backup and reports the file count', async () => {
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('导出全部数据备份'))
+
+    await waitFor(() => expect(api.exportBackup).toHaveBeenCalledWith('C:/out.bin'))
+    expect(await screen.findByText('备份完成，共 7 个文件')).toBeTruthy()
+  })
+
+  it('restores after confirmation', async () => {
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('从备份恢复'))
+
+    await waitFor(() => expect(api.restoreBackup).toHaveBeenCalledWith('C:/backup.zip'))
+    expect(api.confirm).toHaveBeenCalled()
+    expect(await screen.findByText(/恢复成功/)).toBeTruthy()
+  })
+
+  it('does not restore when the confirmation is declined', async () => {
+    api.confirm.mockResolvedValueOnce(false)
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('从备份恢复'))
+
+    await waitFor(() => expect(api.confirm).toHaveBeenCalled())
+    expect(api.openFile).not.toHaveBeenCalled()
+    expect(api.restoreBackup).not.toHaveBeenCalled()
+  })
+
+  it('opens the data directory', async () => {
+    render(<SettingsBackupSection />)
+    fireEvent.click(screen.getByText('打开数据目录'))
+    await waitFor(() => expect(api.openDataDir).toHaveBeenCalled())
+  })
+})
+
+describe('SettingsConfigSection', () => {
+  it('exports only whitelisted settings keys', async () => {
+    localStorage.setItem('sophia-theme', 'dark')
+    localStorage.setItem('sophia.fontScale', '1.1')
+    localStorage.setItem('sophia.secret-not-whitelisted', 'nope')
+
+    render(<SettingsConfigSection />)
+    fireEvent.click(screen.getByText('导出配置'))
+
+    await waitFor(() => expect(api.writeTextFile).toHaveBeenCalledTimes(1))
+    const payload = JSON.parse(api.writeTextFile.mock.calls[0][1] as string)
+    expect(payload.settings['sophia-theme']).toBe('dark')
+    expect(payload.settings['sophia.fontScale']).toBe('1.1')
+    expect(payload.settings['sophia.secret-not-whitelisted']).toBeUndefined()
+    expect(await screen.findByText(/已导出 2 项设置/)).toBeTruthy()
+  })
+
+  it('rejects an invalid import file with a readable error', async () => {
+    const { container } = render(<SettingsConfigSection />)
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+
+    const bad = new File(['not json at all'], 'bad.json', { type: 'application/json' })
+    fireEvent.change(fileInput, { target: { files: [bad] } })
+
+    expect(await screen.findByText('导入失败：文件格式不正确')).toBeTruthy()
+  })
+})

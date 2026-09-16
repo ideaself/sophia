@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { SettingsTextTemplatesSection } from './SettingsTextTemplatesSection'
+import { SettingsBackupSection } from './SettingsBackupSection'
+import { SettingsConfigSection } from './SettingsConfigSection'
 import { SettingsVoiceTriggersSection } from './SettingsVoiceTriggersSection'
 import { SettingsDictionarySection } from './SettingsDictionarySection'
 import { SettingsArchiveSection } from './SettingsArchiveSection'
@@ -14,19 +16,6 @@ import {
 } from '../../../shared/font-scale'
 import { loadThinkingMode, saveThinkingMode, type ThinkingMode } from '../../../shared/thinking'
 
-/** 可导出/导入的界面设置（localStorage key 白名单，不含密钥等敏感数据）。 */
-const UI_SETTINGS_KEYS = [
-  'sophia-theme',
-  'sophia.fontScale',
-  'sophia.textTemplates',
-  'sophia.voiceTriggers',
-  'sophia.dictEnabled',
-  'sophia.dictTemplate',
-  'sophia.dictPopupPrefs',
-  'sophia.thinkingEnabled',
-  'sophia.hideNarration',
-  'sophia.dailyGoal'
-] as const
 
 
 
@@ -40,10 +29,6 @@ export function SettingsView(): React.ReactElement {
   const [dailyGoal, setDailyGoal] = useState(
     () => localStorage.getItem('sophia.dailyGoal') ?? '0'
   )
-  const [backingUp, setBackingUp] = useState(false)
-  const [backupMsg, setBackupMsg] = useState<string | null>(null)
-  const [restoring, setRestoring] = useState(false)
-  const [restoreMsg, setRestoreMsg] = useState<string | null>(null)
   const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale())
   const [lockEnabled, setLockEnabled] = useState(false)
   const [lockPin, setLockPin] = useState('')
@@ -122,105 +107,8 @@ export function SettingsView(): React.ReactElement {
     window.dispatchEvent(new Event('sophia:goal-changed'))
   }
 
-  const [configMsg, setConfigMsg] = useState<string | null>(null)
 
-  const handleExportSettings = async () => {
-    setConfigMsg(null)
-    const data: Record<string, string> = {}
-    for (const key of UI_SETTINGS_KEYS) {
-      const v = localStorage.getItem(key)
-      if (v !== null) data[key] = v
-    }
-    const result = await window.sophia.dialog.saveFile({
-      defaultPath: `sophia-设置-${new Date().toISOString().slice(0, 10)}.json`,
-      filters: [{ name: 'JSON 配置', extensions: ['json'] }]
-    })
-    if (result.canceled || !result.filePath) return
-    const payload = JSON.stringify({ app: 'sophia', version: 1, settings: data }, null, 2)
-    const written = await window.sophia.data.writeTextFile(result.filePath, payload)
-    setConfigMsg(written.success ? `已导出 ${Object.keys(data).length} 项设置` : '导出失败')
-  }
 
-  const handleImportSettings = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setConfigMsg(null)
-    const reader = new FileReader()
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result)) as { settings?: unknown } | Record<string, unknown>
-        const data = parsed && typeof parsed === 'object' && 'settings' in parsed && parsed.settings
-          ? (parsed.settings as Record<string, unknown>)
-          : parsed
-        if (!data || typeof data !== 'object') throw new Error('bad format')
-        let count = 0
-        for (const [key, value] of Object.entries(data)) {
-          if (UI_SETTINGS_KEYS.includes(key as (typeof UI_SETTINGS_KEYS)[number]) && typeof value === 'string') {
-            localStorage.setItem(key, value)
-            count++
-          }
-        }
-        if (count === 0) throw new Error('no settings')
-        window.location.reload()
-      } catch {
-        setConfigMsg('导入失败：文件格式不正确')
-      }
-    }
-    reader.onerror = () => setConfigMsg('读取文件失败')
-    reader.readAsText(file)
-  }
-
-  const handleExportBackup = async () => {
-    setBackingUp(true)
-    setBackupMsg(null)
-    try {
-      const result = await window.sophia.dialog.saveFile({
-        defaultPath: `sophia-backup-${new Date().toISOString().slice(0, 10)}.zip`,
-        filters: [{ name: 'ZIP 备份', extensions: ['zip'] }]
-      })
-      if (result.canceled || !result.filePath) return
-      const backup = await window.sophia.data.exportBackup(result.filePath)
-      setBackupMsg(`备份完成，共 ${backup.fileCount} 个文件`)
-    } catch (err) {
-      setBackupMsg(err instanceof Error ? err.message : '备份失败')
-    } finally {
-      setBackingUp(false)
-    }
-  }
-
-  const handleRestoreBackup = async () => {
-    setRestoreMsg(null)
-    const ok = await window.sophia.dialog.confirm({
-      message: '从备份恢复会用备份数据替换当前全部学习数据。恢复前会自动先为当前数据做一份保险备份。确定继续吗？',
-      confirmLabel: '恢复',
-      cancelLabel: '取消'
-    })
-    if (!ok) return
-    const result = await window.sophia.dialog.openFile({
-      filters: [{ name: 'ZIP 备份', extensions: ['zip'] }]
-    })
-    if (result.canceled || result.filePaths.length === 0) return
-    setRestoring(true)
-    try {
-      const res = await window.sophia.data.restoreBackup(result.filePaths[0])
-      if (res.success) {
-        setRestoreMsg('恢复成功。界面将刷新以加载恢复后的数据…')
-        setTimeout(() => window.location.reload(), 1500)
-      } else {
-        setRestoreMsg(`恢复失败：${res.error ?? '未知错误'}`)
-      }
-    } catch (err) {
-      setRestoreMsg(`恢复失败：${err instanceof Error ? err.message : '未知错误'}`)
-    } finally {
-      setRestoring(false)
-    }
-  }
-
-  const handleOpenDataDir = async () => {
-    const res = await window.sophia.app.openDataDir()
-    if (!res.success) setRestoreMsg(`无法打开数据目录：${res.error ?? '未知错误'}`)
-  }
 
 
   return (
@@ -259,41 +147,7 @@ export function SettingsView(): React.ReactElement {
 
       
 
-      <div className="mb-8">
-        <h3 className="mb-3 text-lg font-semibold">数据备份</h3>
-        <div className="rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
-          <p className="text-sm text-text-secondary">
-            将全部学习数据（对话、产物、教材、闪卡复习状态等）打包为一个 zip 文件，用于本地备份。
-          </p>
-          <p className="mt-2 text-xs text-text-muted">
-            应用每次启动时会自动检查备份：每 7 天自动备份一次，保留最近 5 份（位于用户数据目录的 Sophia-backups 文件夹）。
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => void handleExportBackup()}
-              disabled={backingUp}
-              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-            >
-              {backingUp ? '备份中...' : '导出全部数据备份'}
-            </button>
-            <button
-              onClick={() => void handleRestoreBackup()}
-              disabled={restoring}
-              className="rounded border border-red-800 px-4 py-2 text-sm text-red-400 hover:bg-red-900/30 disabled:opacity-50"
-            >
-              {restoring ? '恢复中...' : '从备份恢复'}
-            </button>
-            <button
-              onClick={() => void handleOpenDataDir()}
-              className="rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated"
-            >
-              打开数据目录
-            </button>
-            {backupMsg && <span className="text-xs text-text-muted">{backupMsg}</span>}
-            {restoreMsg && <span className="text-xs text-text-muted">{restoreMsg}</span>}
-          </div>
-        </div>
-      </div>
+      <SettingsBackupSection />
 
       
 
@@ -411,32 +265,7 @@ export function SettingsView(): React.ReactElement {
         </label>
       </div>
 
-      <div className="mb-8">
-        <h3 className="mb-3 text-lg font-semibold">配置导出 / 导入</h3>
-        <div className="rounded-lg border border-surface-border bg-bg-surface px-4 py-3">
-          <p className="text-sm text-text-secondary">
-            导出或恢复界面设置（主题、字号、文本模板、语音触发、词典、课堂行为、每日目标）。不含账号密钥等敏感信息。
-          </p>
-          <div className="mt-3 flex items-center gap-3">
-            <button
-              onClick={() => void handleExportSettings()}
-              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
-            >
-              导出配置
-            </button>
-            <label className="cursor-pointer rounded border border-surface-border-strong px-4 py-2 text-sm text-text-secondary hover:bg-bg-elevated">
-              导入配置
-              <input
-                type="file"
-                accept=".json,application/json"
-                className="hidden"
-                onChange={handleImportSettings}
-              />
-            </label>
-            {configMsg && <span className="text-xs text-text-muted">{configMsg}</span>}
-          </div>
-        </div>
-      </div>
+      <SettingsConfigSection />
 
       <SettingsTextTemplatesSection />
 
