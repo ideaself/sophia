@@ -11,8 +11,9 @@ import { useAppStore } from '../stores/useAppStore'
 import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-templates'
 import { detectVoiceTrigger, loadVoiceTriggers } from '../../../shared/voice-trigger'
 import { useTodayStudyMinutes } from '../hooks/useTodayStudyMinutes'
-import { loadThinkingMode, shouldUseThinking } from '../../../shared/thinking'
 import { isKnowledgeQuestion, hasTextbookCitation } from '../../../shared/grounding'
+import { useClassroomSend } from './useClassroomSend'
+import { MAX_INPUT_LENGTH, type DisplayMessage, type TabState } from './types'
 
 // PDF/EPUB 阅读器体积大（pdfjs 等），打开阅读分栏时才加载
 const EpubReaderView = lazy(() => import('../reader/EpubReaderView').then((m) => ({ default: m.EpubReaderView })))
@@ -41,33 +42,6 @@ interface ClassroomViewProps {
   freshStartNonce?: number
 }
 
-interface DisplayMessage {
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  /** 消息时间（仅持久化消息有；本地乐观消息为空则不显示）。 */
-  createdAt?: string
-}
-
-interface TabState {
-  id: string
-  title: string
-  conversationId: string | null
-  classMode: 'standard' | 'feynman'
-  pace: 'slow' | 'normal' | 'fast'
-  messages: DisplayMessage[]
-  input: string
-  retryMessage: { input: string; convId: string } | null
-  endResult: {
-    artifacts: number
-    farewell?: string
-    failures?: string[]
-    conversationId?: string
-    pending?: boolean
-    generationError?: string
-  } | null
-}
-
 type MessageRow =
   | {
       kind: 'message'
@@ -78,8 +52,6 @@ type MessageRow =
     }
   | { kind: 'error'; key: string }
   | { kind: 'end'; key: string }
-
-const MAX_INPUT_LENGTH = 20000
 
 /** 课堂快捷操作（里程碑 2）：预置教学指令，点击直接发送。 */
 const QUICK_ACTIONS: Array<{ label: string; prompt: string; title: string }> = [
@@ -233,9 +205,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   // 当前流式回复归属的标签索引。流式内容是全局单例状态，
   // 必须只显示在发起发送的标签上，避免切换标签时内容"串位"。
   const streamOwnerIdxRef = useRef<number | null>(null)
-  // 发送中防重：覆盖"按下发送 → 流式开始"之间的间隙，避免连按 Enter
-  // 重复创建会话 / 重复发送。
-  const sendingRef = useRef(false)
   useEffect(() => { tabsRef.current = tabs }, [tabs])
   // Mirror for event handlers that are registered once (keyboard shortcuts).
   const activeIdxRef = useRef(activeIdx)
@@ -549,194 +518,21 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     return () => document.removeEventListener('mousedown', handler)
   }, [templateOpen])
 
-  const handleSend = async (options?: { input?: string; resend?: boolean }) => {
-    // 发送防重：从按下发送到流式真正开始的间隙（构建 prompt 可能要一两秒）
-    // 期间没有 isStreaming 标记，连按 Enter 会重复创建会话/发送多条。
-    if (sendingRef.current) return
-    sendingRef.current = true
-    try {
-      // 从 ref 读最新状态：重试/重新生成会在 await 后回调本次发送，
-      // 渲染闭包里的 tabs 可能已经过期（会复活被删消息、重复 user 消息）。
-      const tab = tabsRef.current[activeIdx]
-      if (!tab) return
-      const userMessage = options?.input ?? tab.input.trim()
-      // resend：该用户消息已在库中（重试 / 重新生成），不能重复持久化、重复上屏。
-      const isResend = options?.resend === true
-      if (!userMessage || !companion) return
-      if (userMessage.length > MAX_INPUT_LENGTH) {
-        setSendError(`消息过长（上限 ${MAX_INPUT_LENGTH} 字），请分段发送`)
-        return
-      }
+  // Send / resend / regenerate flow (extracted hook — see useClassroomSend.ts)
+  const { sendingRef, handleSend, handleSendFromContent, handleRegenerate } = useClassroomSend({
+    companion,
+    textbook,
+    activeIdx,
+    tabsRef,
+    chatStream,
+    setTabs,
+    updateTab,
+    setSendError,
+    streamOwnerIdxRef,
+    setStickToBottom,
+    focusInput: () => requestAnimationFrame(() => inputRef.current?.focus())
+  })
 
-      if (chatStream.state.isStreaming) {
-        // 其他标签正在回复：先确认，避免静默打断对方的回复。
-        const ownerIdx = streamOwnerIdxRef.current
-        if (ownerIdx !== null && ownerIdx !== activeIdx) {
-          const ownerTab = tabsRef.current[ownerIdx]
-          const ok = await window.sophia.dialog.confirm({
-            message: `「${ownerTab?.title ?? '其他标签'}」正在回复中，发送将中断它的回复。确定继续吗？`,
-            confirmLabel: '中断并发送'
-          })
-          if (!ok) return
-        }
-        await chatStream.cancel()
-      }
-
-      // 本次流式回复归属当前标签（用于流式内容显示定位）。
-      streamOwnerIdxRef.current = activeIdx
-
-      setSendError(null)
-
-      let convId = tab.conversationId
-      if (!convId) {
-        if (isResend) {
-          setSendError('对话状态异常，请重新开始课堂')
-          return
-        }
-        // 默认课堂名：MM-DD 角色名（与课堂浏览器的显示规则一致）
-        const now = new Date()
-        const mm = String(now.getMonth() + 1).padStart(2, '0')
-        const dd = String(now.getDate()).padStart(2, '0')
-        const defaultTitle = `${mm}-${dd} ${companion.name}`
-        try {
-          const conv = await window.sophia.data.createConversation({
-            companionId: companion.id,
-            companionVersion: (companion as { version?: number }).version ?? undefined,
-            textbookId: textbook?.id,
-            title: defaultTitle
-          })
-          convId = conv.id
-          updateTab(activeIdx, { conversationId: convId, title: defaultTitle })
-        } catch {
-          setSendError('创建对话失败，请重试')
-          return
-        }
-      }
-
-      if (isResend) {
-        // 消息已在库中：只清理重试/重新生成状态，不重复入库、不重复上屏。
-        updateTab(activeIdx, { retryMessage: null })
-      } else {
-        try {
-          await window.sophia.data.sendMessage({
-            conversationId: convId,
-            content: userMessage,
-            role: 'user',
-          })
-        } catch {
-          try {
-            const now = new Date()
-            const mm = String(now.getMonth() + 1).padStart(2, '0')
-            const dd = String(now.getDate()).padStart(2, '0')
-            const defaultTitle = `${mm}-${dd} ${companion.name}`
-            const conv = await window.sophia.data.createConversation({
-              companionId: companion.id,
-              companionVersion: (companion as { version?: number }).version ?? undefined,
-              textbookId: textbook?.id,
-              title: defaultTitle
-            })
-            convId = conv.id
-            updateTab(activeIdx, { conversationId: convId, title: defaultTitle })
-            await window.sophia.data.sendMessage({
-              conversationId: convId,
-              content: userMessage,
-              role: 'user',
-            })
-          } catch {
-            setSendError('发送消息失败，对话可能已被删除')
-            return
-          }
-        }
-
-        // 函数式更新：即使期间有其他状态变化也不会丢消息或重复 user 消息。
-        setTabs((prev) => {
-          const next = [...prev]
-          const t = next[activeIdx]
-          if (t) {
-            t.messages = [
-              ...t.messages,
-              { id: `local-${Date.now()}`, role: 'user', content: userMessage, createdAt: new Date().toISOString() }
-            ]
-            t.input = ''
-            t.retryMessage = null
-          }
-          return next
-        })
-      }
-      setStickToBottom(true)
-
-      let builtMessages
-      try {
-        const hideNarration = localStorage.getItem('sophia.hideNarration') === '1'
-        builtMessages = await window.sophia.chat.getPromptMessages({
-          conversationId: convId,
-          companionId: companion.id,
-          textbookId: textbook?.id ?? null,
-          userMessage,
-          classMode: tab.classMode,
-          pace: tab.pace,
-          hideNarration
-        })
-      } catch {
-        setSendError('无法加载角色数据，请重新选择学习伙伴')
-        return
-      }
-
-      const thinkingMode = loadThinkingMode()
-      await chatStream.send(builtMessages, undefined, shouldUseThinking(userMessage, thinkingMode))
-
-      const endPromise = chatStream.streamEnd
-      if (endPromise) {
-        // 回复归属发起标签（用户可能已在流式期间切换到其他标签）
-        const targetIdx = streamOwnerIdxRef.current ?? activeIdx
-        try {
-          const { content, finishReason } = await endPromise
-          const isPartial = finishReason.startsWith('error:')
-          if (content && convId) {
-            await window.sophia.data.sendMessage({
-              conversationId: convId,
-              content,
-              role: 'assistant',
-              })
-          }
-          if (content) {
-            setTabs((prev) => {
-              const next = [...prev]
-              const t = next[targetIdx]
-              if (t) t.messages = [...t.messages, { id: `assistant-${Date.now()}`, role: 'assistant', content, createdAt: new Date().toISOString() }]
-              return next
-            })
-          }
-          if (isPartial) {
-            setTabs((prev) => {
-              const next = [...prev]
-              const t = next[targetIdx]
-              if (t) t.retryMessage = { input: userMessage, convId: convId! }
-              return next
-            })
-            setSendError('回复被中断，已保存部分内容。可重试获取完整回复。')
-          }
-        } catch {
-          setTabs((prev) => {
-            const next = [...prev]
-            const t = next[targetIdx]
-            if (t) t.retryMessage = { input: userMessage, convId: convId! }
-            return next
-          })
-        } finally {
-          streamOwnerIdxRef.current = null
-        }
-      }
-
-      // 流式结束后恢复输入框焦点（rAF 等 React 完成状态刷新，避免
-      // 在禁用态切换的间隙聚焦失败）
-      requestAnimationFrame(() => inputRef.current?.focus())
-    } catch (e) {
-      setSendError(e instanceof Error ? e.message : '发送失败，请重试')
-    } finally {
-      sendingRef.current = false
-    }
-  }
 
   const handleEndClass = async () => {
     if (!activeTab.conversationId) return
@@ -915,53 +711,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       setStickToBottom(true)
     }
   }, [activeIdx])
-
-  // Latest-value ref so the memoized handlers below stay identity-stable
-  // across stream ticks (the chatStream object changes on every token).
-  const handleSendRef = useRef(handleSend)
-  useEffect(() => {
-    handleSendRef.current = handleSend
-  })
-
-  const handleRegenerate = useCallback(async (messageId: string) => {
-    const tab = tabsRef.current[activeIdx]
-    const msgs = tab?.messages ?? []
-    const msgIdx = msgs.findIndex((m) => m.id === messageId)
-    if (msgIdx < 0) return
-
-    // Drop this assistant message and everything after it (both UI and DB),
-    // then let the model answer the same user turn again.
-    const newMessages = msgs.slice(0, msgIdx)
-    const lastUserMsg = [...newMessages].reverse().find((m) => m.role === 'user')
-    if (!lastUserMsg) return
-
-    setTabs((prev) => {
-      const next = [...prev]
-      const t = next[activeIdx]
-      if (t) t.messages = newMessages
-      return next
-    })
-
-    if (tab?.conversationId) {
-      try {
-        // Truncate through the user message: removes the assistant reply and
-        // any later messages that the UI just dropped (deleteMessage alone
-        // would leave them orphaned in the store).
-        await window.sophia.data.truncateConversation(tab.conversationId, lastUserMsg.id)
-      } catch {
-        // The local list is already consistent; a failed truncate must not
-        // block the regeneration attempt.
-      }
-    }
-
-    // resend: the user message is already persisted — handleSend must not
-    // persist it again nor append it to the UI list a second time.
-    await handleSendRef.current({ input: lastUserMsg.content, resend: true })
-  }, [activeIdx])
-
-  const handleSendFromContent = async (content: string) => {
-    await handleSend({ input: content })
-  }
 
   const handleNewTab = () => {
     setTabs((prev) => [...prev, makeTab()])
