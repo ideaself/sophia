@@ -34,11 +34,14 @@ export function NewClassroomModal({ initialCompanion, onConfirm, onCancel }: New
       onClick={onCancel}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-classroom-title"
         className="flex h-[72vh] w-[560px] flex-col rounded-lg border border-surface-border-strong bg-bg-deep shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-surface-border px-4 py-3">
-          <h3 className="text-sm font-semibold text-text-primary">
+          <h3 id="new-classroom-title" className="text-sm font-semibold text-text-primary">
             {step === 'companion'
               ? '新建课堂 · 选择学习伙伴'
               : `新建课堂 · 选择教材（${picked?.name ?? ''}）`}
@@ -47,6 +50,7 @@ export function NewClassroomModal({ initialCompanion, onConfirm, onCancel }: New
             onClick={onCancel}
             className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
             title="取消 (Esc)"
+            aria-label="取消"
           >
             ✕
           </button>

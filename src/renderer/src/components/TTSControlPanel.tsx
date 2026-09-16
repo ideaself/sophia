@@ -24,6 +24,7 @@ export function TTSControlPanel({ tts }: TTSControlPanelProps): React.ReactEleme
             onClick={(e) => { e.stopPropagation(); tts.resume() }}
             className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
             title="继续朗读"
+            aria-label="继续朗读"
           >
             ▶️
           </button>
@@ -33,6 +34,7 @@ export function TTSControlPanel({ tts }: TTSControlPanelProps): React.ReactEleme
             disabled={!tts.speaking}
             className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated disabled:opacity-40"
             title="暂停"
+            aria-label="暂停朗读"
           >
             ⏸️
           </button>
@@ -41,6 +43,7 @@ export function TTSControlPanel({ tts }: TTSControlPanelProps): React.ReactEleme
           onClick={(e) => { e.stopPropagation(); tts.stop() }}
           className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
           title="停止"
+          aria-label="停止朗读"
         >
           ⏹️
         </button>
@@ -52,6 +55,8 @@ export function TTSControlPanel({ tts }: TTSControlPanelProps): React.ReactEleme
               : 'border-surface-border-strong hover:bg-bg-elevated'
           }`}
           title={tts.loop ? '循环播放：开（点击关闭）' : '循环播放：关（点击开启）'}
+          aria-label="循环播放"
+          aria-pressed={tts.loop}
         >
           🔁
         </button>
@@ -65,6 +70,7 @@ export function TTSControlPanel({ tts }: TTSControlPanelProps): React.ReactEleme
             onChange={(e) => tts.setRate(Number(e.target.value))}
             className="flex-1"
             title="语速"
+            aria-label="朗读语速"
           />
           <span className="w-9 text-right text-xs tabular-nums text-text-muted">
             {tts.rate.toFixed(2)}x

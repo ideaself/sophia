@@ -1152,11 +1152,20 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     <div className="flex h-full flex-col">
       {/* Tab bar */}
       <div className="flex items-center border-b border-surface-border bg-bg-surface px-2 pt-1">
-        <div className="flex-1 flex items-center overflow-x-auto gap-0.5">
+        <div className="flex-1 flex items-center overflow-x-auto gap-0.5" role="tablist" aria-label="课堂标签页">
           {tabs.map((tab, idx) => (
             <div
               key={tab.id}
+              role="tab"
+              aria-selected={idx === activeIdx}
+              tabIndex={idx === activeIdx ? 0 : -1}
               onClick={() => setActiveIdx(idx)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setActiveIdx(idx)
+                }
+              }}
               className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-t cursor-pointer select-none whitespace-nowrap max-w-[160px] ${
                 idx === activeIdx
                   ? 'bg-bg-deep text-text-primary border border-b-0 border-surface-border -mb-px'
@@ -1168,6 +1177,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                 <button
                   onClick={(e) => { e.stopPropagation(); handleCloseTab(idx) }}
                   className="flex-shrink-0 ml-1 w-4 h-4 flex items-center justify-center rounded hover:bg-red-900/30 hover:text-red-400"
+                  aria-label={`关闭标签 ${tab.title}`}
                 >
                   ✕
                 </button>
@@ -1179,6 +1189,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           onClick={handleNewTab}
           className="flex-shrink-0 px-2 py-1.5 text-xs text-text-muted hover:text-text-secondary hover:bg-bg-elevated rounded"
           title="新建对话"
+          aria-label="新建对话"
         >
           +
         </button>
@@ -1370,7 +1381,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       <div className="flex flex-1 min-h-0">
         <div className="flex flex-col flex-1 min-w-0">
       {/* Messages */}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto p-6">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto p-6" role="log" aria-label="课堂消息">
         {rows.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-center text-text-muted">
