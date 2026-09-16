@@ -165,7 +165,7 @@ describe('buildSystemPrompt', () => {
 
       expect(prompt).toContain('爱丽丝')
       expect(prompt).toContain('化工系')
-      expect(prompt).toContain('十五岁')
+      expect(prompt).toContain('15岁')
     })
 
     it('generates valid prompt for Holmes (福尔摩斯)', () => {
