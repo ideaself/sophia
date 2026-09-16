@@ -127,7 +127,7 @@ export function SettingsView(): React.ReactElement {
   }, [])
 
   useEffect(() => {
-    loadLockStatus()
+    void loadLockStatus()
   }, [loadLockStatus])
 
   const handleSetLock = async () => {
@@ -175,7 +175,7 @@ export function SettingsView(): React.ReactElement {
   }, [])
 
   useEffect(() => {
-    loadArchive()
+    void loadArchive()
   }, [loadArchive])
 
   const handleRestoreArchive = async (id: string) => {
@@ -347,7 +347,7 @@ export function SettingsView(): React.ReactElement {
   }, [])
 
   useEffect(() => {
-    loadProviders()
+    void loadProviders()
   }, [loadProviders])
 
   const openAddModal = () => {

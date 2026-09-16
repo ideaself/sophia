@@ -38,7 +38,7 @@ export function WebDavSyncView(): React.ReactElement {
 
   useEffect(() => {
     localStorage.removeItem('webdav-password')
-    window.sophia.sync.hasWebdavPassword().then(setHasPassword)
+    void window.sophia.sync.hasWebdavPassword().then(setHasPassword)
     return window.sophia.sync.onProgress(setProgress)
   }, [])
 
@@ -142,8 +142,8 @@ export function WebDavSyncView(): React.ReactElement {
         setLastPull(res.timestamp)
         localStorage.setItem('webdav-last-pull', res.timestamp)
       }
-      fetchTextbooks()
-      fetchConversations()
+      void fetchTextbooks()
+      void fetchConversations()
     } catch (e) {
       setResult({ ok: false, msg: e instanceof Error ? e.message : 'Pull failed' })
     } finally {

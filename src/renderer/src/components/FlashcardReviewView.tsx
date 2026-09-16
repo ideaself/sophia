@@ -106,7 +106,7 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
   }, [scope?.conversationId])
 
   useEffect(() => {
-    loadFlashcards()
+    void loadFlashcards()
   }, [loadFlashcards])
 
   // The deck shown under the active tab.

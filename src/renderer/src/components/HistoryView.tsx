@@ -65,15 +65,15 @@ export function HistoryView(): React.ReactElement {
   const fetchTextbooks = useTextbookStore((s) => s.fetch)
 
   useEffect(() => {
-    window.sophia.data.listConversations().then((convs) => {
+    void window.sophia.data.listConversations().then((convs) => {
       setConversations(convs)
       // 默认选中最近的一个课堂
       if (convs.length > 0 && !selectedId) {
         setSelectedId(convs[0].id)
       }
     })
-    window.sophia.data.diary.listMonths().then(setDiaryMonths)
-    fetchTextbooks()
+    void window.sophia.data.diary.listMonths().then(setDiaryMonths)
+    void fetchTextbooks()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -81,7 +81,7 @@ export function HistoryView(): React.ReactElement {
   const [companionMap, setCompanionMap] = useState<Record<string, string>>({})
   useEffect(() => {
     const ids = [...new Set(conversations.map((c) => c.companionId))]
-    Promise.all(ids.map(async (id) => {
+    void Promise.all(ids.map(async (id) => {
       const comp = await window.sophia.companions.get(id)
       return [id, comp?.name ?? '未知'] as const
     })).then((pairs) => {
@@ -95,22 +95,16 @@ export function HistoryView(): React.ReactElement {
     return map
   }, [textbooks])
 
-  // 每课堂消息数（用于"N 条"显示），并行加载
+  // 每课堂消息数（用于"N 条"显示）——主进程聚合，不再拉取全量消息
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
-      const counts: Record<string, number> = {}
-      await Promise.all(
-        conversations.map(async (c) => {
-          try {
-            const msgs = await window.sophia.data.listMessages(c.id)
-            counts[c.id] = msgs.length
-          } catch {
-            counts[c.id] = 0
-          }
-        })
-      )
-      if (!cancelled) setMsgCounts(counts)
+    ;void (async () => {
+      try {
+        const overview = await window.sophia.data.statsOverview()
+        if (!cancelled) setMsgCounts(overview?.messageCounts ?? {})
+      } catch {
+        if (!cancelled) setMsgCounts({})
+      }
     })()
     return () => { cancelled = true }
   }, [conversations])
@@ -311,7 +305,7 @@ export function HistoryView(): React.ReactElement {
   useEffect(() => {
     const q = searchQuery.trim()
     if (q.length < 2) { setSearchResults(null); return }
-    const timer = setTimeout(() => doSearch(q, 0), 300)
+    const timer = setTimeout(() => { void doSearch(q, 0) }, 300)
     return () => clearTimeout(timer)
   }, [searchQuery, doSearch])
 

@@ -18,7 +18,7 @@ export function CompanionsManageView({ onStartConversation }: CompanionsManageVi
   const handleDelete = async (id: string) => {
     await window.sophia.companions.delete(id)
     setDeleteConfirmId(null)
-    fetchCompanions()
+    void fetchCompanions()
   }
 
   return (

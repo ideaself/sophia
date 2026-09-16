@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
-  estimateDailyStudyMinutes,
   computeStreak,
-  buildHeatmapWeeks,
-  dayKey
+  buildHeatmapWeeks
 } from '../../../shared/study-time'
 
 interface ConversationDTO {
@@ -16,22 +14,8 @@ interface ConversationDTO {
   endedAt: string | null
 }
 
-interface MessageDTO {
-  id: string
-  role: string
-  content: string
-  createdAt: string
-}
-
-interface ArtifactDTO {
-  id: string
-  type: string
-  content: string
-  createdAt: string
-}
-
 interface WeekStats {
-  /** 学习时长（毫秒，与 estimateDailyStudyMinutes 返回值单位一致）。 */
+  /** 学习时长（毫秒，与 study-time 估算单位一致）。 */
   ms: number
   messages: number
   artifacts: number
@@ -73,73 +57,36 @@ export function StatsView(): React.ReactElement {
   const [weekStats, setWeekStats] = useState<WeekStats | null>(null)
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       setLoading(true)
       try {
-        const convs = await window.sophia.data.listConversations() as ConversationDTO[]
+        const [convs, overview] = await Promise.all([
+          window.sophia.data.listConversations() as Promise<ConversationDTO[]>,
+          window.sophia.data.statsOverview()
+        ])
         setConversations(convs)
 
-        const weekStart = new Date()
-        weekStart.setHours(0, 0, 0, 0)
-        weekStart.setDate(weekStart.getDate() - 6)
-        const weekStartMs = weekStart.getTime()
-        const weekStartKey = dayKey(weekStart)
-
-        let msgCount = 0
-        let artCount = 0
+        // Aggregation (counts, per-day study time, weekly buckets) happens in
+        // the main process — the renderer no longer pulls every message.
         const usage: Record<string, number> = {}
-        const perDay = new Map<string, number>()
-
-        let wkMsgs = 0
-        let wkArts = 0
-        const wkCompanion: Record<string, number> = {}
-        const wkTextbook: Record<string, number> = {}
-
         for (const conv of convs) {
           usage[conv.companionId] = (usage[conv.companionId] ?? 0) + 1
         }
-
-        // Load messages and artifacts for all conversations in parallel
-        await Promise.all(
-          convs.map(async (conv) => {
-            const [msgs, arts] = await Promise.all([
-              window.sophia.data.listMessages(conv.id).catch(() => [] as MessageDTO[]),
-              window.sophia.data.listArtifacts(conv.id).catch(() => [] as ArtifactDTO[])
-            ])
-            msgCount += msgs.length
-            artCount += arts.length
-
-            const times: number[] = []
-            for (const m of msgs) {
-              const t = new Date(m.createdAt).getTime()
-              if (!Number.isFinite(t)) continue
-              times.push(t)
-              if (t >= weekStartMs) {
-                wkMsgs++
-                wkCompanion[conv.companionId] = (wkCompanion[conv.companionId] ?? 0) + 1
-                const tbKey = conv.textbookId ?? 'none'
-                wkTextbook[tbKey] = (wkTextbook[tbKey] ?? 0) + 1
-              }
-            }
-            wkArts += arts.filter((a) => new Date(a.createdAt).getTime() >= weekStartMs).length
-
-            const convPerDay = estimateDailyStudyMinutes(times)
-            for (const [key, ms] of convPerDay) {
-              perDay.set(key, (perDay.get(key) ?? 0) + ms)
-            }
-          })
-        )
-
-        let weekMs = 0
-        for (const [key, ms] of perDay) {
-          if (key >= weekStartKey) weekMs += ms
-        }
-
-        setTotalMessages(msgCount)
-        setTotalArtifacts(artCount)
         setCompanionUsage(usage)
-        setDailyMinutes(perDay)
-        setWeekStats({ ms: weekMs, messages: wkMsgs, artifacts: wkArts, companion: wkCompanion, textbook: wkTextbook })
+
+        const daily = new Map(Object.entries(overview?.dailyMinutes ?? {}))
+        setTotalMessages(overview?.totalMessages ?? 0)
+        setTotalArtifacts(overview?.totalArtifacts ?? 0)
+        setDailyMinutes(daily)
+        setWeekStats({
+          ms: overview?.week.ms ?? 0,
+          messages: overview?.week.messages ?? 0,
+          artifacts: overview?.week.artifacts ?? 0,
+          companion: overview?.week.companion ?? {},
+          textbook: overview?.week.textbook ?? {}
+        })
+        setTotalMinutes([...daily.values()].reduce((a, b) => a + b, 0))
+        setStreak(computeStreak(daily))
 
         // Load textbook titles for the weekly report distribution
         try {
@@ -148,8 +95,6 @@ export function StatsView(): React.ReactElement {
         } catch {
           setTextbookTitles({})
         }
-        setTotalMinutes([...perDay.values()].reduce((a, b) => a + b, 0))
-        setStreak(computeStreak(perDay))
 
         const ids = [...new Set(convs.map((c) => c.companionId))]
         const namePairs = await Promise.all(

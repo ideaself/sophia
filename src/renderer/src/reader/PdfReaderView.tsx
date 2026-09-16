@@ -119,7 +119,7 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
   // Restore last page from textbook store / localStorage
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
+    ;void (async () => {
       try {
         const tb = await window.sophia.data.getTextbook(textbookId)
         if (cancelled || !tb) return
@@ -141,7 +141,7 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
     let cancelled = false
     // Cache is per-document: never carry page text across books.
     pageTextCache.current = {}
-    ;(async () => {
+    ;void (async () => {
       try {
         const result = await window.sophia.data.readTextbookOriginal(textbookId)
         if (cancelled) return
@@ -181,7 +181,7 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
   useEffect(() => {
     if (!doc || !canvasRef.current) return
     let cancelled = false
-    ;(async () => {
+    ;void (async () => {
       try {
         // A stale render must never finish on top of a newer one.
         renderTaskRef.current?.cancel()

@@ -74,7 +74,7 @@ export function ReviewView(): React.ReactElement {
   }, [scope])
 
   useEffect(() => {
-    load()
+    void load()
   }, [load])
 
   // 课堂对话中概念掌握度增量更新 → 实时刷新本 tab

@@ -45,7 +45,7 @@ export function TextbooksView(): React.ReactElement {
       setRepairMsg(result.success && result.content.trim()
         ? `「${t.title}」已重新提取正文（${result.content.trim().length} 字）`
         : `「${t.title}」重新提取失败`)
-      fetchTextbooks()
+      void fetchTextbooks()
     } catch (err) {
       setRepairMsg(`「${t.title}」重新提取失败：${err instanceof Error ? err.message : '未知错误'}`)
     } finally {
@@ -76,7 +76,7 @@ export function TextbooksView(): React.ReactElement {
       })
       setTitle('')
       setContent('')
-      fetchTextbooks()
+      void fetchTextbooks()
     } catch (err) {
       setError(err instanceof Error ? err.message : '导入失败')
     } finally {
@@ -110,7 +110,7 @@ export function TextbooksView(): React.ReactElement {
         sourceFile: filePath
       })
       setTitle('')
-      fetchTextbooks()
+      void fetchTextbooks()
     } catch (err) {
       setError(err instanceof Error ? err.message : '导入失败')
     } finally {
@@ -166,7 +166,7 @@ export function TextbooksView(): React.ReactElement {
     try {
       await window.sophia.data.updateTextbook(editingTextbook.id, { title: editTitle.trim(), content: editContent })
       setEditingTextbook(null)
-      fetchTextbooks()
+      void fetchTextbooks()
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存失败")
     } finally {
@@ -177,7 +177,7 @@ export function TextbooksView(): React.ReactElement {
   const confirmDelete = async (t: Textbook) => {
     await window.sophia.data.deleteTextbook(t.id)
     setDeleteConfirmId(null)
-    fetchTextbooks()
+    void fetchTextbooks()
   }
 
   return (

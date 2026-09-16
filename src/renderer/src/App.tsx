@@ -101,7 +101,7 @@ function App(): React.ReactElement {
   }, [dueFlashcardCount])
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       const convs = await window.sophia.data.listConversations()
       const active = convs.filter((c) => !c.endedAt).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       if (active.length > 0) {
@@ -133,8 +133,8 @@ function App(): React.ReactElement {
   }, [])
 
   useEffect(() => {
-    fetchCompanions()
-    fetchTextbooks()
+    void fetchCompanions()
+    void fetchTextbooks()
   }, [fetchCompanions, fetchTextbooks])
 
   useEffect(() => {

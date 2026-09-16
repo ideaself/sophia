@@ -15,6 +15,7 @@ import { extractConceptUpdates } from '../learning-memory/concept-extractor'
 import { parseFlashcards, rebuildArtifactContent } from '../../shared/flashcard-utils'
 import { estimateDailyStudyMinutes } from '../../shared/study-time'
 import { countDueFlashcards } from '../stats/due-flashcards'
+import { buildStatsOverview } from '../stats/overview'
 import { extractText, getEpubChapters, epubChaptersToText } from '../parsers'
 import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
 import { DeepSeekClient } from '../llm/deepseek-client'
@@ -813,6 +814,41 @@ export function registerConversationIpc(
     await mkdir(dataRoot, { recursive: true })
     await atomicWriteFile(favoritesPath, JSON.stringify(parsed), 'utf-8')
     return { success: true }
+  })
+
+  // Aggregated stats for the stats/history views. Previously each view
+  // pulled every message of every conversation over IPC just to count and
+  // bucket them; this returns a small summary computed in the main process.
+  ipcMain.handle('stats:overview', async () => {
+    try {
+      const conversations = await conversationStore.list()
+      const messagesByConversation: Record<string, Array<{ createdAt: string }>> = {}
+      const artifactsByConversation: Record<string, Array<{ createdAt: string }>> = {}
+      for (const conv of conversations) {
+        try {
+          messagesByConversation[conv.id] = await conversationStore.getMessages(conv.id)
+        } catch {
+          messagesByConversation[conv.id] = []
+        }
+        try {
+          artifactsByConversation[conv.id] = await artifactStore.list(conv.id)
+        } catch {
+          artifactsByConversation[conv.id] = []
+        }
+      }
+      return buildStatsOverview({
+        conversations: conversations.map((c) => ({
+          id: c.id,
+          companionId: c.companionId,
+          textbookId: c.textbookId
+        })),
+        messagesByConversation,
+        artifactsByConversation,
+        now: new Date()
+      })
+    } catch {
+      return null
+    }
   })
 
   // Aggregated due-card count for the nav badge. The renderer used to pull

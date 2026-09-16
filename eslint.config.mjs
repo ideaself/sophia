@@ -9,11 +9,24 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // This block deliberately does NOT grant browser globals: main/preload/
+    // shared must run in Node. Any stray `window`/`document` reference in
+    // those folders fails no-undef here (and tsc's node lib would also reject
+    // it). The renderer overrides below add the browser environment.
     files: ['src/**/*.{ts,tsx}', 'tests/**/*.{ts,tsx}'],
     languageOptions: {
       globals: {
-        ...globals.browser,
-        ...globals.node
+        ...globals.node,
+        // Browser frame API used by the shared frame coalescer (guarded by
+        // typeof at runtime so Node without a DOM never touches it).
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly'
+      },
+      parserOptions: {
+        // Type-aware linting: catches floating promises / await misuse that
+        // plain syntax rules cannot see.
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname
       }
     },
     plugins: {
@@ -30,15 +43,46 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': [
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }
-      ]
+      ],
+      // Async hazards that plain rules miss. `void promise` stays allowed as
+      // the explicit opt-out; JSX async handlers are exempted (React ignores
+      // their return value, and wrapping every onClick in void hurts
+      // readability without changing behaviour).
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': [
+        'error',
+        { checksVoidReturn: { attributes: false } }
+      ],
+      '@typescript-eslint/await-thenable': 'error'
     }
   },
   {
-    // Main/preload bundles are compiled to CJS (vite externalizeDepsPlugin),
-    // so `require` / `require.resolve` are legitimate there.
-    files: ['src/main/**/*.ts'],
+    // Main and preload run in Node only.
+    files: ['src/main/**/*.ts', 'src/preload/**/*.ts'],
     rules: {
+      // Main bundles are compiled to CJS (vite externalizeDepsPlugin), so
+      // `require` / `require.resolve` are legitimate there.
       '@typescript-eslint/no-require-imports': 'off'
+    }
+  },
+  {
+    // Renderer source runs in the browser.
+    files: ['src/renderer/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser
+      }
+    }
+  },
+  {
+    // Renderer tests run under jsdom (browser globals) but may also poke
+    // Node-only APIs (process, timers) in helpers.
+    files: ['tests/renderer/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node
+      }
     }
   },
   {

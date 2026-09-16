@@ -96,7 +96,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
   // ---- Load chapters ----
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
+    ;void (async () => {
       try {
         const result = await window.sophia.data.readEpubChapters(textbookId)
         if (cancelled) return

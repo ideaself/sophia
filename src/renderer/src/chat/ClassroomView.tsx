@@ -330,7 +330,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     loadedIdRef.current = loadConversationId
 
     let cancelled = false
-    window.sophia.data.getConversation(loadConversationId).then((conv) => {
+    void window.sophia.data.getConversation(loadConversationId).then((conv) => {
       if (cancelled || !conv) return
       if (tabsRef.current.some((t) => t.conversationId === loadConversationId)) {
         const existingIdx = tabsRef.current.findIndex((t) => t.conversationId === loadConversationId)
@@ -338,7 +338,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         onConversationLoaded?.()
         return
       }
-      window.sophia.data.listMessages(loadConversationId).then((msgs) => {
+      void window.sophia.data.listMessages(loadConversationId).then((msgs) => {
         if (cancelled) return
         const loaded: DisplayMessage[] = msgs.map((m) => ({
           id: m.id, role: m.role, content: m.content, createdAt: m.createdAt
@@ -365,7 +365,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   useEffect(() => {
     const id = companion?.id ?? null
     if (prevCompanionIdRef.current !== null && prevCompanionIdRef.current !== id) {
-      if (chatStream.state.isStreaming) chatStream.cancel()
+      if (chatStream.state.isStreaming) void chatStream.cancel()
       streamOwnerIdxRef.current = null
     }
     prevCompanionIdRef.current = id
@@ -1202,7 +1202,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                       value={titleInput}
                       onChange={(e) => setTitleInput(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSaveTitle()
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) void handleSaveTitle()
                         if (e.key === 'Escape') setEditingTitle(false)
                       }}
                       onBlur={handleSaveTitle}
@@ -1646,7 +1646,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
-                handleSend()
+                void handleSend()
               }
             }}
             rows={1}

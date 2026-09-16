@@ -156,9 +156,9 @@ function createWindow(): void {
     })
 
     if (process.env['ELECTRON_RENDERER_URL']) {
-      mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+      void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
     } else {
-      mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+      void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
     }
 
     // System tray
@@ -411,6 +411,9 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
   })
+  }).catch((err) => {
+    // Startup failure must be visible, not a silent unhandled rejection.
+    console.error('App startup failed:', err)
   })
 
   app.on('before-quit', () => {

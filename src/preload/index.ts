@@ -44,6 +44,23 @@ export interface ConceptStateDTO {
   evidenceMessageIds: string[]
 }
 
+export interface StatsOverviewDTO {
+  messageCounts: Record<string, number>
+  artifactCounts: Record<string, number>
+  totalMessages: number
+  totalArtifacts: number
+  /** dayKey (YYYY-MM-DD) → estimated study milliseconds. */
+  dailyMinutes: Record<string, number>
+  week: {
+    startKey: string
+    ms: number
+    messages: number
+    artifacts: number
+    companion: Record<string, number>
+    textbook: Record<string, number>
+  }
+}
+
 // ---------------------------------------------------------------
 // Domain types (lightweight — full types come from shared/schemas)
 // ---------------------------------------------------------------
@@ -180,6 +197,8 @@ export interface DataAPI {
   todayStudyMinutes: () => Promise<number>
   /** Aggregated in the main process: avoids shipping every artifact over IPC. */
   dueFlashcardCount: () => Promise<{ due: number; total: number }>
+  /** Aggregated stats (counts + study-time buckets) for stats/history views. */
+  statsOverview: () => Promise<StatsOverviewDTO | null>
     endConversation: (conversationId: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
     redoArtifacts: (conversationId: string, types: string[]) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
     onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void
@@ -555,6 +574,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('stats:today-study-minutes'),
     dueFlashcardCount: () =>
       ipcRenderer.invoke('stats:due-flashcards'),
+    statsOverview: () =>
+      ipcRenderer.invoke('stats:overview'),
     endConversation: (conversationId, classMode) =>
       ipcRenderer.invoke('conversation:end', { conversationId, classMode }),
     redoArtifacts: (conversationId, types) =>

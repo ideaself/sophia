@@ -130,6 +130,23 @@ declare global {
     message: MessageDTO
   }
 
+  interface StatsOverviewDTO {
+    messageCounts: Record<string, number>
+    artifactCounts: Record<string, number>
+    totalMessages: number
+    totalArtifacts: number
+    /** dayKey (YYYY-MM-DD) → estimated study milliseconds. */
+    dailyMinutes: Record<string, number>
+    week: {
+      startKey: string
+      ms: number
+      messages: number
+      artifacts: number
+      companion: Record<string, number>
+      textbook: Record<string, number>
+    }
+  }
+
   interface EpubChaptersResult {
     chapters: Array<{ id: string; title: string; html: string }>
     title: string
@@ -177,6 +194,7 @@ declare global {
     searchMessages: (query: string, limit?: number, offset?: number) => Promise<{ results: SearchResultDTO[]; total: number }>
     todayStudyMinutes: () => Promise<number>
     dueFlashcardCount: () => Promise<{ due: number; total: number }>
+    statsOverview: () => Promise<StatsOverviewDTO | null>
     endConversation: (conversationId: string, classMode?: 'standard' | 'feynman') => Promise<{ success: boolean; artifacts: number; farewell?: string; failures: string[]; pending: boolean }>
     redoArtifacts: (conversationId: string, types: string[]) => Promise<{ success: boolean; artifacts: number; types: string[]; failures: string[] }>
     onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void

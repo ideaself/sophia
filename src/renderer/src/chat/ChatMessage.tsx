@@ -97,7 +97,7 @@ function CopyButton({ text }: { text: string }) {
   }, [text])
   return (
     <button
-      onClick={(e) => { e.stopPropagation(); handleCopy() }}
+      onClick={(e) => { e.stopPropagation(); void handleCopy() }}
       className={`text-xs px-2 py-0.5 rounded transition-colors ${
         copied
           ? 'bg-green-700 text-green-200'
@@ -154,7 +154,7 @@ function CitationChip({ textbookId, chapter }: { textbookId?: string | null; cha
     <span className="relative inline-flex flex-col items-start">
       <span className="mb-1 flex flex-wrap gap-1">
         <button
-          onClick={(e) => { e.stopPropagation(); load('source') }}
+          onClick={(e) => { e.stopPropagation(); void load('source') }}
           disabled={!textbookId}
           className="rounded border border-accent-border bg-accent-subtle px-2 py-0.5 text-xs text-accent-hover hover:bg-accent-subtle/70 disabled:opacity-50"
           title={textbookId ? '查看教材原文' : '当前课堂未绑定教材'}
@@ -163,7 +163,7 @@ function CitationChip({ textbookId, chapter }: { textbookId?: string | null; cha
           📖 教材原文 · {chapter}
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); load('translation') }}
+          onClick={(e) => { e.stopPropagation(); void load('translation') }}
           disabled={!textbookId}
           className="rounded border border-accent-border bg-accent-subtle px-2 py-0.5 text-xs text-accent-hover hover:bg-accent-subtle/70 disabled:opacity-50"
           title={textbookId ? '把这段教材原文翻译成中文' : '当前课堂未绑定教材'}
