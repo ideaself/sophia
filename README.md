@@ -84,6 +84,7 @@ scripts/       verify-security.mjs（安全基线）、clean.mjs
   但大部分视图仍无测试；`vitest.config.ts` 中设有保守下限，只随覆盖率提升而上调。
 - 类型契约：`src/renderer/src/types/api-contract.ts` 在编译期校验 renderer 声明与
   preload 实现的双向一致性（`skipLibCheck` 不会掩盖两边的漂移）。
+- 变更历史见 [CHANGELOG.md](./CHANGELOG.md)；环境变量模板见 [.env.example](./.env.example)。
 
 ## 技术栈
 
