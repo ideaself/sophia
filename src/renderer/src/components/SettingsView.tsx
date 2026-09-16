@@ -693,12 +693,14 @@ export function SettingsView(): React.ReactElement {
                 maxLength={MAX_TEMPLATE_LENGTH}
                 onChange={(e) => updateTemplate(i, e.target.value)}
                 placeholder={`第 ${i + 1} 条模板（点击后可在输入框插入）`}
+                aria-label={`第 ${i + 1} 条快捷模板`}
                 className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
               />
               <button
                 onClick={() => removeTemplate(i)}
                 className="flex-shrink-0 rounded border border-surface-border-strong px-3 py-2 text-sm text-red-400 hover:bg-red-900/30"
                 title="删除此模板"
+                aria-label={`删除第 ${i + 1} 条模板`}
               >
                 ✕
               </button>
