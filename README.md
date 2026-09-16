@@ -71,6 +71,9 @@ scripts/       verify-security.mjs（安全基线）、clean.mjs
 - 出站模型请求强制 HTTPS（`assertHttpsEndpoint`，`new URL` 解析防大小写绕过）。
 - 外部链接仅允许 http(s)（IPC 与 `setWindowOpenHandler` 同一策略）。
 - WebDAV 密码与 API Key 经 Electron `safeStorage` 加密后落盘。
+- 打包产物启用 Electron 安全 fuses（禁 RunAsNode / NODE_OPTIONS / 调试参数、
+  强制 Cookie 加密、仅从 asar 加载）；`npm run build:win` 会自动执行
+  `npm run test:fuses` 校验。
 - `npm run test:security` 验证上述基线（preload 暴露面、窗口配置、IPC 校验）。
 
 ## 测试与覆盖率
