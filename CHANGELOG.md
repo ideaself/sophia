@@ -4,6 +4,31 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-16
+
+### 修复
+
+- **打包版自动更新从未生效**：`setupAutoUpdate()` 误置于 `app.on('activate')` 回调内，启动路径
+  不会执行（Windows 下 activate 不触发）——后台检查与「退出时安装」现已恢复。
+
+### 新增
+
+- **设置页「关于」**：显示应用版本 + 手动检查更新（可用 / 已是最新 / 开发模式 / 失败四态反馈）；
+  主进程新增 `updater:check-for-updates` 通道与共享 `UpdaterCheckResult` 类型。
+
+### 变更
+
+- **重构**：课堂消息列表与滚动系统抽为 `MessageList` + `useMessageListScroll`（贴底锚点/虚拟化/
+  Ctrl+F 匹配导航）；Reader 进度持久化抽为 `reading-progress`、Ctrl+F 搜索壳抽为
+  `ReaderSearchPopover`；EPUB 搜索高亮改受控渲染（`<mark>` 在 HTML 管线生成，去掉渲染后 DOM 突变）。
+- **性能**：流式订阅下沉——聊天流控制器提升为应用级单例（切换视图不断流），外壳不再按 token
+  重渲染，仅课堂按帧合并订阅。
+- **工程化**：CI actions 升级（checkout/setup-node/upload-artifact v7、action-gh-release v3，
+  消除 Node 20 弃用告警）；覆盖率门槛 35/27/29/36 → 44/36/41/45；新增 StatsView/ReviewView/
+  阅读器/滚动/流订阅等测试（共 892 例全绿）。
+
+## [0.1.0] - 2026-09-16
+
 ### 修复
 
 - **P0 缺陷批次**：产物枚举缺 `lesson_*` 导致音频/时间线/FAQ 读取失效（复习页空）；ID 路径穿越防御
@@ -39,7 +64,7 @@
 - 项目以 **MIT** 协议开源（新增 `LICENSE` 与 `package.json` 的 `license` 字段）。
 - 卸载不再删除用户学习数据（`deleteAppDataOnUninstall: false`）。
 
-## [0.1.0] - 2026-07（里程碑 1-5）
+### 里程碑 1-5（2026-07）
 
 - 里程碑 1：概念掌握度系统（对话中增量识别、EMA 掌握度、误解点、证据溯源、复盘页概念 tab）。
 - 里程碑 2：事件卡片（提示/纠错/记忆提议）+ 引用真实性规则校验 + 人格版本管理；
