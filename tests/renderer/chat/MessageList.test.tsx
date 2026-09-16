@@ -89,7 +89,7 @@ interface HarnessProps {
 
 function ListHarness({
   rows,
-  companionName = '爱丽丝',
+  companionName = '朗道',
   messageCount = rows.filter((r) => r.kind === 'message').length,
   isStreaming = false,
   reasoningContent = '',
@@ -147,10 +147,10 @@ function ListHarness({
 
 describe('MessageList', () => {
   it('shows the empty-state hint with the companion name', () => {
-    render(<ListHarness rows={[]} companionName="爱丽丝" />)
+    render(<ListHarness rows={[]} companionName="朗道" />)
 
     expect(screen.getByText(/开始和/)).toBeTruthy()
-    expect(screen.getByText('爱丽丝')).toBeTruthy()
+    expect(screen.getByText('朗道')).toBeTruthy()
     expect(screen.getByRole('log', { name: '课堂消息' })).toBeTruthy()
   })
 

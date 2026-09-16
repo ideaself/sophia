@@ -56,10 +56,10 @@ import {
 
 function validCompanion(): Companion {
   return {
-    id: 'comp_alice01' as CompanionId,
+    id: 'comp_landau01' as CompanionId,
     source: CompanionSource.Candidate,
     version: 1,
-    name: 'Alice',
+    name: 'Landau',
     gender: CompanionGender.Female,
     age: 15,
     identity: '化工系本科一年级，少年大学生',
@@ -93,10 +93,10 @@ function validTextbook(): Textbook {
 function validConversation(): Conversation {
   return {
     id: 'conv_001' as ConversationId,
-    companionId: 'comp_alice01' as CompanionId,
+    companionId: 'comp_landau01' as CompanionId,
     companionVersion: 3,
     textbookId: 'tb_001' as TextbookId,
-    title: 'Chemistry with Alice',
+    title: 'Physics with Landau',
     createdAt: '2026-07-06T12:00:00.000Z',
     updatedAt: '2026-07-06T12:00:00.000Z',
     endedAt: null
@@ -368,7 +368,7 @@ describe('IPC input schemas', () => {
   describe('IpcCreateConversationInputSchema', () => {
     it('accepts valid input with textbook', () => {
       const result = IpcCreateConversationInputSchema.safeParse({
-            companionId: 'comp_alice01',
+            companionId: 'comp_landau01',
         textbookId: 'tb_001',
         title: 'Chemistry Session'
       })
@@ -377,7 +377,7 @@ describe('IPC input schemas', () => {
 
     it('accepts valid input without textbook', () => {
       const result = IpcCreateConversationInputSchema.safeParse({
-            companionId: 'comp_alice01',
+            companionId: 'comp_landau01',
         title: 'Free Chat'
       })
       expect(result.success).toBe(true)
@@ -385,7 +385,7 @@ describe('IPC input schemas', () => {
 
     it('rejects empty title', () => {
       const result = IpcCreateConversationInputSchema.safeParse({
-            companionId: 'comp_alice01',
+            companionId: 'comp_landau01',
         title: ''
       })
       expect(result.success).toBe(false)
@@ -636,13 +636,13 @@ describe('IPC input schemas', () => {
 
 describe('EntityIdSchema', () => {
   it('accepts realistic domain ids', () => {
-    for (const id of ['conv_1720000000000_1', 'msg_abc-XYZ_9', 'comp_alice', 'tb_001', 'art_1', 'rn_2']) {
+    for (const id of ['conv_1720000000000_1', 'msg_abc-XYZ_9', 'comp_landau', 'tb_001', 'art_1', 'rn_2']) {
       expect(EntityIdSchema.safeParse(id).success, id).toBe(true)
     }
   })
 
   it('rejects path traversal and separators', () => {
-    for (const id of ['../config', '..\\config', 'a/b', 'a\\b', '..', '.', 'a b', 'a.b', '爱丽丝']) {
+    for (const id of ['../config', '..\\config', 'a/b', 'a\\b', '..', '.', 'a b', 'a.b', '朗道']) {
       expect(EntityIdSchema.safeParse(id).success, id).toBe(false)
     }
   })

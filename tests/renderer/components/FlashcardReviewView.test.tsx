@@ -29,7 +29,7 @@ beforeEach(() => {
     value: {
       data: {
         listConversations: vi.fn().mockResolvedValue([
-          { id: 'c1', title: '07-06 爱丽丝', companionId: 'comp_a', endedAt: '2026-07-06T10:00:00Z' }
+          { id: 'c1', title: '07-06 朗道', companionId: 'comp_a', endedAt: '2026-07-06T10:00:00Z' }
         ]),
         listArtifacts: vi.fn().mockResolvedValue([
           {

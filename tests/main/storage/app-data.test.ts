@@ -26,7 +26,7 @@ describe('safeSegment', () => {
 
   it('rejects overlong and non-ASCII ids', () => {
     expect(() => safeSegment('a'.repeat(129))).toThrow('Invalid id for path')
-    expect(() => safeSegment('爱丽丝')).toThrow('Invalid id for path')
+    expect(() => safeSegment('朗道')).toThrow('Invalid id for path')
   })
 })
 
@@ -51,7 +51,7 @@ describe('path builders refuse unsafe ids', () => {
   it('relationPath and palMomentsPathForTextbook refuse traversal', () => {
     expect(() => relationPath(dataRoot, '../../x')).toThrow('Invalid id for path')
     expect(() => palMomentsPathForTextbook(dataRoot, '../../x')).toThrow('Invalid id for path')
-    expect(relationPath(dataRoot, 'comp_alice')).toBe(join(dataRoot, 'relation_comp_alice.md'))
+    expect(relationPath(dataRoot, 'comp_landau')).toBe(join(dataRoot, 'relation_comp_landau.md'))
   })
 
   it('textbookNotesDir inherits textbookId validation', () => {

@@ -29,11 +29,11 @@ async function collected(): Promise<string[]> {
 describe('collectSyncableFiles', () => {
   it('includes companions so characters sync across machines', async () => {
     await touch('profiles/prof_default/worlds/world_default/companions/index.json')
-    await touch('profiles/prof_default/worlds/world_default/companions/alice.md')
+    await touch('profiles/prof_default/worlds/world_default/companions/landau.md')
 
     const files = await collected()
     expect(files).toContain('profiles/prof_default/worlds/world_default/companions/index.json')
-    expect(files).toContain('profiles/prof_default/worlds/world_default/companions/alice.md')
+    expect(files).toContain('profiles/prof_default/worlds/world_default/companions/landau.md')
   })
 
   it('includes textbooks, conversations, and world data', async () => {

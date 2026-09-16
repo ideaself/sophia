@@ -128,7 +128,7 @@ beforeEach(() => {
       companions: {
         get: vi.fn(async (id: string) => ({
           id,
-          name: id === 'comp_a' ? '爱丽丝' : '福尔摩斯',
+          name: id === 'comp_a' ? '朗道' : '祖冲之',
           identity: '导师',
           personalityKeywords: []
         }))
@@ -152,8 +152,8 @@ describe('HistoryView', () => {
 
     // Lesson display names (MM-DD name) + counts from the aggregated overview.
     // Each may appear twice (tree row + detail header).
-    expect((await screen.findAllByText(/爱丽丝/)).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/福尔摩斯/).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText(/朗道/)).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/祖冲之/).length).toBeGreaterThan(0)
     expect((await screen.findAllByText(/3 条/)).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/1 条/).length).toBeGreaterThan(0)
   })
@@ -171,8 +171,8 @@ describe('HistoryView', () => {
     render(<HistoryView />)
     await screen.findByText('第一问：什么是熵？')
 
-    // Click the second lesson ("07-05 福尔摩斯" row).
-    fireEvent.click(screen.getByText(/福尔摩斯/).closest('button')!)
+    // Click the second lesson ("07-05 祖冲之" row).
+    fireEvent.click(screen.getByText(/祖冲之/).closest('button')!)
 
     expect(await screen.findByText('另一个课堂的问题')).toBeTruthy()
     expect(screen.queryByText('第一问：什么是熵？')).toBeNull()

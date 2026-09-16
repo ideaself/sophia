@@ -193,7 +193,7 @@ function parseKeywords(raw: string): string[] {
 
 /**
  * Build a deterministic companion ID from the file basename.
- * e.g., "alice.md" → "comp_alice"
+ * e.g., "landau.md" → "comp_landau"
  */
 function fileToCompanionId(filename: string): CompanionId {
   const base = basename(filename, '.md')

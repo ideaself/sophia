@@ -71,7 +71,7 @@ describe('archive-store', () => {
   })
 
   it('archives a companion snapshot and refuses directory restore', async () => {
-    const entryId = await archiveCompanion(dataRoot, 'custom_9', '爱丽丝', { id: 'custom_9', name: '爱丽丝' })
+    const entryId = await archiveCompanion(dataRoot, 'custom_9', '朗道', { id: 'custom_9', name: '朗道' })
     const entries = await listArchive(dataRoot)
     expect(entries).toHaveLength(1)
     expect(entries[0].kind).toBe('companion')
@@ -82,7 +82,7 @@ describe('archive-store', () => {
 
     // Snapshot file is readable.
     const snap = await readFile(join(archiveDir(dataRoot), entryId, 'companion.json'), 'utf-8')
-    expect(JSON.parse(snap).name).toBe('爱丽丝')
+    expect(JSON.parse(snap).name).toBe('朗道')
   })
 
   it('restore/purge of an unknown entry returns false', async () => {

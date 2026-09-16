@@ -57,8 +57,8 @@ afterEach(() => {
 // --------------- fixtures ---------------
 
 const COMPANION: Companion = {
-  id: 'comp_alice',
-  name: '爱丽丝',
+  id: 'comp_landau',
+  name: '朗道',
   identity: '化学导师',
   personalityKeywords: ['好奇']
 }
@@ -121,10 +121,10 @@ beforeEach(() => {
   for (const fn of Object.values(dataMocks)) fn.mockClear()
   localStorage.setItem(
     CLASSROOM_TABS_KEY,
-    JSON.stringify({ tabs: [{ title: '07-06 爱丽丝', conversationId: 'conv_1', input: '' }], activeIdx: 0 })
+    JSON.stringify({ tabs: [{ title: '07-06 朗道', conversationId: 'conv_1', input: '' }], activeIdx: 0 })
   )
 
-  dataMocks.getConversation.mockResolvedValue({ id: 'conv_1', title: '07-06 爱丽丝', endedAt: null })
+  dataMocks.getConversation.mockResolvedValue({ id: 'conv_1', title: '07-06 朗道', endedAt: null })
   dataMocks.listMessages.mockResolvedValue(STORED_MESSAGES)
   dataMocks.truncateConversation.mockResolvedValue(true)
   dataMocks.deleteMessage.mockResolvedValue(true)

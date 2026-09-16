@@ -63,7 +63,7 @@ beforeEach(() => {
   dataMocks.writeTextFile.mockResolvedValue(undefined)
   companionsGet.mockImplementation(async (id: string) => ({
     id,
-    name: id === 'comp_a' ? '爱丽丝' : '鲍勃',
+    name: id === 'comp_a' ? '朗道' : '鲍勃',
     identity: '导师',
     personalityKeywords: []
   }))
@@ -154,7 +154,7 @@ describe('StatsView', () => {
     expect(content).toContain('- 连续学习天数：2')
     expect(content).toContain('- 化学课本：6 条（60%）')
     expect(content).toContain('- 未绑定教材：4 条（40%）')
-    expect(content).toContain('- 爱丽丝：8 条（80%）')
+    expect(content).toContain('- 朗道：8 条（80%）')
   })
 
   it('skips the write when the save dialog is cancelled', async () => {

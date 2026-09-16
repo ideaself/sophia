@@ -12,8 +12,8 @@ afterEach(() => {
 })
 
 const TABS = [
-  { id: 't1', title: '07-06 爱丽丝' },
-  { id: 't2', title: '07-05 福尔摩斯' }
+  { id: 't1', title: '07-06 朗道' },
+  { id: 't2', title: '07-05 祖冲之' }
 ]
 
 function renderBar(overrides: Partial<Parameters<typeof ClassroomTabBar>[0]> = {}) {
@@ -49,17 +49,17 @@ describe('ClassroomTabBar', () => {
 
   it('selects a tab on click and on Enter/Space', () => {
     const { onSelect } = renderBar()
-    fireEvent.click(screen.getByText('07-05 福尔摩斯'))
+    fireEvent.click(screen.getByText('07-05 祖冲之'))
     expect(onSelect).toHaveBeenCalledWith(1)
 
-    fireEvent.keyDown(screen.getByText('07-06 爱丽丝'), { key: 'Enter' })
-    fireEvent.keyDown(screen.getByText('07-06 爱丽丝'), { key: ' ' })
+    fireEvent.keyDown(screen.getByText('07-06 朗道'), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByText('07-06 朗道'), { key: ' ' })
     expect(onSelect).toHaveBeenCalledTimes(3)
   })
 
   it('closes a tab without also selecting it', () => {
     const { onClose, onSelect } = renderBar()
-    fireEvent.click(screen.getByLabelText('关闭标签 07-05 福尔摩斯'))
+    fireEvent.click(screen.getByLabelText('关闭标签 07-05 祖冲之'))
     expect(onClose).toHaveBeenCalledWith(1)
     // stopPropagation prevents the tab selection handler from firing.
     expect(onSelect).not.toHaveBeenCalled()

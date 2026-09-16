@@ -17,12 +17,12 @@ afterEach(() => {
 
 function headerProps(overrides: Partial<HeaderProps> = {}): HeaderProps {
   return {
-    companionName: '爱丽丝',
+    companionName: '朗道',
     companionIdentity: '化学导师',
     conversationId: 'conv_1',
-    title: '07-06 爱丽丝',
+    title: '07-06 朗道',
     editingTitle: false,
-    titleInput: '07-06 爱丽丝',
+    titleInput: '07-06 朗道',
     pace: 'normal',
     classMode: 'standard',
     textbookTitle: '热力学入门',
@@ -56,7 +56,7 @@ describe('ClassroomHeader', () => {
   it('shows companion identity, textbook chip and the goal ring', () => {
     renderHeader()
 
-    expect(screen.getByText('爱丽丝')).toBeTruthy()
+    expect(screen.getByText('朗道')).toBeTruthy()
     expect(screen.getByText('化学导师')).toBeTruthy()
     expect(screen.getByText(/热力学入门/)).toBeTruthy()
     expect(screen.getByText('30/60m')).toBeTruthy()
@@ -90,7 +90,7 @@ describe('ClassroomHeader', () => {
   it('edits the title inline (rename → input → save/cancel)', () => {
     const props = renderHeader({ editingTitle: true })
 
-    const input = screen.getByDisplayValue('07-06 爱丽丝')
+    const input = screen.getByDisplayValue('07-06 朗道')
     fireEvent.change(input, { target: { value: '新名字' } })
     expect(props.onTitleInputChange).toHaveBeenCalledWith('新名字')
 
@@ -103,7 +103,7 @@ describe('ClassroomHeader', () => {
 
   it('starts title editing from the rename button', () => {
     const props = renderHeader()
-    fireEvent.click(screen.getByText(/07-06 爱丽丝/))
+    fireEvent.click(screen.getByText(/07-06 朗道/))
     expect(props.onRename).toHaveBeenCalled()
   })
 
@@ -119,7 +119,7 @@ describe('ClassroomHeader', () => {
   it('hides conversation-scoped controls without a conversation', () => {
     renderHeader({ conversationId: null })
     expect(screen.queryByText('下课')).toBeNull()
-    expect(screen.queryByText(/07-06 爱丽丝/)).toBeNull()
+    expect(screen.queryByText(/07-06 朗道/)).toBeNull()
   })
 })
 

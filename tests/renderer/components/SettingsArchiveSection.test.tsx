@@ -16,7 +16,7 @@ const archiveApi = {
 const entry = {
   id: 'entry_1',
   kind: 'conversation',
-  label: '07-06 爱丽丝',
+  label: '07-06 朗道',
   movedAt: '2026-07-06T10:00:00Z',
   originalPath: 'conversations/c1'
 }
@@ -47,7 +47,7 @@ describe('SettingsArchiveSection', () => {
   it('lists archived items with kind label and count badge', async () => {
     renderExpanded()
 
-    expect(await screen.findByText('07-06 爱丽丝')).toBeTruthy()
+    expect(await screen.findByText('07-06 朗道')).toBeTruthy()
     expect(screen.getByText('课堂')).toBeTruthy()
     expect(screen.getByText('1 项')).toBeTruthy()
   })
@@ -61,7 +61,7 @@ describe('SettingsArchiveSection', () => {
 
   it('restores an item and reports success', async () => {
     renderExpanded()
-    await screen.findByText('07-06 爱丽丝')
+    await screen.findByText('07-06 朗道')
 
     fireEvent.click(screen.getByText('恢复'))
 
@@ -73,7 +73,7 @@ describe('SettingsArchiveSection', () => {
 
   it('purges only after inline confirmation', async () => {
     renderExpanded()
-    await screen.findByText('07-06 爱丽丝')
+    await screen.findByText('07-06 朗道')
 
     fireEvent.click(screen.getByText('永久删除'))
     expect(archiveApi.purge).not.toHaveBeenCalled()

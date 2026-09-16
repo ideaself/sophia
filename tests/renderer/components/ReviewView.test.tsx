@@ -66,7 +66,7 @@ beforeEach(() => {
   dataMocks.listConcepts.mockResolvedValue(CONCEPTS)
   dataMocks.getTextbook.mockResolvedValue({ id: 'tb_1', title: '化学课本' })
   companionsGet.mockResolvedValue({
-    id: 'comp_a', name: '爱丽丝', identity: '化学导师', personalityKeywords: []
+    id: 'comp_a', name: '朗道', identity: '化学导师', personalityKeywords: []
   })
 
   Object.defineProperty(window, 'sophia', {
@@ -94,7 +94,7 @@ describe('ReviewView', () => {
     render(<ReviewView />)
 
     await screen.findByText('课堂总结')
-    expect(screen.getByText(/爱丽丝 · 化学课本/)).toBeTruthy()
+    expect(screen.getByText(/朗道 · 化学课本/)).toBeTruthy()
     expect(screen.getByText('自测题 (1)')).toBeTruthy()
     expect(screen.getByText('学习日记')).toBeTruthy()
     expect(screen.getByText('记忆卡片')).toBeTruthy()
@@ -145,7 +145,7 @@ describe('ReviewView', () => {
   it('continues learning by leaving the review scope', async () => {
     render(<ReviewView />)
 
-    await screen.findByText(/爱丽丝 · 化学课本/)
+    await screen.findByText(/朗道 · 化学课本/)
     fireEvent.click(screen.getByText('继续学习'))
 
     await waitFor(() => expect(useAppStore.getState().view).toBe('classroom'))
