@@ -4,6 +4,7 @@ import { useTTS, stopTTS } from '../hooks/useTTS'
 import { TTSControlPanel } from '../components/TTSControlPanel'
 import { DictionaryPopup } from '../components/DictionaryPopup'
 import { applyNotesToHtml } from '../../../shared/reading-notes-utils'
+import { applySearchMarksToHtml } from './epub-search-marks'
 import { isEnglishWord, loadDictConfig } from '../../../shared/dict'
 import { useReadingNotes } from './useReadingNotes'
 import { loadSyncedProgress, readLocalProgress, syncReadingProgress, writeLocalProgress } from './reading-progress'
@@ -268,57 +269,25 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
   }, [searchQuery, chapters, chapterPlainText, goToChapter])
 
   const current = chapters[chapterIndex]
-  const safeHtml = useMemo(
-    () => (current ? DOMPurify.sanitize(current.html, SANITIZE_CONFIG) : ''),
-    [current]
-  )
-  const highlightedHtml = useMemo(
-    () => applyNotesToHtml(safeHtml, notes, chapterIndex),
-    [safeHtml, notes, chapterIndex]
-  )
+  const rendered = useMemo(() => {
+    if (!current) return { html: '', searchMatches: 0 }
+    const safe = DOMPurify.sanitize(current.html, SANITIZE_CONFIG)
+    const withNotes = applyNotesToHtml(safe, notes, chapterIndex)
+    const marked = applySearchMarksToHtml(withNotes, searchQuery)
+    return { html: marked.html, searchMatches: marked.count }
+  }, [current, notes, chapterIndex, searchQuery])
 
-  // ---- In-book search: wrap matches in the current chapter with <mark> ----
+  // Collect the search marks written by the controlled render above: they are
+  // re-created whenever the markup changes, so the navigation ref must be
+  // refreshed (and the index reset) on every render of the chapter HTML.
   useEffect(() => {
     const content = contentRef.current
     if (!content) return
-    content.querySelectorAll('mark[data-search="1"]').forEach((m) => {
-      m.replaceWith(document.createTextNode(m.textContent ?? ''))
-    })
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) {
-      searchMarksRef.current = []
-      return
-    }
-    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT)
-    const textNodes: Text[] = []
-    while (walker.nextNode()) {
-      const n = walker.currentNode as Text
-      if (n.parentElement && !n.parentElement.closest('mark')) textNodes.push(n)
-    }
-    for (const node of textNodes) {
-      const raw = node.nodeValue ?? ''
-      const lower = raw.toLowerCase()
-      if (!lower.includes(q)) continue
-      const frag = document.createDocumentFragment()
-      let last = 0
-      let idx = lower.indexOf(q)
-      while (idx !== -1) {
-        if (idx > last) frag.appendChild(document.createTextNode(raw.slice(last, idx)))
-        const mark = document.createElement('mark')
-        mark.setAttribute('data-search', '1')
-        mark.textContent = raw.slice(idx, idx + q.length)
-        frag.appendChild(mark)
-        last = idx + q.length
-        idx = lower.indexOf(q, last)
-      }
-      if (last < raw.length) frag.appendChild(document.createTextNode(raw.slice(last)))
-      node.parentNode?.replaceChild(frag, node)
-    }
     const marks = Array.from(content.querySelectorAll<HTMLElement>('mark[data-search="1"]'))
     searchMarksRef.current = marks
     setSearchIndex(0)
     marks[0]?.scrollIntoView({ block: 'center' })
-  }, [highlightedHtml, searchQuery])
+  }, [rendered.html])
 
   const jumpSearchMatch = (dir: 1 | -1) => {
     const marks = searchMarksRef.current
@@ -470,7 +439,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
                   {searchQuery.trim() && (
                     <div className="mt-2">
                       <p className="text-[10px] text-text-muted">
-                        本页 {searchIndex + 1}/{searchMarksRef.current.length} · 全书共 {searchCount} 处
+                        本页 {searchIndex + 1}/{rendered.searchMatches} · 全书共 {searchCount} 处
                       </p>
                       {chapterSearchCounts.some((c) => c > 0) && (
                         <ul className="mt-1 max-h-40 overflow-auto space-y-0.5">
@@ -532,7 +501,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
                     setTtsOpen(false)
                     return
                   }
-                  const text = htmlToPlainText(safeHtml)
+                  const text = htmlToPlainText(rendered.html)
                   if (!text) return
                   tts.speak(text)
                   setTtsOpen(true)
@@ -681,7 +650,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
             onMouseUp={handleContentMouseUp}
             className="epub-content mx-auto max-w-4xl leading-relaxed text-text-secondary [&_img]:my-4 [&_img]:mx-auto [&_img]:max-w-full [&_img]:h-auto [&_svg]:my-4 [&_svg]:mx-auto [&_svg]:max-w-full [&_svg]:h-auto [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:mt-6 [&_h1]:mb-3 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h3]:text-lg [&_h3]:font-medium [&_h3]:mt-4 [&_h3]:mb-2 [&_p]:my-3 [&_a]:text-accent-hover [&_a]:underline"
             style={{ fontSize: `${fontSize}px` }}
-            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+            dangerouslySetInnerHTML={{ __html: rendered.html }}
           />
         )}
       </div>
