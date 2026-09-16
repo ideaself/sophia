@@ -12,6 +12,8 @@ import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-temp
 import { useTodayStudyMinutes } from '../hooks/useTodayStudyMinutes'
 import { isKnowledgeQuestion, hasTextbookCitation } from '../../../shared/grounding'
 import { useClassroomSend } from './useClassroomSend'
+import { ClassroomHeader } from './ClassroomHeader'
+import { ConversationSearchBar } from './ConversationSearchBar'
 import { ClassroomTabBar } from './ClassroomTabBar'
 import { ClassroomComposer } from './ClassroomComposer'
 import { ShortcutSheet } from './ShortcutSheet'
@@ -841,185 +843,47 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       />
 
       {/* Header */}
-      <div className="border-b border-surface-border bg-bg-surface px-6 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="min-w-0">
-              <h2 className="font-semibold truncate">{companion.name}</h2>
-              <p className="text-xs text-text-muted truncate">{companion.identity}</p>
-            </div>
-            {activeTab.conversationId && (
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-text-muted text-xs">|</span>
-                {editingTitle ? (
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="text"
-                      value={titleInput}
-                      onChange={(e) => setTitleInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) void handleSaveTitle()
-                        if (e.key === 'Escape') setEditingTitle(false)
-                      }}
-                      onBlur={handleSaveTitle}
-                      className="w-40 rounded border border-accent-border bg-bg-deep px-2 py-0.5 text-xs text-text-primary focus:outline-none"
-                      autoFocus
-                    />
-                  </div>
-                ) : (
-                  <button
-                    onClick={handleRename}
-                    className="text-xs text-text-muted hover:text-text-secondary truncate max-w-[200px]"
-                    title="点击重命名"
-                  >
-                    {activeTab.title} ✏️
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <div
-              className="flex overflow-hidden rounded-full border border-surface-border-strong text-xs"
-              title="教学节奏：慢速不跳过独立知识点；快速略过已掌握内容"
-            >
-              {(['slow', 'normal', 'fast'] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => updateTab(activeIdx, { pace: p })}
-                  className={`px-2 py-1 transition-colors ${
-                    activeTab.pace === p
-                      ? 'bg-accent text-white'
-                      : 'text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
-                  }`}
-                >
-                  {p === 'slow' ? '慢' : p === 'normal' ? '标准' : '快'}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => updateTab(activeIdx, {
-                classMode: activeTab.classMode === 'feynman' ? 'standard' : 'feynman'
-              })}
-              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                activeTab.classMode === 'feynman'
-                  ? 'border-accent text-accent hover:bg-accent-subtle'
-                  : 'border-surface-border-strong text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
-              }`}
-              title="切换课堂模式：标准苏格拉底课堂 / 费曼回讲（学习者向学徒讲解，检验理解）"
-            >
-              {activeTab.classMode === 'feynman' ? '🗣 费曼回讲' : '🎓 标准课堂'}
-            </button>
-            {textbook?.originalFile && (
-              <button
-                onClick={() => setReaderOpen((v) => !v)}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                  readerOpen
-                    ? 'border-accent text-accent hover:bg-accent-subtle'
-                    : 'border-surface-border-strong text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
-                }`}
-                title="并排打开教材阅读（拖动分隔条调整宽度）"
-              >
-                📖 {readerOpen ? '关闭阅读' : '教材阅读'}
-              </button>
-            )}
-            <button
-              onClick={() => void handleScreenshot()}
-              className="rounded-full border border-surface-border-strong px-3 py-1 text-xs text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
-              title="截图当前课堂窗口并保存为图片"
-            >
-              📷 截图
-            </button>
-            {textbook && (
-              <span className="rounded-full bg-bg-elevated px-3 py-1 text-xs">
-                📖 {textbook.title}
-              </span>
-            )}
-            {chatStream.state.isStreaming && (
-              <span className="text-xs text-accent animate-pulse">
-                {chatStream.state.reasoningContent.length > 0 ? '正在推理…' : '正在组织回答…'}
-              </span>
-            )}
-            {dailyGoal > 0 && (
-              <div
-                className="flex items-center gap-1.5"
-                title={`今日已学习 ${todayMinutes}/${dailyGoal} 分钟`}
-              >
-                <svg width="26" height="26" viewBox="0 0 36 36">
-                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--bg-elevated)" strokeWidth="4" />
-                  <circle
-                    cx="18" cy="18" r="15.5" fill="none" stroke="var(--accent)" strokeWidth="4"
-                    strokeLinecap="round" pathLength={100}
-                    strokeDasharray={`${Math.min(100, Math.round((todayMinutes / dailyGoal) * 100))} 100`}
-                    transform="rotate(-90 18 18)"
-                  />
-                </svg>
-                <span className="text-xs tabular-nums text-text-muted">{todayMinutes}/{dailyGoal}m</span>
-              </div>
-            )}
-            {activeTab.conversationId && (
-              <button
-                onClick={handleEndClass}
-                disabled={isLoading}
-                className="rounded border border-amber-700/60 px-3 py-1 text-xs text-amber-700 hover:bg-amber-900/30 disabled:opacity-50"
-              >
-                {isLoading ? '处理中...' : '下课'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      <ClassroomHeader
+        companionName={companion?.name ?? ''}
+        companionIdentity={companion?.identity ?? ''}
+        conversationId={activeTab.conversationId}
+        title={activeTab.title}
+        editingTitle={editingTitle}
+        titleInput={titleInput}
+        pace={activeTab.pace}
+        classMode={activeTab.classMode}
+        textbookTitle={textbook?.title ?? null}
+        hasTextbookOriginal={!!textbook?.originalFile}
+        readerOpen={readerOpen}
+        isStreaming={chatStream.state.isStreaming}
+        isReasoning={chatStream.state.reasoningContent.length > 0}
+        dailyGoal={dailyGoal}
+        todayMinutes={todayMinutes}
+        endingClass={isLoading}
+        onRename={handleRename}
+        onTitleInputChange={setTitleInput}
+        onSaveTitle={() => void handleSaveTitle()}
+        onCancelEditTitle={() => setEditingTitle(false)}
+        onPaceChange={(p) => updateTab(activeIdx, { pace: p })}
+        onToggleFeynman={() => updateTab(activeIdx, {
+          classMode: activeTab.classMode === 'feynman' ? 'standard' : 'feynman'
+        })}
+        onToggleReader={() => setReaderOpen((v) => !v)}
+        onScreenshot={() => void handleScreenshot()}
+        onEndClass={() => void handleEndClass()}
+      />
 
       {/* In-conversation search (Ctrl+F) */}
       {searchOpen && (
-        <div className="flex items-center gap-2 border-b border-surface-border bg-bg-surface px-4 py-1.5">
-          <span className="text-xs text-text-muted">🔍</span>
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                goToMatch(e.shiftKey ? -1 : 1)
-              }
-              if (e.key === 'Escape') {
-                closeSearch()
-              }
-            }}
-            placeholder="搜索本对话..."
-            className="w-44 rounded border border-surface-border-strong bg-bg-deep px-2 py-1 text-xs text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
-          />
-          <span className="w-14 text-right text-xs tabular-nums text-text-muted">
-            {searchMatches.length > 0
-              ? `${Math.min(matchIndex, searchMatches.length - 1) + 1}/${searchMatches.length}`
-              : '0/0'}
-          </span>
-          <button
-            onClick={() => goToMatch(-1)}
-            disabled={searchMatches.length === 0}
-            className="rounded px-1.5 py-0.5 text-xs text-text-muted hover:bg-bg-elevated hover:text-text-secondary disabled:opacity-40"
-            title="上一个 (Shift+Enter)"
-          >
-            ↑
-          </button>
-          <button
-            onClick={() => goToMatch(1)}
-            disabled={searchMatches.length === 0}
-            className="rounded px-1.5 py-0.5 text-xs text-text-muted hover:bg-bg-elevated hover:text-text-secondary disabled:opacity-40"
-            title="下一个 (Enter)"
-          >
-            ↓
-          </button>
-          <button
-            onClick={closeSearch}
-            className="rounded px-1.5 py-0.5 text-xs text-text-muted hover:bg-bg-elevated hover:text-text-secondary"
-            title="关闭搜索 (Esc)"
-          >
-            ✕
-          </button>
-        </div>
+        <ConversationSearchBar
+          inputRef={searchInputRef}
+          query={searchQuery}
+          matchIndex={matchIndex}
+          matchCount={searchMatches.length}
+          onQueryChange={setSearchQuery}
+          onGoToMatch={goToMatch}
+          onClose={closeSearch}
+        />
       )}
 
       {/* 左右分栏：聊天（左） + 教材阅读（右，可拖宽） */}
