@@ -3,6 +3,7 @@ import * as pdfjs from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { DictionaryPopup } from '../components/DictionaryPopup'
 import { isEnglishWord, loadDictConfig } from '../../../shared/dict'
+import { useReadingNotes } from './useReadingNotes'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -57,7 +58,6 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
   const [error, setError] = useState('')
   const [highlights, setHighlights] = useState<HighlightRect[]>([])
   // 持久化批注（与 EPUB 阅读器同一套 ReadingNote 数据）
-  const [notes, setNotes] = useState<ReadingNoteDTO[]>([])
   const [notesOpen, setNotesOpen] = useState(false)
   const [noteHighlights, setNoteHighlights] = useState<NoteHighlight[]>([])
   // 选中文本后的小工具条（高亮 / 笔记）
@@ -109,12 +109,8 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
     goToPage(n)
   }
 
-  // Load persisted reading notes for this textbook
-  useEffect(() => {
-    window.sophia.data.listReadingNotes(textbookId)
-      .then(setNotes)
-      .catch(() => setNotes([]))
-  }, [textbookId])
+  // Reading notes (shared hook: load / create / edit / delete)
+  const { notes, createNote: createReadingNote, updateNoteText, removeNote } = useReadingNotes(textbookId)
 
   // Restore last page from textbook store / localStorage
   useEffect(() => {
@@ -313,23 +309,18 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
   const createNote = async (type: 'highlight' | 'note', readerNote = '') => {
     const text = (selMenu?.text ?? '').trim()
     if (!text) return
-    try {
-      await window.sophia.data.createReadingNote({
-        textbookId,
-        content: text,
-        position: String(pageNum),
-        chapter: `第 ${pageNum} 页`,
-        type,
-        readerNote
-      })
-      window.getSelection()?.removeAllRanges()
-      clearSelMenu()
-      setNoteDraft('')
-      const updated = await window.sophia.data.listReadingNotes(textbookId)
-      setNotes(updated)
-    } catch {
-      // 创建失败——保持选中，用户可重试
-    }
+    const ok = await createReadingNote({
+      content: text,
+      position: String(pageNum),
+      chapter: `第 ${pageNum} 页`,
+      type,
+      readerNote
+    })
+    // 创建失败——保持选中，用户可重试
+    if (!ok) return
+    window.getSelection()?.removeAllRanges()
+    clearSelMenu()
+    setNoteDraft('')
   }
 
   const jumpToNote = (note: ReadingNoteDTO) => {
@@ -345,21 +336,11 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
   const saveEditNote = async (note: ReadingNoteDTO) => {
     const text = editingNoteText
     setEditingNoteId(null)
-    try {
-      await window.sophia.data.updateReadingNote(note.id, textbookId, { readerNote: text })
-      setNotes((prev) => prev.map((n) => (n.id === note.id ? { ...n, readerNote: text } : n)))
-    } catch {
-      // best-effort
-    }
+    await updateNoteText(note.id, text)
   }
 
   const deleteNote = async (note: ReadingNoteDTO) => {
-    try {
-      await window.sophia.data.deleteReadingNote(note.id, textbookId)
-      setNotes((prev) => prev.filter((n) => n.id !== note.id))
-    } catch {
-      // best-effort
-    }
+    await removeNote(note.id)
   }
 
   // Clean up the text layer on unmount

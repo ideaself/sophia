@@ -5,6 +5,7 @@ import { TTSControlPanel } from '../components/TTSControlPanel'
 import { DictionaryPopup } from '../components/DictionaryPopup'
 import { applyNotesToHtml } from '../../../shared/reading-notes-utils'
 import { isEnglishWord, loadDictConfig } from '../../../shared/dict'
+import { useReadingNotes } from './useReadingNotes'
 
 interface EpubChapterData {
   id: string
@@ -75,7 +76,6 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
   const [ttsOpen, setTtsOpen] = useState(false)
   const tts = useTTS('zh-CN')
   const tocRef = useRef<HTMLDivElement>(null)
-  const [notes, setNotes] = useState<ReadingNoteDTO[]>([])
   const [notesOpen, setNotesOpen] = useState(false)
   const [selMenu, setSelMenu] = useState<{ x: number; y: number; text: string } | null>(null)
   const [noteDraft, setNoteDraft] = useState('')
@@ -213,12 +213,8 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
   // ---- Stop TTS when leaving the reader ----
   useEffect(() => stopTTS, [])
 
-  // ---- Load reading notes for this textbook ----
-  useEffect(() => {
-    window.sophia.data.listReadingNotes(textbookId)
-      .then(setNotes)
-      .catch(() => setNotes([]))
-  }, [textbookId])
+  // ---- Reading notes (shared hook: load / create / edit / delete) ----
+  const { notes, createNote: createReadingNote, updateNoteText, removeNote } = useReadingNotes(textbookId)
 
   // ---- In-book search: Ctrl+F opens, Escape closes, ←→ switches chapters ----
   useEffect(() => {
@@ -376,21 +372,15 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
 
   const createNote = async (type: 'highlight' | 'underline' | 'note', readerNote = '') => {
     if (!selMenu) return
-    try {
-      await window.sophia.data.createReadingNote({
-        textbookId,
-        content: selMenu.text,
-        position: String(chapterIndex),
-        chapter: current?.title ?? `第 ${chapterIndex + 1} 章`,
-        type,
-        readerNote
-      })
-      const updated = await window.sophia.data.listReadingNotes(textbookId)
-      setNotes(updated)
-    } catch {
-      // best-effort — keep the selection so the user can retry
-      return
-    }
+    const ok = await createReadingNote({
+      content: selMenu.text,
+      position: String(chapterIndex),
+      chapter: current?.title ?? `第 ${chapterIndex + 1} 章`,
+      type,
+      readerNote
+    })
+    // Keep the selection on failure so the user can retry.
+    if (!ok) return
     window.getSelection()?.removeAllRanges()
     setSelMenu(null)
     setNoteDraftOpen(false)
@@ -416,15 +406,12 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
   }
 
   const saveEditNote = async (note: ReadingNoteDTO) => {
-    const text = editingNoteText.trim()
-    await window.sophia.data.updateReadingNote(note.id, textbookId, { readerNote: text })
-    setNotes((prev) => prev.map((n) => (n.id === note.id ? { ...n, readerNote: text } : n)))
+    await updateNoteText(note.id, editingNoteText.trim())
     setEditingNoteId(null)
   }
 
   const deleteNote = async (note: ReadingNoteDTO) => {
-    await window.sophia.data.deleteReadingNote(note.id, textbookId)
-    setNotes((prev) => prev.filter((n) => n.id !== note.id))
+    await removeNote(note.id)
   }
 
   return (
