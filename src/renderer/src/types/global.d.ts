@@ -1,4 +1,5 @@
 import type { ArtifactType } from '../../../shared/types/ids'
+import type { UpdaterCheckResult } from '../../../shared/updater'
 
 export {}
 
@@ -383,6 +384,11 @@ declare global {
     onDictFrameBlocked: (callback: (payload: { url: string }) => void) => () => void
   }
 
+  interface UpdaterAPI {
+    /** Manual update check (设置页「检查更新」); background updates are separate. */
+    checkForUpdates: () => Promise<UpdaterCheckResult>
+  }
+
   interface SophiaAPI {
     getVersion: () => Promise<string>
     getPlatform: () => Promise<string>
@@ -394,6 +400,7 @@ declare global {
     dialog: DialogAPI
     providers: ProviderAPI
     sync: SyncAPI
+    updater: UpdaterAPI
   }
 
   interface Window {

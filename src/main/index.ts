@@ -11,6 +11,7 @@ import { registerProviderIpc } from './ipc/providers'
 import { registerSyncIpc } from './ipc/sync'
 import { registerArchiveIpc } from './ipc/archive'
 import { registerLockIpc } from './ipc/lock'
+import { registerUpdaterIpc } from './ipc/updater'
 import { initDataDir } from './storage/initialize'
 import { resolveReferencePaths } from './storage/resolve-paths'
 import { createDeepSeekStreamAdapter } from './llm/deepseek-stream-adapter'
@@ -362,8 +363,13 @@ if (!app.requestSingleInstanceLock()) {
     registerChatPromptIpc(dataRoot, providerStore)
     registerArchiveIpc(dataRoot)
     registerLockIpc(dataRoot, safeStorage)
+    registerUpdaterIpc()
 
     createWindow()
+
+    // Auto-update (packaged builds only): background check + download, the
+    // update installs on the next quit. Never blocks startup or a class.
+    setupAutoUpdate()
 
     // Register chat streaming IPC (needs window reference + provider store)
     registerChatStreamIpc(
@@ -395,11 +401,6 @@ if (!app.requestSingleInstanceLock()) {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()
-
-    // Auto-update (packaged builds only): background check + download, the
-    // update installs on the next quit. Never blocks startup or a class.
-    setupAutoUpdate()
-
     }
   })
 

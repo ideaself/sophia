@@ -96,9 +96,9 @@ scripts/       verify-security.mjs（安全基线）、clean.mjs
   `CSC_LINK`（证书 base64/路径）与 `CSC_KEY_PASSWORD` 后，release workflow 与本地
   构建会自动签名。
 - **自动更新已启用**：打包版启动 30 秒后后台检查 GitHub Releases（`electron-updater`），
-  自动下载并在**下次退出时安装**，不打断课堂；检查失败仅记录日志。发版要求：
-  Release 必须包含 workflow 产出的 `latest.yml`（自动附带），且**发布前先用安装包
-  完整验证一次升级链路**——自动更新会把任何发布失误直接推送给所有用户。
+  自动下载并在**下次退出时安装**，不打断课堂；设置页「关于」可手动检查更新并显示版本。
+  检查失败仅记录日志。发版要求：Release 必须包含 workflow 产出的 `latest.yml`（自动附带），
+  且**发布前先用安装包完整验证一次升级链路**——自动更新会把任何发布失误直接推送给所有用户。
 
 ## 技术栈
 

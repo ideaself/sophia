@@ -16,12 +16,33 @@
 
 import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import type { UpdaterCheckResult } from '../shared/updater'
 
 /** Wait this long after launch before the first check. */
 const FIRST_CHECK_DELAY_MS = 30_000
 
 function logUpdateError(err: unknown): void {
   console.warn('[updater] update check failed:', err instanceof Error ? err.message : err)
+}
+
+/**
+ * User-triggered check (设置页「检查更新」). With `autoDownload` enabled a
+ * found update starts downloading in the background and installs on quit —
+ * the result therefore only reports availability, not download progress.
+ * Never throws: failures come back as `{ status: 'error' }`.
+ */
+export async function checkForUpdatesNow(): Promise<UpdaterCheckResult> {
+  if (!app.isPackaged) return { status: 'disabled' }
+  try {
+    const result = await autoUpdater.checkForUpdates()
+    // null = updater inactive (only possible outside packaged builds).
+    if (!result) return { status: 'disabled' }
+    return result.isUpdateAvailable
+      ? { status: 'update-available', version: result.updateInfo.version }
+      : { status: 'up-to-date' }
+  } catch (err) {
+    return { status: 'error', message: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 export function setupAutoUpdate(): void {

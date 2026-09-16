@@ -43,6 +43,7 @@
     "src/shared/next-steps.ts",
     "src/shared/lesson-media.ts",
     "src/shared/frame-coalescer.ts",
+    "src/shared/updater.ts",
     "src/shared/types/ids.ts"
   ]
 }

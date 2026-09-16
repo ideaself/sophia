@@ -6,6 +6,7 @@ import {
   ARTIFACTS_GENERATED
 } from '../shared/channel-names'
 import type { ArtifactType } from '../shared/types/ids'
+import type { UpdaterCheckResult } from '../shared/updater'
 
 // ---------------------------------------------------------------
 // Chat stream event payload types (exposed to renderer)
@@ -426,6 +427,11 @@ export interface AppAPI {
   onDictFrameBlocked: (callback: (payload: { url: string }) => void) => () => void
 }
 
+export interface UpdaterAPI {
+  /** Manual update check (设置页「检查更新」); background updates are separate. */
+  checkForUpdates: () => Promise<UpdaterCheckResult>
+}
+
 export interface SophiaAPI {
   getVersion: () => Promise<string>
   getPlatform: () => Promise<string>
@@ -437,6 +443,7 @@ export interface SophiaAPI {
   dialog: DialogAPI
   providers: ProviderAPI
   sync: SyncAPI
+  updater: UpdaterAPI
 }
 
 // ---------------------------------------------------------------
@@ -695,6 +702,9 @@ const sophia: SophiaAPI = {
         ipcRenderer.removeListener('sync:progress', handler)
       }
     }
+  },
+  updater: {
+    checkForUpdates: () => ipcRenderer.invoke('updater:check-for-updates')
   }
 }
 

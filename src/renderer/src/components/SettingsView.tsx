@@ -9,6 +9,7 @@ import { SettingsVoiceTriggersSection } from './SettingsVoiceTriggersSection'
 import { SettingsDictionarySection } from './SettingsDictionarySection'
 import { SettingsArchiveSection } from './SettingsArchiveSection'
 import { SettingsProvidersSection } from './SettingsProvidersSection'
+import { SettingsAboutSection } from './SettingsAboutSection'
 import { WebDavSyncView } from './WebDavSyncView'
 
 /**
@@ -45,6 +46,8 @@ export function SettingsView(): React.ReactElement {
       <SettingsArchiveSection />
 
       <SettingsProvidersSection />
+
+      <SettingsAboutSection />
     </div>
   )
 }
