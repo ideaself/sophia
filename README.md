@@ -79,9 +79,11 @@ scripts/       verify-security.mjs（安全基线）、clean.mjs
 ## 测试与覆盖率
 
 - `npm run test`：typecheck + lint + 单测 + 安全基线，CI（`.github/workflows/ci.yml`）同款。
-- 覆盖率按"全部源码"口径统计（`all: true`），不是只统计被测试加载过的文件。
-  渲染层组件暂无 jsdom 测试，整体覆盖率因此偏低；`vitest.config.ts` 中设有保守下限，
-  只会随覆盖率提升而上调。
+- 覆盖率按"全部源码"口径统计（`include` 覆盖 src 全部文件），不是只统计被测试加载过的文件。
+  渲染层已有 jsdom 组件测试（课堂发送/重新生成、复习流、TTS、模态框、错误边界等），
+  但大部分视图仍无测试；`vitest.config.ts` 中设有保守下限，只随覆盖率提升而上调。
+- 类型契约：`src/renderer/src/types/api-contract.ts` 在编译期校验 renderer 声明与
+  preload 实现的双向一致性（`skipLibCheck` 不会掩盖两边的漂移）。
 
 ## 技术栈
 

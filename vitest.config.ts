@@ -18,14 +18,14 @@ export default defineConfig({
         'src/**/*.config.*'
       ],
       reporter: ['text', 'html', 'lcov'],
-      // Conservative floors just below the current measured baseline
-      // (renderer components have no jsdom tests yet). Raise as coverage
-      // actually improves — never lower them to unblock a build.
+      // Conservative floors just below the current measured baseline.
+      // Raise as coverage actually improves — never lower them to unblock
+      // a build.
       thresholds: {
-        statements: 25,
-        branches: 18,
-        functions: 19,
-        lines: 26
+        statements: 35,
+        branches: 27,
+        functions: 29,
+        lines: 36
       }
     }
   }

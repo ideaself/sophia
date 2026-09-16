@@ -132,7 +132,7 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
   const isNew = !cardSrs || cardSrs.nextReview === 0
   const isFav = currentCard ? favorites.has(currentCard.id) : false
 
-  const handleRate = (rating: Rating) => {
+  const handleRate = useCallback((rating: Rating) => {
     const card = currentCard
     if (!card) return
 
@@ -149,9 +149,9 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
       setCurrentIndex(currentIndex + 1)
       setIsFlipped(false)
     }
-  }
+  }, [currentCard, srsStates, displayList.length, currentIndex])
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- 每次渲染同步最新 handleRate 到 ref（键盘连答需要最新闭包）
+  // 键盘连答：同步最新 handleRate 到 ref（按键处理器挂载一次只认 ref）
   useEffect(() => {
     handleRateRef.current = handleRate
   }, [handleRate])

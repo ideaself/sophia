@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { parseAudioScript, type AudioLine } from '../../../shared/lesson-media'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { parseAudioScript } from '../../../shared/lesson-media'
 
 const RATES = [0.75, 1, 1.25, 1.5]
 
@@ -8,7 +8,7 @@ const RATES = [0.75, 1, 1.25, 1.5]
  * 导师/学习者双声（pitch 区分），支持播放/暂停、倍速、上一段/下一段。
  */
 export function AudioReviewPlayer({ content }: { content: string }): React.ReactElement {
-  const lines = parseAudioScript(content)
+  const lines = useMemo(() => parseAudioScript(content), [content])
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [rate, setRate] = useState(1)
@@ -28,7 +28,7 @@ export function AudioReviewPlayer({ content }: { content: string }): React.React
     u.onend = onDone
     u.onerror = onDone
     window.speechSynthesis.speak(u)
-  }, [supported, lines.length])
+  }, [supported, lines])
 
   const stopAll = useCallback(() => {
     window.speechSynthesis?.cancel()

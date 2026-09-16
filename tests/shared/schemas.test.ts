@@ -209,14 +209,14 @@ describe('TextbookSchema', () => {
   })
 
   it('companion version defaults to 1 for legacy records', () => {
-    const { version, ...legacy } = validCompanion()
+    const { version: _version, ...legacy } = validCompanion()
     const result = CompanionSchema.safeParse(legacy)
     expect(result.success).toBe(true)
     expect(result.data?.version).toBe(1)
   })
 
   it('conversation companionVersion defaults to null for legacy records', () => {
-    const { companionVersion, ...legacy } = validConversation()
+    const { companionVersion: _companionVersion, ...legacy } = validConversation()
     const result = ConversationSchema.safeParse(legacy)
     expect(result.success).toBe(true)
     expect(result.data?.companionVersion).toBeNull()
