@@ -15,6 +15,8 @@ import { isKnowledgeQuestion, hasTextbookCitation } from '../../../shared/ground
 import { useClassroomSend } from './useClassroomSend'
 import { ClassroomTabBar } from './ClassroomTabBar'
 import { ShortcutSheet } from './ShortcutSheet'
+import { ChatErrorRow } from './ChatErrorRow'
+import { EndClassCard } from './EndClassCard'
 import { MathSymbolPanel } from './MathSymbolPanel'
 import { TemplatePanel } from './TemplatePanel'
 import { MAX_INPUT_LENGTH, type DisplayMessage, type TabState } from './types'
@@ -1129,78 +1131,24 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
                     </>
                   )}
                   {row.kind === 'error' && (
-                    <div className="rounded border border-red-700/50 bg-red-900/20 px-4 py-3 text-sm text-red-500">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">发送失败</p>
-                          <p className="mt-1 text-xs text-red-500/80">{sendError ?? chatStream.state.error?.message}</p>
-                        </div>
-                        {activeTab.retryMessage && (
-                          <button
-                            onClick={() => handleSend({ input: activeTab.retryMessage!.input, resend: true })}
-                            className="rounded bg-red-700 px-3 py-1 text-xs text-white hover:bg-red-600"
-                          >
-                            重试
-                          </button>
-                        )}
-                      </div>
-                    </div>
+                    <ChatErrorRow
+                      message={sendError ?? chatStream.state.error?.message}
+                      onRetry={
+                        activeTab.retryMessage
+                          ? () => void handleSend({ input: activeTab.retryMessage!.input, resend: true })
+                          : undefined
+                      }
+                    />
                   )}
                   {row.kind === 'end' && activeTab.endResult && (
-                    <div className="rounded border border-surface-border bg-bg-elevated px-4 py-3 text-sm text-text-primary">
-                      <p className="font-medium">课程已结束</p>
-                      {activeTab.endResult.pending && (
-                        <p className="mt-2 text-xs text-text-secondary animate-pulse">
-                          学习摘要后台生成中，完成后自动显示…
-                        </p>
-                      )}
-                      {activeTab.endResult.generationError && (
-                        <p className="mt-2 text-xs text-red-500">
-                          后台生成失败：{activeTab.endResult.generationError}
-                        </p>
-                      )}
-                      {activeTab.endResult.farewell && (
-                        <p className="mt-2 text-sm text-text-secondary italic">{activeTab.endResult.farewell}</p>
-                      )}
-                      {!activeTab.endResult.pending && (
-                        <>
-                          <p className="mt-1 text-xs text-text-muted">
-                            已自动生成 {activeTab.endResult.artifacts} 个学习摘要（课堂总结、记忆卡片、学习日记等）
-                          </p>
-                          <div className="mt-3 flex items-center gap-2">
-                            <button
-                              onClick={handleReviewNewCards}
-                              className="rounded bg-green-800 px-3 py-1 text-xs font-medium text-white hover:bg-green-700"
-                              title="复习本节课新生成的记忆卡片，不足时自动补充以前的到期卡片"
-                            >
-                              复习本节新卡
-                            </button>
-                            <button
-                              onClick={handleContinueLearning}
-                              className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover"
-                              title="同一本教材、同一位伙伴开一节新课堂"
-                            >
-                              继续学习
-                            </button>
-                          </div>
-                        </>
-                      )}
-            {activeTab.endResult.failures && activeTab.endResult.failures.length > 0 && (
-              <div className="mt-3 flex items-center justify-between gap-3 rounded border border-amber-700/50 bg-amber-900/20 px-3 py-2">
-                <p className="text-xs text-text-secondary">
-                  有 {activeTab.endResult.failures.length} 项学习摘要生成失败（可能是网络中断），可只补齐缺失项。
-                </p>
-                <button
-                  onClick={handleRedoArtifacts}
-                  disabled={redoing}
-                  className="flex-shrink-0 rounded bg-amber-700 px-3 py-1 text-xs text-white hover:bg-amber-600 disabled:opacity-50"
-                >
-                  {redoing ? '补齐中...' : '补齐缺失产物'}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+                    <EndClassCard
+                      result={activeTab.endResult}
+                      redoing={redoing}
+                      onReviewNewCards={handleReviewNewCards}
+                      onContinueLearning={handleContinueLearning}
+                      onRedoArtifacts={() => void handleRedoArtifacts()}
+                    />
+                  )}
                 </div>
               )
             })}
