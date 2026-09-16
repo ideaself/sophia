@@ -139,15 +139,20 @@ if (settingsIpcSrc) {
   check('Settings IPC does not expose get-key channel', !settingsIpcSrc.includes('settings:read-deepseek-key'), 'plaintext key must never leave main process')
 }
 
-// ─── Preload type declaration ───────────────────────────────────────────────
+// ─── Renderer bridge typing + type-drift guard ──────────────────────────────
 
-console.log('\nType Declaration Checks (src/preload/index.d.ts):')
-const preloadDeclSrc = requireSource('src/preload/index.d.ts')
+console.log('\nType Declaration Checks (src/renderer/src/types/global.d.ts):')
+const globalDeclSrc = requireSource('src/renderer/src/types/global.d.ts')
 
-if (preloadDeclSrc) {
-  check('Augments global Window interface', preloadDeclSrc.includes('interface Window'))
-  check('Declares window.sophia type', preloadDeclSrc.includes('sophia:'))
+if (globalDeclSrc) {
+  check('Augments global Window interface', globalDeclSrc.includes('interface Window'))
+  check('Declares window.sophia type', globalDeclSrc.includes('sophia:'))
 }
+check(
+  'Renderer↔preload API contract guard exists',
+  readSource('src/renderer/src/types/api-contract.ts') !== null,
+  'compile-time drift check required'
+)
 
 // ─── Chat stream IPC security ───────────────────────────────────────────────
 

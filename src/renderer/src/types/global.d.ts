@@ -216,7 +216,8 @@ declare global {
     deleteTextbook: (textbookId: string) => Promise<boolean>
     createArtifact: (input: {
       conversationId: string
-      type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note' | 'feynman_note' | 'knowledge_graph'
+      // Single source of truth for artifact kinds (shared/types/ids).
+      type: ArtifactType
       content: string
     }) => Promise<ArtifactDTO>
     getArtifact: (artifactId: string, conversationId: string) => Promise<ArtifactDTO | null>

@@ -39,6 +39,7 @@ export interface ConceptStateDTO {
   attemptCount: number
   correctCount: number
   lastSeenAt: string
+  updatedAt: string
   evidenceConversationId: string
   evidenceConversationIds?: string[]
   evidenceMessageIds: string[]
@@ -224,7 +225,8 @@ export interface DataAPI {
   deleteTextbook: (textbookId: string) => Promise<boolean>
   createArtifact: (input: {
     conversationId: string
-    type: 'lesson_summary' | 'flashcards' | 'diary' | 'progress' | 'handoff_tail' | 'farewell' | 'learner_profile' | 'pal_moments' | 'relation' | 'companion_note'
+    // Single source of truth for artifact kinds (shared/types/ids).
+    type: ArtifactType
     content: string
   }) => Promise<ArtifactDTO>
     getArtifact: (artifactId: string, conversationId: string) => Promise<ArtifactDTO | null>

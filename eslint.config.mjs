@@ -24,8 +24,10 @@ export default tseslint.config(
       },
       parserOptions: {
         // Type-aware linting: catches floating promises / await misuse that
-        // plain syntax rules cannot see.
-        projectService: true,
+        // plain syntax rules cannot see. Both projects are listed explicitly
+        // (instead of projectService) so every file — including declaration
+        // files like src/preload/index.d.ts — resolves to a real program.
+        project: ['./tsconfig.node.json', './tsconfig.web.json'],
         tsconfigRootDir: import.meta.dirname
       }
     },
