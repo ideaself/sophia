@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } fro
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useChatStream } from './useChatStream'
 import { useReaderSplit } from './useReaderSplit'
+import { useConversationSearch, findMessageMatches } from './useConversationSearch'
 import { ChatMessage, type MessageHighlight } from './ChatMessage'
 import { ThinkingBlock } from '../components/ThinkingBlock'
 import { stopTTS } from '../hooks/useTTS'
@@ -187,10 +188,15 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const loadedIdRef = useRef<string | null>(null)
   // In-conversation search (Ctrl+F)
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [matchIndex, setMatchIndex] = useState(0)
-  const searchInputRef = useRef<HTMLInputElement>(null)
+  const search = useConversationSearch()
+  const {
+    searchOpen,
+    searchQuery,
+    setSearchQuery,
+    matchIndex,
+    searchInputRef,
+    closeSearch
+  } = search
   // Quick text templates (1.0.7): Alt+1..9 inserts a saved snippet.
   const [templateOpen, setTemplateOpen] = useState(false)
   const templateRef = useRef<HTMLDivElement>(null)
@@ -398,17 +404,15 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     setStickToBottom(nearBottom)
   }, [])
 
-  const closeSearch = useCallback(() => {
-    setSearchOpen(false)
-    setSearchQuery('')
-    setMatchIndex(0)
-    // Re-evaluate the scroll anchor based on the actual position, since
-    // match navigation may have scrolled away from the bottom.
+  // When the search closes, re-evaluate the scroll anchor based on the actual
+  // position (match navigation may have scrolled away from the bottom).
+  useEffect(() => {
+    if (searchOpen) return
     const el = scrollRef.current
     if (el) {
       setStickToBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 48)
     }
-  }, [])
+  }, [searchOpen])
 
   // Tab switching - update input/messages and reset scroll anchor
   useEffect(() => {
@@ -486,13 +490,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         }
       }
 
-      if (e.key === 'f' && !e.shiftKey) {
-        e.preventDefault()
-        setSearchOpen(true)
-        requestAnimationFrame(() => searchInputRef.current?.focus())
-        return
-      }
-
       if (e.key === '/' && !e.shiftKey) {
         e.preventDefault()
         setShowShortcuts((v) => !v)
@@ -508,6 +505,20 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  // Ctrl+F opens the in-conversation search. Kept in its own effect (it is
+  // allowed while typing, unlike the tab shortcuts above) so it can depend on
+  // the search state without rebinding the whole shortcut handler.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      if (!e.ctrlKey || e.shiftKey || e.key !== 'f') return
+      e.preventDefault()
+      search.setSearchOpen(true)
+      requestAnimationFrame(() => search.searchInputRef.current?.focus())
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [search])
 
   // Quick text templates: Alt+1..9 inserts a saved snippet at the caret
   // (1.0.7). Works while typing, unlike the Ctrl-based shortcuts above.
@@ -998,28 +1009,23 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   }, [allMessages, textbook])
 
   // ---- In-conversation search (Ctrl+F) ----
-  const searchMatches = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return []
-    const matches: number[] = []
-    allMessages.forEach((m, i) => {
-      if (m.content.toLowerCase().includes(q)) matches.push(i)
-    })
-    return matches
-  }, [allMessages, searchQuery])
+  const searchMatches = useMemo(
+    () => findMessageMatches(allMessages, searchQuery),
+    [allMessages, searchQuery]
+  )
 
   const goToMatch = useCallback((dir: 1 | -1) => {
     if (searchMatches.length === 0) return
-    setMatchIndex((prev) => {
+    search.setMatchIndex((prev) => {
       const clamped = Math.min(prev, searchMatches.length - 1)
       return (clamped + dir + searchMatches.length) % searchMatches.length
     })
-  }, [searchMatches.length])
+  }, [search, searchMatches.length])
 
   // Reset the current match when the query changes
   useEffect(() => {
-    setMatchIndex(0)
-  }, [searchQuery])
+    search.setMatchIndex(0)
+  }, [search, searchQuery])
 
   // ---- Virtualized message rows ----
   const rows = useMemo<MessageRow[]>(() => {
