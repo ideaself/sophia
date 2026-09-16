@@ -86,6 +86,20 @@ scripts/       verify-security.mjs（安全基线）、clean.mjs
   preload 实现的双向一致性（`skipLibCheck` 不会掩盖两边的漂移）。
 - 变更历史见 [CHANGELOG.md](./CHANGELOG.md)；环境变量模板见 [.env.example](./.env.example)。
 
+## 发布
+
+- **构建安装包**：本地 `npm run build:win`，或 GitHub Actions → Release workflow
+  （手动触发即产出 artifact；推送 `v*` tag 会自动创建 GitHub Release）。
+  产物为 `release/Sophia-<version>-Setup.exe`，构建流程内含 Electron fuses 校验。
+- **平台**：当前仅 Windows x64。mac/arm64 需要对应签名与 CI 运行时，尚未配置。
+- **代码签名未启用**：未签名安装会触发 SmartScreen 提示。配置仓库 Secrets
+  `CSC_LINK`（证书 base64/路径）与 `CSC_KEY_PASSWORD` 后，release workflow 与本地
+  构建会自动签名。
+- **自动更新未启用**：electron-builder 会在产物中生成指向 GitHub Releases 的
+  `app-update.yml`，但应用未集成 `electron-updater`。启用步骤：添加该依赖 → 主进程
+  `autoUpdater.checkForUpdatesAndNotify()` → **先在一个版本上完整验证一次升级流程**
+  再依赖它（自动更新会把任何发布失误直接推送给所有用户）。
+
 ## 技术栈
 
 - 桌面壳：Electron（contextIsolation + sandbox）

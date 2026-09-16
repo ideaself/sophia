@@ -1,0 +1,58 @@
+name: Release (Windows installer)
+
+# Manual run builds the installer and uploads it as an artifact.
+# Tag push (v*) additionally publishes a GitHub Release with the installer.
+# Fuse verification runs as part of `build:win` and fails the job if the
+# packaged binary is missing any expected fuse.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      # Optional code signing — set these repository secrets to have
+      # electron-builder sign the installer (see README「发布」).
+      # Empty (unset) secrets are falsy and signing is skipped.
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify (typecheck + lint + unit tests + security baseline)
+        run: npm test
+
+      - name: Build installer (includes fuse verification)
+        run: npm run build:win
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sophia-windows-installer
+          path: |
+            release/*-Setup.exe
+            release/*-Setup.exe.blockmap
+
+      - name: Publish GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*-Setup.exe
+            release/*-Setup.exe.blockmap
+          generate_release_notes: true

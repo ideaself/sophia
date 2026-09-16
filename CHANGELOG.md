@@ -27,7 +27,9 @@
 
 - **性能**：流式 token 按帧合并渲染；今日学习时长/统计/到期卡片计数下沉主进程聚合（渲染层不再全量
   拉取消息与产物）；消息组件 memo 化与事件卡解析移入 `useMemo`；复习卡片与教材查询并行化。
-- **工程化**：CI（typecheck / lint / 单测 / 安全基线 / 构建）；覆盖率全量口径并设防回退门槛；
+- **工程化**：CI（typecheck / lint / 单测 / 安全基线 / 构建）；Release workflow
+  （手动构建安装包 artifact，`v*` tag 自动创建 GitHub Release，含 fuses 校验与签名占位）；
+  覆盖率全量口径并设防回退门槛；
   打包瘦身（安装包 153.9 → 101.4 MB，`app.asar` 219 → 40.8 MB）；Electron 安全 fuses 与打包校验；
   `verify-security` 覆盖全部渲染层文件；ESLint 类型感知规则与 0 告警；新增 API 类型契约
   （编译期校验 preload 与 renderer 声明一致）；组件测试基础设施（jsdom）与核心流程回归测试。
