@@ -108,3 +108,8 @@ scripts/       verify-security.mjs（安全基线）、clean.mjs
 - 渲染：react-markdown + KaTeX + rehype-highlight + Mermaid
 - 输入校验：Zod（IPC 边界）
 - 测试：Vitest（v8 覆盖率）
+
+## 许可
+
+[MIT](LICENSE)。`reference/角色设定/` 中的角色文案为原创或改编自公有领域形象
+（福尔摩斯、爱丽丝、孙悟空等）。第三方依赖均为 MIT/Apache 类宽松协议。

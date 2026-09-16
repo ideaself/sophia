@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Sophia: 苏格拉底式启发学习伙伴（本地优先）",
   "author": "Sophia",
+  "license": "MIT",
   "main": "./out/main/index.js",
   "engines": {
     "node": ">=22.13.0"

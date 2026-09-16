@@ -35,6 +35,7 @@
   （编译期校验 preload 与 renderer 声明一致）；组件测试基础设施（jsdom）与核心流程回归测试。
 - **无障碍**：对话框语义/键盘关闭/焦点管理、标签页 `tablist` 语义与键盘切换、图标按钮
   `aria-label`、消息区 `role="log"`。
+- 项目以 **MIT** 协议开源（新增 `LICENSE` 与 `package.json` 的 `license` 字段）。
 - 卸载不再删除用户学习数据（`deleteAppDataOnUninstall: false`）。
 
 ## [0.1.0] - 2026-07（里程碑 1-5）
