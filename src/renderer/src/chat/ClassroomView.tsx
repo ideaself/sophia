@@ -242,11 +242,28 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   // 重复创建会话 / 重复发送。
   const sendingRef = useRef(false)
   useEffect(() => { tabsRef.current = tabs }, [tabs])
+  // Mirror for event handlers that are registered once (keyboard shortcuts).
+  const activeIdxRef = useRef(activeIdx)
+  useEffect(() => { activeIdxRef.current = activeIdx }, [activeIdx])
+  // Latest-value ref for the Ctrl+Shift+A handler (registered once, no
+  // re-subscription on every keystroke).
+  const handleAiAnswerRef = useRef<(() => Promise<void>) | null>(null)
 
-  // Persist the tab strip (title / conversationId / draft) across restarts
+  // Persist the tab strip (title / conversationId / draft) across restarts.
+  // Debounced: the draft lives inside `tabs`, so a synchronous localStorage
+  // write on every keystroke would be the app's hottest write path.
   useEffect(() => {
-    saveTabs(localStorage, serializeTabs(tabs, activeIdx))
+    const timer = setTimeout(() => {
+      saveTabs(localStorage, serializeTabs(tabsRef.current, activeIdxRef.current))
+    }, 400)
+    return () => clearTimeout(timer)
   }, [tabs, activeIdx])
+
+  // Flush the latest state on unmount (view switch / app quit) so the
+  // debounce can never lose the last keystrokes.
+  useEffect(() => () => {
+    saveTabs(localStorage, serializeTabs(tabsRef.current, activeIdxRef.current))
+  }, [])
 
   // Keep activeIdx in range when tabs are removed
   useEffect(() => {
@@ -436,7 +453,9 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   }, [mathOpen])
 
   // Keyboard shortcuts: Ctrl+T new tab, Ctrl+Shift+W close tab,
-  // Ctrl+Tab / Ctrl+Shift+Tab switch tabs
+  // Ctrl+Tab / Ctrl+Shift+Tab switch tabs.
+  // Registered ONCE — state is read through refs so typing in the composer
+  // (which updates `tabs` on every keystroke) never re-binds the listener.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!e.ctrlKey) return
@@ -449,29 +468,32 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       if (isTyping && e.key !== 'f' && e.key !== '/' && e.key !== 'a') return
 
+      const tabsNow = tabsRef.current
+      const activeIdxNow = activeIdxRef.current
+
       if (e.key === 't' && !e.shiftKey) {
         e.preventDefault()
         setTabs((prev) => [...prev, makeTab()])
-        setActiveIdx(tabs.length)
+        setActiveIdx(tabsNow.length)
         return
       }
 
       if (e.key === 'w' && e.shiftKey) {
         e.preventDefault()
-        if (tabs.length <= 1) return
-        const newIdx = activeIdx >= tabs.length - 1 ? activeIdx - 1 : activeIdx
-        setTabs((prev) => prev.filter((_, i) => i !== activeIdx))
+        if (tabsNow.length <= 1) return
+        const newIdx = activeIdxNow >= tabsNow.length - 1 ? activeIdxNow - 1 : activeIdxNow
+        setTabs((prev) => prev.filter((_, i) => i !== activeIdxNow))
         setActiveIdx(Math.max(0, newIdx))
         return
       }
 
       if (e.key === 'Tab') {
         e.preventDefault()
-        if (tabs.length <= 1) return
+        if (tabsNow.length <= 1) return
         if (e.shiftKey) {
-          setActiveIdx(activeIdx === 0 ? tabs.length - 1 : activeIdx - 1)
+          setActiveIdx(activeIdxNow === 0 ? tabsNow.length - 1 : activeIdxNow - 1)
         } else {
-          setActiveIdx(activeIdx === tabs.length - 1 ? 0 : activeIdx + 1)
+          setActiveIdx(activeIdxNow === tabsNow.length - 1 ? 0 : activeIdxNow + 1)
         }
       }
 
@@ -490,14 +512,13 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
       if (e.key === 'a' && e.shiftKey) {
         e.preventDefault()
-        void handleAiAnswer()
+        void handleAiAnswerRef.current?.()
         return
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleAiAnswer 每次渲染重建，快捷键只需最新值，无需重挂监听
-  }, [tabs, activeIdx])
+  }, [])
 
   // Quick text templates: Alt+1..9 inserts a saved snippet at the caret
   // (1.0.7). Works while typing, unlike the Ctrl-based shortcuts above.
@@ -858,6 +879,11 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       setAiAnswering(false)
     }
   }
+
+  // Keep the once-registered shortcut handler pointing at the latest closure.
+  useEffect(() => {
+    handleAiAnswerRef.current = handleAiAnswer
+  })
 
   const handleSaveTitle = async () => {
     if (!activeTab.conversationId || !titleInput.trim()) {

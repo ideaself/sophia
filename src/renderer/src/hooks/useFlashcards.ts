@@ -170,32 +170,38 @@ export function toggleFavorite(favorites: Set<string>, cardId: string): Set<stri
 export async function loadAllFlashcards(): Promise<Flashcard[]> {
   const conversations = await window.sophia.data.listConversations() as ConversationDTO[]
   const endedConvs = conversations.filter((c) => c.endedAt)
-  const allCards: Flashcard[] = []
 
-  for (const conv of endedConvs) {
-    try {
-      const artifacts = await window.sophia.data.listArtifacts(conv.id) as RawArtifact[]
-      const flashcardArtifacts = artifacts.filter((a) => a.type === 'flashcards')
-      for (const art of flashcardArtifacts) {
-        const parsed = parseFlashcards(art.content)
-        for (let i = 0; i < parsed.length; i++) {
-          allCards.push({
-            id: `${art.id}_${i}`,
-            artifactId: art.id,
-            cardIndex: i,
-            conversationId: conv.id,
-            conversationTitle: conv.title,
-            createdAt: art.createdAt,
-            question: parsed[i].question,
-            answer: parsed[i].answer
-          })
+  // One artifact listing per conversation, fetched in parallel — the old
+  // serial loop made opening the review view wait for N round-trips.
+  const perConversation = await Promise.all(
+    endedConvs.map(async (conv): Promise<Flashcard[]> => {
+      try {
+        const artifacts = await window.sophia.data.listArtifacts(conv.id) as RawArtifact[]
+        const cards: Flashcard[] = []
+        for (const art of artifacts) {
+          if (art.type !== 'flashcards') continue
+          const parsed = parseFlashcards(art.content)
+          for (let i = 0; i < parsed.length; i++) {
+            cards.push({
+              id: `${art.id}_${i}`,
+              artifactId: art.id,
+              cardIndex: i,
+              conversationId: conv.id,
+              conversationTitle: conv.title,
+              createdAt: art.createdAt,
+              question: parsed[i].question,
+              answer: parsed[i].answer
+            })
+          }
         }
+        return cards
+      } catch {
+        return []
       }
-    } catch {
-      // skip
-    }
-  }
-  return allCards
+    })
+  )
+
+  return perConversation.flat()
 }
 
 /**

@@ -55,9 +55,15 @@ const ARCHIVE_KIND_LABEL: Record<string, string> = {
   other: '其他'
 }
 
+/** Base URLs for the built-in provider presets (module scope: stable identity). */
+const PRESET_URLS: Record<string, string> = {
+  deepseek: 'https://api.deepseek.com/v1',
+  mimo: 'https://api.mimo.com/v1',
+  custom: ''
+}
+
 export function SettingsView(): React.ReactElement {
   const [providers, setProviders] = useState<ProviderDTO[]>([])
-  const [, setActiveId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -342,8 +348,6 @@ export function SettingsView(): React.ReactElement {
   const loadProviders = useCallback(async () => {
     const list = await window.sophia.providers.list()
     setProviders(list)
-    const active = await window.sophia.providers.getActive()
-    setActiveId(active?.id ?? null)
   }, [])
 
   useEffect(() => {
@@ -455,12 +459,6 @@ export function SettingsView(): React.ReactElement {
     await window.sophia.providers.delete(id)
     setDeleteConfirmId(null)
     await loadProviders()
-  }
-
-  const PRESET_URLS: Record<string, string> = {
-    deepseek: 'https://api.deepseek.com/v1',
-    mimo: 'https://api.mimo.com/v1',
-    custom: ''
   }
 
   return (
