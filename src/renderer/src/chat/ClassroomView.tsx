@@ -1,10 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { useChatStream } from './useChatStream'
 import { useReaderSplit } from './useReaderSplit'
 import { useConversationSearch, findMessageMatches } from './useConversationSearch'
-import { ChatMessage, type MessageHighlight } from './ChatMessage'
-import { ThinkingBlock } from '../components/ThinkingBlock'
 import { stopTTS } from '../hooks/useTTS'
 import { loadTabs, saveTabs, serializeTabs } from '../../../shared/tab-persistence'
 import { useAppStore } from '../stores/useAppStore'
@@ -17,8 +14,8 @@ import { ConversationSearchBar } from './ConversationSearchBar'
 import { ClassroomTabBar } from './ClassroomTabBar'
 import { ClassroomComposer } from './ClassroomComposer'
 import { ShortcutSheet } from './ShortcutSheet'
-import { ChatErrorRow } from './ChatErrorRow'
-import { EndClassCard } from './EndClassCard'
+import { MessageList, type MessageRow } from './MessageList'
+import { useMessageListScroll } from './useMessageListScroll'
 import { MAX_INPUT_LENGTH, type DisplayMessage, type TabState } from './types'
 
 // PDF/EPUB 阅读器体积大（pdfjs 等），打开阅读分栏时才加载
@@ -47,19 +44,6 @@ interface ClassroomViewProps {
   /** > 0 表示这是「新建课堂」的启动：忽略持久化的旧标签页，从空白对话开始。 */
   freshStartNonce?: number
 }
-
-type MessageRow =
-  | {
-      kind: 'message'
-      key: string
-      msg: DisplayMessage
-      showThinking: boolean
-      highlight: MessageHighlight
-    }
-  | { kind: 'error'; key: string }
-  | { kind: 'end'; key: string }
-
-
 
 let tabCounter = 0
 function newTabId(): string {
@@ -97,7 +81,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const [sendError, setSendError] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
-  const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const loadedIdRef = useRef<string | null>(null)
   // In-conversation search (Ctrl+F)
@@ -138,8 +121,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     window.addEventListener('sophia:goal-changed', onChange)
     return () => window.removeEventListener('sophia:goal-changed', onChange)
   }, [])
-  // Scroll behavior: stick to the bottom unless the user scrolls up
-  const [stickToBottom, setStickToBottom] = useState(true)
+  // Scroll behaviour (stick-to-bottom / virtualization) lives in
+  // useMessageListScroll — see the call below, after `rows` is built.
   // Mirror of `tabs` for async callbacks — the render-closure `tabs` goes
   // stale inside .then() chains that run after later re-renders.
   const tabsRef = useRef(tabs)
@@ -305,29 +288,10 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   // Stop any TTS playback when leaving the classroom view.
   useEffect(() => stopTTS, [])
 
-  // Track whether the user is pinned to the bottom of the message list.
-  // Stops auto-scrolling once the user scrolls up to read earlier content.
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current
-    if (!el) return
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48
-    setStickToBottom(nearBottom)
-  }, [])
-
-  // When the search closes, re-evaluate the scroll anchor based on the actual
-  // position (match navigation may have scrolled away from the bottom).
-  useEffect(() => {
-    if (searchOpen) return
-    const el = scrollRef.current
-    if (el) {
-      setStickToBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 48)
-    }
-  }, [searchOpen])
-
-  // Tab switching - update input/messages and reset scroll anchor
+  // Tab switching clears the send error; the scroll anchor reset for a new
+  // tab lives in useMessageListScroll (it watches activeIdx).
   useEffect(() => {
     setSendError(null)
-    setStickToBottom(true)
   }, [activeIdx])
 
   // Close the in-conversation search with Escape
@@ -458,22 +422,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [templateOpen])
-
-  // Send / resend / regenerate flow (extracted hook — see useClassroomSend.ts)
-  const { sendingRef, handleSend, handleSendFromContent, handleRegenerate } = useClassroomSend({
-    companion,
-    textbook,
-    activeIdx,
-    tabsRef,
-    chatStream,
-    setTabs,
-    updateTab,
-    setSendError,
-    streamOwnerIdxRef,
-    setStickToBottom,
-    focusInput: () => requestAnimationFrame(() => inputRef.current?.focus())
-  })
-
 
   const handleEndClass = async () => {
     if (!activeTab.conversationId) return
@@ -630,29 +578,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     })
   }, [activeIdx])
 
-  const handleRewind = useCallback(async (messageId: string) => {
-    const conversationId = tabsRef.current[activeIdx]?.conversationId
-    if (!conversationId) return
-    const ok = await window.sophia.dialog.confirm({
-      message: '将删除这条消息之后的所有对话并从这一点继续，确定吗？',
-      confirmLabel: '回退到这里'
-    })
-    if (!ok) return
-    const truncated = await window.sophia.data.truncateConversation(conversationId, messageId)
-    if (truncated) {
-      setTabs((prev) => {
-        const next = [...prev]
-        const t = next[activeIdx]
-        if (t) {
-          const idx = t.messages.findIndex((m) => m.id === messageId)
-          if (idx >= 0) t.messages = t.messages.slice(0, idx + 1)
-        }
-        return next
-      })
-      setStickToBottom(true)
-    }
-  }, [activeIdx])
-
   const handleNewTab = () => {
     setTabs((prev) => [...prev, makeTab()])
     setActiveIdx(tabs.length)
@@ -756,46 +681,55 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     activeTab.endResult
   ])
 
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => 200,
-    overscan: 10,
-    getItemKey: (index) => rows[index]?.key ?? index
+  // ---- Message list scroll system (stick-to-bottom + virtualization) ----
+  const { scrollRef, setStickToBottom, handleScroll, virtualizer } = useMessageListScroll({
+    rows,
+    messages: activeTab.messages,
+    streamContent: chatStream.state.assistantContent,
+    streaming: chatStream.state.isStreaming,
+    activeIdx,
+    searchOpen,
+    searchMatches,
+    matchIndex
   })
 
-  // 当前虚拟化总高度（估计 + 已测量）。行高测量更新时该值变化，
-  // 用于在贴底状态下跟随内容高度变化重新钉底。
-  const totalSize = virtualizer.getTotalSize()
+  // Send / resend / regenerate flow (extracted hook — see useClassroomSend.ts)
+  const { sendingRef, handleSend, handleSendFromContent, handleRegenerate } = useClassroomSend({
+    companion,
+    textbook,
+    activeIdx,
+    tabsRef,
+    chatStream,
+    setTabs,
+    updateTab,
+    setSendError,
+    streamOwnerIdxRef,
+    setStickToBottom,
+    focusInput: () => requestAnimationFrame(() => inputRef.current?.focus())
+  })
 
-  // Auto-scroll to the newest message while pinned to the bottom.
-  // 直接钉在真实底部（scrollHeight），不依赖虚拟化的估计总高度——
-  // 用 scrollToOffset(getTotalSize()) 时，未测量行按 estimateSize 估算，
-  // 长回复会低估总高度，把视口"弹回"到比真实底部高的位置。
-  useEffect(() => {
-    if (!stickToBottom || rows.length === 0) return
-    const el = scrollRef.current
-    if (!el) return
-    el.scrollTop = el.scrollHeight
-  }, [activeTab.messages, chatStream.state.assistantContent, stickToBottom, totalSize, rows.length])
-
-  // Scroll the current search match into view.
-  useEffect(() => {
-    if (searchMatches.length === 0) return
-    const target = searchMatches[Math.min(matchIndex, searchMatches.length - 1)]
-    setStickToBottom(false)
-    virtualizer.scrollToIndex(target, { align: 'center' })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在匹配项变化时跳转；virtualizer 实例随 rows 变化，加入会打断贴底滚动
-  }, [matchIndex, searchMatches])
-
-  // Pin to the bottom when a new stream starts.
-  const prevStreamingRef = useRef(false)
-  useEffect(() => {
-    if (chatStream.state.isStreaming && !prevStreamingRef.current) {
+  const handleRewind = useCallback(async (messageId: string) => {
+    const conversationId = tabsRef.current[activeIdx]?.conversationId
+    if (!conversationId) return
+    const ok = await window.sophia.dialog.confirm({
+      message: '将删除这条消息之后的所有对话并从这一点继续，确定吗？',
+      confirmLabel: '回退到这里'
+    })
+    if (!ok) return
+    const truncated = await window.sophia.data.truncateConversation(conversationId, messageId)
+    if (truncated) {
+      setTabs((prev) => {
+        const next = [...prev]
+        const t = next[activeIdx]
+        if (t) {
+          const idx = t.messages.findIndex((m) => m.id === messageId)
+          if (idx >= 0) t.messages = t.messages.slice(0, idx + 1)
+        }
+        return next
+      })
       setStickToBottom(true)
     }
-    prevStreamingRef.current = chatStream.state.isStreaming
-  }, [chatStream.state.isStreaming])
+  }, [activeIdx, setStickToBottom])
 
   // Background artifact generation results — update the matching end card
   // when the main process finishes generating (end of class no longer blocks).
@@ -890,90 +824,33 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       <div className="flex flex-1 min-h-0">
         <div className="flex flex-col flex-1 min-w-0">
       {/* Messages */}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto p-6" role="log" aria-label="课堂消息">
-        {rows.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-center text-text-muted">
-              开始和 <span className="text-text-secondary">{companion.name}</span> 对话吧。
-               <br />
-              试着提出一个你想探讨的问题。
-            </p>
-          </div>
-        ) : (
-          <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
-            {virtualizer.getVirtualItems().map((vi) => {
-              const row = rows[vi.index]
-              return (
-                <div
-                  key={vi.key}
-                  data-index={vi.index}
-                  ref={virtualizer.measureElement}
-                  className="pb-4"
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${vi.start}px)`
-                  }}
-                >
-                  {row.kind === 'message' && (
-                    <>
-                      {row.showThinking && (
-                        <details className="mb-2 rounded border border-surface-border bg-bg-surface/60 px-3 py-2">
-                          <summary className="cursor-pointer select-none text-xs text-text-muted hover:text-text-secondary">
-                            🧠 思考过程 {chatStream.state.isStreaming && <span className="text-accent animate-pulse">(进行中...)</span>}
-                          </summary>
-                          <ThinkingBlock content={chatStream.state.reasoningContent} />
-                        </details>
-                      )}
-                      <ChatMessage
-                        id={row.msg.id}
-                        role={row.msg.role}
-                        content={row.msg.content}
-                        createdAt={row.msg.createdAt}
-                        showActions={!chatStream.state.isStreaming && row.msg.role !== 'system'}
-                        highlight={row.highlight}
-                        textbookId={textbook?.id ?? null}
-                        showGroundingNotice={groundingFlagged.has(row.msg.id)}
-                        onRewind={
-                          !chatStream.state.isStreaming &&
-                          row.msg.role !== 'system' &&
-                          vi.index < allMessages.length - 1
-                            ? handleRewind
-                            : undefined
-                        }
-                        onEdit={handleEditMessage}
-                        onDelete={handleDeleteMessage}
-                        onRegenerate={handleRegenerate}
-                      />
-                    </>
-                  )}
-                  {row.kind === 'error' && (
-                    <ChatErrorRow
-                      message={sendError ?? chatStream.state.error?.message}
-                      onRetry={
-                        activeTab.retryMessage
-                          ? () => void handleSend({ input: activeTab.retryMessage!.input, resend: true })
-                          : undefined
-                      }
-                    />
-                  )}
-                  {row.kind === 'end' && activeTab.endResult && (
-                    <EndClassCard
-                      result={activeTab.endResult}
-                      redoing={redoing}
-                      onReviewNewCards={handleReviewNewCards}
-                      onContinueLearning={handleContinueLearning}
-                      onRedoArtifacts={() => void handleRedoArtifacts()}
-                    />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      <MessageList
+        scrollRef={scrollRef}
+        onScroll={handleScroll}
+        rows={rows}
+        virtualizer={virtualizer}
+        companionName={companion.name}
+        messageCount={allMessages.length}
+        isStreaming={chatStream.state.isStreaming}
+        reasoningContent={chatStream.state.reasoningContent}
+        groundingFlagged={groundingFlagged}
+        errorMessage={sendError ?? chatStream.state.error?.message}
+        onRetry={
+          activeTab.retryMessage
+            ? () => void handleSend({ input: activeTab.retryMessage!.input, resend: true })
+            : undefined
+        }
+        textbookId={textbook?.id ?? null}
+        endResult={activeTab.endResult}
+        redoing={redoing}
+        onRewind={handleRewind}
+        onEdit={handleEditMessage}
+        onDelete={handleDeleteMessage}
+        onRegenerate={handleRegenerate}
+        onReviewNewCards={handleReviewNewCards}
+        onContinueLearning={handleContinueLearning}
+        onRedoArtifacts={() => void handleRedoArtifacts()}
+      />
 
       {/* Input */}
       <ClassroomComposer
