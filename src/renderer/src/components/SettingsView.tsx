@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ThemeSwitcher } from './ThemeSwitcher'
-import { CollapsibleSection } from './CollapsibleSection'
+import { SettingsTextTemplatesSection } from './SettingsTextTemplatesSection'
+import { SettingsVoiceTriggersSection } from './SettingsVoiceTriggersSection'
 import { SettingsDictionarySection } from './SettingsDictionarySection'
 import { SettingsArchiveSection } from './SettingsArchiveSection'
 import { SettingsProvidersSection } from './SettingsProvidersSection'
@@ -11,17 +12,6 @@ import {
   setFontScale,
   type FontScale
 } from '../../../shared/font-scale'
-import {
-  MAX_TEXT_TEMPLATES,
-  MAX_TEMPLATE_LENGTH,
-  loadTextTemplates,
-  saveTextTemplates
-} from '../../../shared/text-templates'
-import {
-  DEFAULT_VOICE_TRIGGERS,
-  loadVoiceTriggers,
-  saveVoiceTriggers
-} from '../../../shared/voice-trigger'
 import { loadThinkingMode, saveThinkingMode, type ThinkingMode } from '../../../shared/thinking'
 
 /** 可导出/导入的界面设置（localStorage key 白名单，不含密钥等敏感数据）。 */
@@ -55,17 +45,6 @@ export function SettingsView(): React.ReactElement {
   const [restoring, setRestoring] = useState(false)
   const [restoreMsg, setRestoreMsg] = useState<string | null>(null)
   const [fontScale, setFontScaleState] = useState<FontScale>(() => getFontScale())
-  const [templates, setTemplates] = useState<string[]>(() => loadTextTemplates())
-  const [voiceTriggers, setVoiceTriggers] = useState(() => loadVoiceTriggers())
-
-
-  const handleVoiceTriggerChange = (field: 'send' | 'clear', value: string) => {
-    setVoiceTriggers((prev) => {
-      const next = { ...prev, [field]: value }
-      saveVoiceTriggers(next)
-      return next
-    })
-  }
   const [lockEnabled, setLockEnabled] = useState(false)
   const [lockPin, setLockPin] = useState('')
   const [lockConfirmPin, setLockConfirmPin] = useState('')
@@ -125,31 +104,6 @@ export function SettingsView(): React.ReactElement {
     setFontScale(scale)
   }
 
-  const updateTemplate = (index: number, value: string) => {
-    setTemplates((prev) => {
-      const next = [...prev]
-      next[index] = value
-      saveTextTemplates(next)
-      return next
-    })
-  }
-
-  const addTemplate = () => {
-    setTemplates((prev) => {
-      if (prev.length >= MAX_TEXT_TEMPLATES) return prev
-      const next = [...prev, '']
-      saveTextTemplates(next)
-      return next
-    })
-  }
-
-  const removeTemplate = (index: number) => {
-    setTemplates((prev) => {
-      const next = prev.filter((_, i) => i !== index)
-      saveTextTemplates(next)
-      return next
-    })
-  }
 
   const handleToggleThinking = (mode: ThinkingMode) => {
     setThinkingEnabled(mode)
@@ -484,79 +438,9 @@ export function SettingsView(): React.ReactElement {
         </div>
       </div>
 
-      <CollapsibleSection title="常用文本模板" badge={`${templates.length}/${MAX_TEXT_TEMPLATES}`}>
-        <p className="mb-3 text-xs text-text-muted">
-          设置常用文字片段（最多 {MAX_TEXT_TEMPLATES} 条，每条 ≤ {MAX_TEMPLATE_LENGTH} 字）。
-          在课堂输入框点「☰」按钮或按 Alt+1..9 插入。
-        </p>
-        <div className="space-y-2">
-          {templates.map((t, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <kbd className="flex-shrink-0 rounded border border-surface-border-strong bg-bg-elevated px-2 py-1.5 font-mono text-xs text-text-muted">
-                Alt+{i + 1}
-              </kbd>
-              <input
-                type="text"
-                value={t}
-                maxLength={MAX_TEMPLATE_LENGTH}
-                onChange={(e) => updateTemplate(i, e.target.value)}
-                placeholder={`第 ${i + 1} 条模板（点击后可在输入框插入）`}
-                aria-label={`第 ${i + 1} 条快捷模板`}
-                className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
-              />
-              <button
-                onClick={() => removeTemplate(i)}
-                className="flex-shrink-0 rounded border border-surface-border-strong px-3 py-2 text-sm text-red-400 hover:bg-red-900/30"
-                title="删除此模板"
-                aria-label={`删除第 ${i + 1} 条模板`}
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-          {templates.length < MAX_TEXT_TEMPLATES && (
-            <button
-              onClick={addTemplate}
-              className="w-full rounded-lg border border-dashed border-surface-border-strong px-4 py-2.5 text-sm text-text-muted hover:border-accent-border hover:text-accent-hover transition-colors"
-            >
-              + 添加模板
-            </button>
-          )}
-        </div>
-      </CollapsibleSection>
+      <SettingsTextTemplatesSection />
 
-      <CollapsibleSection title="语音输入触发词">
-        <p className="mb-3 text-xs text-text-muted">
-          用系统或第三方语音输入（macOS 听写、Windows 系统语音、讯飞输入法等）说话时，
-          说完设定好的触发短语即可免手发送或清空消息。
-        </p>
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <label className="w-16 flex-shrink-0 text-xs text-text-muted">发送</label>
-            <input
-              type="text"
-              value={voiceTriggers.send}
-              maxLength={20}
-              onChange={(e) => handleVoiceTriggerChange('send', e.target.value)}
-              placeholder={`默认：${DEFAULT_VOICE_TRIGGERS.send}`}
-              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
-            />
-            <span className="flex-shrink-0 text-xs text-text-muted">在输入末尾说出即自动发送</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="w-16 flex-shrink-0 text-xs text-text-muted">清空</label>
-            <input
-              type="text"
-              value={voiceTriggers.clear}
-              maxLength={20}
-              onChange={(e) => handleVoiceTriggerChange('clear', e.target.value)}
-              placeholder={`默认：${DEFAULT_VOICE_TRIGGERS.clear}`}
-              className="w-full rounded border border-surface-border-strong bg-bg-deep px-3 py-2 text-sm text-text-primary focus:border-accent-border focus:outline-none"
-            />
-            <span className="flex-shrink-0 text-xs text-text-muted">在输入末尾说出即清空输入</span>
-          </div>
-        </div>
-      </CollapsibleSection>
+      <SettingsVoiceTriggersSection />
 
       <SettingsDictionarySection />
 
