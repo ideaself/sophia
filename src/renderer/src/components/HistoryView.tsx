@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { normalizeMathDelimiters } from '../../../shared/math-delimiters'
 import { handleCopyMathSource } from '../lib/mathCopy'
 import { useAppStore } from '../stores/useAppStore'
@@ -57,6 +58,13 @@ export function HistoryView(): React.ReactElement {
   const [loadingDiary, setLoadingDiary] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
+  // Virtualized message list: long classes (hundreds of messages) render only
+  // the visible window. The list lives inside the page-level scroll container,
+  // so the virtualizer is offset by the list's top position (scrollMargin).
+  const mainRef = useRef<HTMLElement>(null)
+  const messagesListRef = useRef<HTMLDivElement>(null)
+  const [messagesOffset, setMessagesOffset] = useState(0)
+
   const setView = useAppStore((s) => s.setView)
   const setLoadConversationId = useAppStore((s) => s.setLoadConversationId)
   const setSelectedCompanion = useCompanionStore((s) => s.select)
@@ -64,18 +72,32 @@ export function HistoryView(): React.ReactElement {
   const textbooks = useTextbookStore((s) => s.textbooks)
   const fetchTextbooks = useTextbookStore((s) => s.fetch)
 
+  const selectConversation = useCallback(async (convId: string) => {
+    setSelectedId(convId)
+    setEditingArtifact(null)
+    setLoadingDetail(true)
+    try {
+      const [msgs, arts] = await Promise.all([
+        window.sophia.data.listMessages(convId).catch(() => [] as MessageDTO[]),
+        window.sophia.data.listArtifacts(convId).catch(() => [] as ArtifactDTO[])
+      ])
+      setMsgs(msgs)
+      setArtifacts(arts)
+    } finally {
+      setLoadingDetail(false)
+    }
+  }, [])
+
   useEffect(() => {
     void window.sophia.data.listConversations().then((convs) => {
       setConversations(convs)
-      // 默认选中最近的一个课堂
-      if (convs.length > 0 && !selectedId) {
-        setSelectedId(convs[0].id)
-      }
+      // Load the newest lesson's detail right away — previously the panel
+      // highlighted it but stayed empty until the user clicked the row.
+      if (convs.length > 0) void selectConversation(convs[0].id)
     })
     void window.sophia.data.diary.listMonths().then(setDiaryMonths)
     void fetchTextbooks()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [selectConversation, fetchTextbooks])
 
   // 角色名 / 书名映射
   const [companionMap, setCompanionMap] = useState<Record<string, string>>({})
@@ -150,23 +172,25 @@ export function HistoryView(): React.ReactElement {
     return `${mm}-${dd} ${companionMap[conv.companionId] ?? conv.companionId}`
   }
 
-  const selectConversation = async (convId: string) => {
-    setSelectedId(convId)
-    setEditingArtifact(null)
-    setLoadingDetail(true)
-    try {
-      const [msgs, arts] = await Promise.all([
-        window.sophia.data.listMessages(convId).catch(() => [] as MessageDTO[]),
-        window.sophia.data.listArtifacts(convId).catch(() => [] as ArtifactDTO[])
-      ])
-      setMsgs(msgs)
-      setArtifacts(arts)
-    } finally {
-      setLoadingDetail(false)
-    }
-  }
-
   const selected = conversations.find((c) => c.id === selectedId) ?? null
+
+  // --- Virtualized message list ---
+  const messageVirtualizer = useVirtualizer({
+    count: msgs.length,
+    getScrollElement: () => mainRef.current,
+    estimateSize: () => 96,
+    overscan: 8,
+    scrollMargin: messagesOffset
+  })
+
+  // Keep the list's offset (relative to the scroll container) in sync — the
+  // artifacts section above changes height as it renders/edits.
+  useEffect(() => {
+    const measure = (): void => setMessagesOffset(messagesListRef.current?.offsetTop ?? 0)
+    measure()
+    const timer = setTimeout(measure, 150)
+    return () => clearTimeout(timer)
+  }, [selectedId, msgs, artifacts, editingArtifact])
 
   // --- 操作 ---
 
@@ -491,7 +515,7 @@ export function HistoryView(): React.ReactElement {
       </aside>
 
       {/* ===== 右侧详情 ===== */}
-      <main className="flex-1 overflow-auto">
+      <main ref={mainRef} className="flex-1 overflow-auto">
         {notice && (
           <div className="border-b border-green-800 bg-green-900/20 px-4 py-2 text-sm text-green-300">{notice}</div>
         )}
@@ -691,33 +715,52 @@ export function HistoryView(): React.ReactElement {
                     </div>
                   )}
 
-                  {/* 对话记录 */}
+                  {/* 对话记录（虚拟化：长课堂只渲染可见窗口） */}
                   <div>
                     <h3 className="mb-2 text-sm font-semibold text-text-primary">对话记录</h3>
                     {msgs.length === 0 ? (
                       <p className="text-sm text-text-muted">暂无消息记录</p>
                     ) : (
-                      <div className="space-y-2">
-                        {msgs.map((msg) => (
-                          <div key={msg.id} className={`rounded-lg px-3 py-2 text-sm ${
-                            msg.role === 'user'
-                              ? 'ml-8 bg-accent-subtle'
-                              : msg.role === 'assistant'
-                                ? 'mr-8 bg-bg-elevated'
-                                : 'bg-bg-surface text-text-muted'
-                          }`}>
-                            <p className="mb-1 text-xs text-text-muted">
-                              {msg.role === 'user' ? '你' : msg.role === 'assistant' ? 'AI' : '系统'} · {new Date(msg.createdAt).toLocaleTimeString()}
-                            </p>
-                            <div className={msg.role === 'user' ? 'whitespace-pre-wrap text-text-secondary' : 'markdown-body text-text-secondary'} onCopy={handleCopyMathSource}>
-                              <Suspense fallback={null}>
-                                <MarkdownRenderer>
-                                  {normalizeMathDelimiters(msg.content)}
-                                </MarkdownRenderer>
-                              </Suspense>
+                      <div
+                        ref={messagesListRef}
+                        className="relative w-full"
+                        style={{ height: messageVirtualizer.getTotalSize() }}
+                      >
+                        {messageVirtualizer.getVirtualItems().map((vi) => {
+                          const msg = msgs[vi.index]
+                          return (
+                            <div
+                              key={msg.id}
+                              data-index={vi.index}
+                              ref={messageVirtualizer.measureElement}
+                              className={`rounded-lg px-3 py-2 text-sm ${
+                                msg.role === 'user'
+                                  ? 'ml-8 bg-accent-subtle'
+                                  : msg.role === 'assistant'
+                                    ? 'mr-8 bg-bg-elevated'
+                                    : 'bg-bg-surface text-text-muted'
+                              }`}
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                transform: `translateY(${vi.start - messagesOffset}px)`
+                              }}
+                            >
+                              <p className="mb-1 text-xs text-text-muted">
+                                {msg.role === 'user' ? '你' : msg.role === 'assistant' ? 'AI' : '系统'} · {new Date(msg.createdAt).toLocaleTimeString()}
+                              </p>
+                              <div className={msg.role === 'user' ? 'whitespace-pre-wrap text-text-secondary' : 'markdown-body text-text-secondary'} onCopy={handleCopyMathSource}>
+                                <Suspense fallback={null}>
+                                  <MarkdownRenderer>
+                                    {normalizeMathDelimiters(msg.content)}
+                                  </MarkdownRenderer>
+                                </Suspense>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
                   </div>

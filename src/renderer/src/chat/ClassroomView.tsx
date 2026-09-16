@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useChatStream } from './useChatStream'
+import { useReaderSplit } from './useReaderSplit'
 import { ChatMessage, type MessageHighlight } from './ChatMessage'
 import { ThinkingBlock } from '../components/ThinkingBlock'
 import { stopTTS } from '../hooks/useTTS'
@@ -196,19 +197,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   // AI 代答 (3.2.0 Ctrl+Shift+A): draft a learner reply to paste/send.
   const [aiAnswering, setAiAnswering] = useState(false)
   // 课堂内嵌教材阅读分栏（左右并排，宽度可拖拽调整）
-  const [readerOpen, setReaderOpen] = useState(false)
-  const [readerWidth, setReaderWidth] = useState(() => {
-    try {
-      const w = parseInt(localStorage.getItem('sophia.classroomReaderWidth') ?? '', 10)
-      // 上限随视口变化：阅读器最宽 = 窗口宽 − 聊天区最小宽度。
-      const maxW = Math.max(280, window.innerWidth - 360)
-      return Number.isFinite(w) ? Math.min(maxW, Math.max(280, w)) : Math.min(480, maxW)
-    } catch {
-      return 480
-    }
-  })
-  const readerResizeStart = useRef<{ x: number; w: number } | null>(null)
-  const readerWidthRef = useRef(readerWidth)
+  const { readerOpen, setReaderOpen, readerWidth, handleReaderResizeStart } = useReaderSplit()
   // Math symbol quick-insert panel
   const [mathOpen, setMathOpen] = useState(false)
   const [mathTab, setMathTab] = useState('greek')
@@ -823,34 +812,6 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     })
     if (result.canceled || !result.filePath) return
     await window.sophia.data.captureScreenshot(result.filePath)
-  }
-
-  // 课堂内嵌教材阅读分栏：拖动分隔条调整宽度
-  const handleReaderResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault()
-    readerResizeStart.current = { x: e.clientX, w: readerWidth }
-    const onMove = (ev: MouseEvent) => {
-      const s = readerResizeStart.current
-      if (!s) return
-      // 分隔条右侧是阅读器。分隔条位于聊天列与阅读器之间（flex 布局）：
-      // 宽度增大时分隔条会向左移动，所以要让分隔条跟随鼠标（向右拖 =
-      // 阅读器变窄），宽度变化必须与鼠标位移相反。
-      // 上限随视口变化：阅读器最宽 = 窗口宽 − 聊天区最小宽度。
-      const maxW = Math.max(280, window.innerWidth - 360)
-      const next = Math.min(maxW, Math.max(280, s.w + (s.x - ev.clientX)))
-      readerWidthRef.current = next
-      setReaderWidth(next)
-    }
-    const onUp = () => {
-      readerResizeStart.current = null
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-      try {
-        localStorage.setItem('sophia.classroomReaderWidth', String(readerWidthRef.current))
-      } catch { /* best-effort */ }
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
   }
 
   const handleAiAnswer = async () => {
