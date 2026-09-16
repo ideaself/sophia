@@ -12,6 +12,13 @@
     "appId": "com.sophia.app",
     "productName": "Sophia",
     "artifactName": "${productName}-${version}-Setup.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ideaself",
+        "repo": "sophia"
+      }
+    ],
     "electronLanguages": [
       "en-US",
       "zh-CN"
@@ -46,7 +53,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "build:win": "npm run build && electron-builder --win && npm run test:fuses",
+    "build:win": "npm run build && electron-builder --win --publish never && npm run test:fuses",
     "preview": "electron-vite preview",
     "clean": "node scripts/clean.mjs",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
@@ -62,6 +69,7 @@
   },
   "dependencies": {
     "archiver": "^8.0.0",
+    "electron-updater": "^6.8.9",
     "epub": "^2.1.1",
     "katex": "^0.18.1",
     "unpdf": "^1.8.0",

@@ -15,6 +15,7 @@ import { initDataDir } from './storage/initialize'
 import { resolveReferencePaths } from './storage/resolve-paths'
 import { createDeepSeekStreamAdapter } from './llm/deepseek-stream-adapter'
 import { maybeAutoBackup } from './backup/auto-backup'
+import { setupAutoUpdate } from './auto-update'
 
 /**
  * Last-resort process-level guards.
@@ -393,7 +394,12 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+    createWindow()
+
+    // Auto-update (packaged builds only): background check + download, the
+    // update installs on the next quit. Never blocks startup or a class.
+    setupAutoUpdate()
+
     }
   })
 

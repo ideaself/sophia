@@ -95,10 +95,10 @@ scripts/       verify-security.mjs（安全基线）、clean.mjs
 - **代码签名未启用**：未签名安装会触发 SmartScreen 提示。配置仓库 Secrets
   `CSC_LINK`（证书 base64/路径）与 `CSC_KEY_PASSWORD` 后，release workflow 与本地
   构建会自动签名。
-- **自动更新未启用**：electron-builder 会在产物中生成指向 GitHub Releases 的
-  `app-update.yml`，但应用未集成 `electron-updater`。启用步骤：添加该依赖 → 主进程
-  `autoUpdater.checkForUpdatesAndNotify()` → **先在一个版本上完整验证一次升级流程**
-  再依赖它（自动更新会把任何发布失误直接推送给所有用户）。
+- **自动更新已启用**：打包版启动 30 秒后后台检查 GitHub Releases（`electron-updater`），
+  自动下载并在**下次退出时安装**，不打断课堂；检查失败仅记录日志。发版要求：
+  Release 必须包含 workflow 产出的 `latest.yml`（自动附带），且**发布前先用安装包
+  完整验证一次升级链路**——自动更新会把任何发布失误直接推送给所有用户。
 
 ## 技术栈
 
