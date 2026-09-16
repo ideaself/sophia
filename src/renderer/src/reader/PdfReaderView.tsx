@@ -4,6 +4,8 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { DictionaryPopup } from '../components/DictionaryPopup'
 import { isEnglishWord, loadDictConfig } from '../../../shared/dict'
 import { useReadingNotes } from './useReadingNotes'
+import { readLocalProgress, syncReadingProgress, writeLocalProgress } from './reading-progress'
+import { ReaderSearchPopover } from './ReaderSearchPopover'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -34,8 +36,6 @@ interface NoteHighlight {
 }
 
 type PdfTextContent = Awaited<ReturnType<pdfjs.PDFPageProxy['getTextContent']>>
-
-const PROGRESS_KEY = (id: string) => `pdf-progress-${id}`
 
 /** 批注在页面位图上的高亮样式（页面是白色位图，用半透明暖色）。 */
 const NOTE_HIGHLIGHT_CLASS: Record<string, string> = {
@@ -123,7 +123,7 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
         if (typeof stored === 'number' && stored > 0) setPageNum(stored)
       } catch {
         try {
-          const raw = localStorage.getItem(PROGRESS_KEY(textbookId))
+          const raw = readLocalProgress('pdf', textbookId)
           const n = raw ? parseInt(raw, 10) : 0
           if (n > 0) setPageNum(n)
         } catch { /* ignore */ }
@@ -353,14 +353,12 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
   // Persist progress
   useEffect(() => {
     if (pageCount === 0) return
-    try {
-      localStorage.setItem(PROGRESS_KEY(textbookId), String(pageNum))
-    } catch { /* best-effort */ }
-    void window.sophia.data.updateTextbookProgress(textbookId, {
+    writeLocalProgress('pdf', textbookId, String(pageNum))
+    syncReadingProgress(textbookId, {
       currentPage: pageNum,
       totalPages: pageCount,
       readingPercentage: pageCount > 0 ? pageNum / pageCount : 0
-    }).catch(() => {})
+    })
   }, [textbookId, pageNum, pageCount])
 
   // Ctrl+F open / Escape close / ←→ page navigation
@@ -494,22 +492,19 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
                 🔍 搜索
               </button>
               {searchOpen && (
-                <div className="absolute right-0 top-full z-10 mt-1 w-72 rounded border border-surface-border bg-bg-surface p-3 shadow-lg">
-                  <div className="flex items-center gap-2">
-                    <input
-                      ref={searchInputRef}
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                          e.preventDefault()
-                          void runSearch()
-                        }
-                      }}
-                      placeholder="输入关键词，回车搜索..."
-                      className="w-full rounded border border-surface-border-strong bg-bg-deep px-2 py-1 text-xs text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
-                    />
+                <ReaderSearchPopover
+                  inputRef={searchInputRef}
+                  query={searchQuery}
+                  onQueryChange={setSearchQuery}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                      e.preventDefault()
+                      void runSearch()
+                    }
+                  }}
+                  placeholder="输入关键词，回车搜索..."
+                  widthClass="w-72"
+                  controls={
                     <button
                       onClick={() => void runSearch()}
                       disabled={searching}
@@ -517,7 +512,8 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
                     >
                       {searching ? '搜索中' : '搜索'}
                     </button>
-                  </div>
+                  }
+                >
                   {searchHits.length > 0 && (
                     <ul className="mt-2 max-h-40 space-y-0.5 overflow-auto">
                       {searchHits.map((h) => (
@@ -537,7 +533,7 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
                   {searchHits.length === 0 && searchQuery.trim() && !searching && (
                     <p className="mt-2 text-[10px] text-text-muted">未找到匹配</p>
                   )}
-                </div>
+                </ReaderSearchPopover>
               )}
             </div>
           )}

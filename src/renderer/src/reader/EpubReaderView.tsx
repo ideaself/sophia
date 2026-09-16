@@ -6,6 +6,8 @@ import { DictionaryPopup } from '../components/DictionaryPopup'
 import { applyNotesToHtml } from '../../../shared/reading-notes-utils'
 import { isEnglishWord, loadDictConfig } from '../../../shared/dict'
 import { useReadingNotes } from './useReadingNotes'
+import { loadSyncedProgress, readLocalProgress, syncReadingProgress, writeLocalProgress } from './reading-progress'
+import { ReaderSearchPopover } from './ReaderSearchPopover'
 
 interface EpubChapterData {
   id: string
@@ -27,8 +29,6 @@ interface EpubReaderViewProps {
   embedded?: boolean
 }
 
-const PROGRESS_KEY = (id: string) => `epub-progress-${id}`
-
 interface SavedProgress {
   chapterIndex: number
   fontSize: number
@@ -37,7 +37,7 @@ interface SavedProgress {
 
 function loadProgress(textbookId: string): SavedProgress | null {
   try {
-    const raw = localStorage.getItem(PROGRESS_KEY(textbookId))
+    const raw = readLocalProgress('epub', textbookId)
     if (!raw) return null
     const data = JSON.parse(raw) as Partial<SavedProgress>
     return {
@@ -47,14 +47,6 @@ function loadProgress(textbookId: string): SavedProgress | null {
     }
   } catch {
     return null
-  }
-}
-
-function saveProgress(textbookId: string, progress: SavedProgress): void {
-  try {
-    localStorage.setItem(PROGRESS_KEY(textbookId), JSON.stringify(progress))
-  } catch {
-    // quota / disabled storage - best-effort
   }
 }
 
@@ -130,16 +122,16 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
           return
         }
         setChapters(result.chapters)
-        // Try loading synced progress from textbook store (falls back to localStorage)
-        const tb = await window.sophia.data.getTextbook(textbookId)
-        if (tb?.progress?.lastPosition) {
+        // Try loading synced progress from the store (falls back to localStorage)
+        const synced = await loadSyncedProgress(textbookId)
+        if (synced?.lastPosition) {
           try {
-            const synced = JSON.parse(tb.progress.lastPosition) as Partial<SavedProgress>
-            if (typeof synced.chapterIndex === 'number' && synced.chapterIndex >= 0 && synced.chapterIndex < result.chapters.length) {
-              setChapterIndex(synced.chapterIndex)
+            const parsed = JSON.parse(synced.lastPosition) as Partial<SavedProgress>
+            if (typeof parsed.chapterIndex === 'number' && parsed.chapterIndex >= 0 && parsed.chapterIndex < result.chapters.length) {
+              setChapterIndex(parsed.chapterIndex)
             }
-            if (typeof synced.fontSize === 'number') {
-              setFontSize(synced.fontSize)
+            if (typeof parsed.fontSize === 'number') {
+              setFontSize(parsed.fontSize)
             }
           } catch {
             // lastPosition might contain non-JSON (e.g. LLM progress content) - ignore
@@ -176,9 +168,9 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
         fontSize,
         scrollY: scrollContainerRef.current?.scrollTop ?? 0
       }
-      saveProgress(textbookId, progress)
+      writeLocalProgress('epub', textbookId, JSON.stringify(progress))
       // Also persist to textbook store for WebDAV sync
-      void window.sophia.data.updateTextbookProgress(textbookId, {
+      syncReadingProgress(textbookId, {
         currentPage: chapterIndex + 1,
         totalPages: chapters.length,
         readingPercentage: chapters.length > 0 ? (chapterIndex + 1) / chapters.length : 0,
@@ -444,38 +436,37 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
                 🔍 搜索
               </button>
               {searchOpen && (
-                <div className="absolute right-0 top-full z-10 mt-1 w-80 rounded border border-surface-border bg-bg-surface p-3 shadow-lg">
-                  <div className="flex items-center gap-2">
-                    <input
-                      ref={searchInputRef}
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => { setSearchQuery(e.target.value); setSearchIndex(0) }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                          e.preventDefault()
-                          if (e.shiftKey) jumpSearchMatch(-1)
-                          else jumpSearchMatch(1)
-                        }
-                      }}
-                      placeholder="输入关键词，回车跳转..."
-                      className="w-full rounded border border-surface-border-strong bg-bg-deep px-2 py-1 text-xs text-text-primary placeholder-gray-500 focus:border-accent-border focus:outline-none"
-                    />
-                    <button
-                      onClick={() => jumpSearchMatch(-1)}
-                      className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
-                      title="上一个 (Shift+Enter)"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      onClick={() => jumpSearchMatch(1)}
-                      className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
-                      title="下一个 (Enter)"
-                    >
-                      ▼
-                    </button>
-                  </div>
+                <ReaderSearchPopover
+                  inputRef={searchInputRef}
+                  query={searchQuery}
+                  onQueryChange={(v) => { setSearchQuery(v); setSearchIndex(0) }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                      e.preventDefault()
+                      if (e.shiftKey) jumpSearchMatch(-1)
+                      else jumpSearchMatch(1)
+                    }
+                  }}
+                  placeholder="输入关键词，回车跳转..."
+                  controls={
+                    <>
+                      <button
+                        onClick={() => jumpSearchMatch(-1)}
+                        className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
+                        title="上一个 (Shift+Enter)"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        onClick={() => jumpSearchMatch(1)}
+                        className="rounded border border-surface-border-strong px-2 py-1 text-xs hover:bg-bg-elevated"
+                        title="下一个 (Enter)"
+                      >
+                        ▼
+                      </button>
+                    </>
+                  }
+                >
                   {searchQuery.trim() && (
                     <div className="mt-2">
                       <p className="text-[10px] text-text-muted">
@@ -501,7 +492,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
                       )}
                     </div>
                   )}
-                </div>
+                </ReaderSearchPopover>
               )}
             </div>
           )}
