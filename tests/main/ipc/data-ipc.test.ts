@@ -82,7 +82,6 @@ import { loadReferenceCompanions } from '../../../src/main/companions/reference-
 import {
   companionDir,
   learnerPath,
-  palMomentsPath,
   palMomentsPathForTextbook,
   relationPath,
   handoffMetaPath
@@ -159,7 +158,6 @@ function buildMinimalPdf(text: string): Buffer {
 }
 
 let dataRoot = ''
-let stores: ReturnType<typeof registerConversationIpc>
 
 async function invoke<T = unknown>(channel: string, input?: unknown): Promise<T> {
   const handler = mocks.handlers.get(channel)
@@ -184,7 +182,7 @@ beforeEach(async () => {
   llm.clients.length = 0
 
   const providerStore = new ProviderStore(dataRoot, fakeSafeStorage)
-  stores = registerConversationIpc(dataRoot, providerStore)
+  registerConversationIpc(dataRoot, providerStore)
 })
 
 afterEach(async () => {
@@ -706,9 +704,16 @@ describe('artifact pipeline end-to-end', () => {
       ])
     )
 
-    // Diary writeback (monthly file).
+    // Diary writeback (monthly file) is the pipeline's LAST step: waiting for
+    // it also guarantees the earlier writebacks below are in place.
+    await vi.waitFor(
+      async () => {
+        const months = await invoke<string[]>('diary:list-months', {})
+        expect(months).toHaveLength(1)
+      },
+      { timeout: 20_000, interval: 50 }
+    )
     const months = await invoke<string[]>('diary:list-months', {})
-    expect(months).toHaveLength(1)
     expect(await invoke<string>('diary:get-month', { month: months[0] })).toContain(
       '今天理解了熵'
     )

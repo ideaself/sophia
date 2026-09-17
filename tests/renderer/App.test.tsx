@@ -253,7 +253,9 @@ describe('App — due flashcards badge', () => {
     render(<App />)
 
     expect(await screen.findByText('99+')).toBeTruthy()
-    expect(localStorage.getItem('sophia.dueReminderDate')).toBe(new Date().toDateString())
+    await waitFor(() =>
+      expect(localStorage.getItem('sophia.dueReminderDate')).toBe(new Date().toDateString())
+    )
   })
 })
 

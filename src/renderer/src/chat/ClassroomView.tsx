@@ -406,6 +406,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     return () => window.removeEventListener('keydown', handler)
     // Both members are stable — rebinding on every match navigation (the
     // `search` object changes with matchIndex) is unnecessary.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search.setSearchOpen, search.searchInputRef])
 
   // Quick text templates: Alt+1..9 inserts a saved snippet at the caret
@@ -657,6 +658,9 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   // the first match.
   useEffect(() => {
     search.setMatchIndex(0)
+    // The setter is stable; depending on the whole `search` object would
+    // re-run this effect on every match navigation and snap the index back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search.setMatchIndex, searchQuery])
 
   // ---- Virtualized message rows ----

@@ -163,6 +163,41 @@ describe('preload event helpers', () => {
     expect(mocks.removeListener).toHaveBeenCalledWith('chat:stream:token', handler)
   })
 
+  it('routes every API method through ipcRenderer.invoke without throwing', async () => {
+    const api = bridge()
+    const failures: string[] = []
+    let called = 0
+
+    async function walk(node: unknown, path: string): Promise<void> {
+      if (typeof node !== 'object' || node === null) return
+      for (const [key, value] of Object.entries(node)) {
+        const next = `${path}.${key}`
+        if (typeof value === 'function') {
+          try {
+            const result = (value as (...args: unknown[]) => unknown).apply(node, [{}, {}])
+            if (result && typeof (result as Promise<unknown>).then === 'function') {
+              await Promise.resolve(result)
+            }
+            called++
+          } catch (err) {
+            failures.push(`${next}: ${err instanceof Error ? err.message : String(err)}`)
+          }
+        } else if (typeof value === 'object' && value !== null) {
+          await walk(value, next)
+        }
+      }
+    }
+
+    await walk(api, 'sophia')
+
+    expect(failures).toEqual([])
+    expect(called).toBeGreaterThan(60)
+    // Every call lands on a namespaced channel; none exposes raw internals.
+    const calls = mocks.invoke.mock.calls as unknown as Array<[string, ...unknown[]]>
+    expect(calls.every((c) => typeof c[0] === 'string' && c[0].includes(':'))).toBe(true)
+    expect(new Set(calls.map((c) => c[0])).size).toBeGreaterThan(45)
+  })
+
   it('forwards sync progress and dict-blocked events verbatim', () => {
     const api = bridge()
     const onProgress = vi.fn()

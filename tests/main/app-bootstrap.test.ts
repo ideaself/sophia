@@ -6,7 +6,7 @@
  * electron is fully faked: app/BrowserWindow/ipcMain/session/tray/shell.
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest'
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -235,6 +235,27 @@ describe('main bootstrap — window hardening', () => {
     expect(firstWindow.webContents.reload).toHaveBeenCalledTimes(1)
   })
 
+  it('focuses the window on ready-to-show and clears the save timer on close', () => {
+    firstWindow.handlers['ready-to-show']?.()
+    expect(firstWindow.focus).toHaveBeenCalled()
+
+    // 'closed' clears the pending debounced save (nothing to assert beyond
+    // the handler not throwing).
+    expect(() => firstWindow.handlers['closed']?.()).not.toThrow()
+  })
+
+  it('logs process-level failures without exiting', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      process.emit('uncaughtException', new Error('boom'))
+      process.emit('unhandledRejection', 'reason', Promise.resolve())
+      expect(error).toHaveBeenCalledWith('[main] uncaughtException:', expect.any(Error))
+      expect(error).toHaveBeenCalledWith('[main] unhandledRejection:', 'reason')
+    } finally {
+      error.mockRestore()
+    }
+  })
+
   it('hides instead of closing until the app quits', () => {
     const closeHandler = firstWindow.handlers['close'] as (e: RowButton) => void
     const preventDefault = vi.fn()
@@ -390,6 +411,13 @@ describe('main bootstrap — tray and lifecycle', () => {
     expect(firstWindow.show).toHaveBeenCalled()
     expect(firstWindow.focus).toHaveBeenCalled()
 
+    const showItem = menu.template.find((t) => t.label === '显示窗口')!
+    firstWindow.show.mockClear()
+    firstWindow.focus.mockClear()
+    showItem.click?.()
+    expect(firstWindow.show).toHaveBeenCalled()
+    expect(firstWindow.focus).toHaveBeenCalled()
+
     const quitItem = menu.template.find((t) => t.label === '退出')!
     quitItem.click?.()
     expect(tray.destroy).toHaveBeenCalled()
@@ -427,6 +455,23 @@ describe('main bootstrap — tray and lifecycle', () => {
     expect(fresh.options.width).toBe(1200)
     expect(fresh.options.height).toBe(800)
     expect(fresh.options.x).toBeUndefined()
+    expect(fresh.loadFile).toHaveBeenCalled()
+  })
+
+  it('loads the dev server URL when one is provided', async () => {
+    process.env['ELECTRON_RENDERER_URL'] = 'http://localhost:5173'
+    try {
+      const before = h.FakeBrowserWindow.instances.length
+      h.FakeBrowserWindow.instances.forEach((w) => (w.destroyed = true))
+      h.state.appEvents.get('activate')?.()
+
+      await vi.waitFor(() => expect(h.FakeBrowserWindow.instances.length).toBe(before + 1))
+      const fresh = h.FakeBrowserWindow.instances[before]
+      expect(fresh.loadURL).toHaveBeenCalledWith('http://localhost:5173')
+      expect(fresh.loadFile).not.toHaveBeenCalled()
+    } finally {
+      delete process.env['ELECTRON_RENDERER_URL']
+    }
   })
 
   it('debounces window-state writes on resize', async () => {
