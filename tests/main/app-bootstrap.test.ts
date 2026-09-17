@@ -552,3 +552,20 @@ describe('main bootstrap — environment branches', () => {
     expect(saved).toMatchObject({ x: 11, y: 22, width: 640, height: 480 })
   })
 })
+
+describe('main bootstrap — renderer failures', () => {
+  it('logs renderer load failures', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const handler = firstWindow.webContents.handlers['did-fail-load'] as (
+        e: unknown,
+        code: number,
+        description: string
+      ) => void
+      handler({}, -105, 'ERR_NAME_NOT_RESOLVED')
+      expect(error).toHaveBeenCalledWith('Renderer failed to load: -105 - ERR_NAME_NOT_RESOLVED')
+    } finally {
+      error.mockRestore()
+    }
+  })
+})

@@ -514,3 +514,41 @@ describe('HistoryView — action branches', () => {
     expect(api.updateArtifact).not.toHaveBeenCalled()
   })
 })
+
+describe('HistoryView — failure tolerances', () => {
+  it('renders the tree even when the counts aggregation fails', async () => {
+    api.statsOverview.mockRejectedValueOnce(new Error('stats down'))
+    render(<HistoryView />)
+
+    expect(await screen.findByText('📖 热力学入门')).toBeTruthy()
+    expect(screen.getAllByText(/朗道/).length).toBeGreaterThan(0)
+  })
+
+  it('clears the textbook selection when continuing a lesson without one', async () => {
+    api.listConversations.mockResolvedValue([
+      { ...CONVERSATIONS[1], endedAt: '2026-07-05T10:00:00' }
+    ])
+    useTextbookStore.setState({ selectedTextbook: { id: 'tb_stale' } as never })
+    render(<HistoryView />)
+    await screen.findAllByText(/祖冲之/)
+
+    fireEvent.click(screen.getAllByText(/祖冲之/)[0].closest('button')!)
+    fireEvent.click(screen.getByText('继续学习'))
+
+    await waitFor(() => expect(useTextbookStore.getState().selectedTextbook).toBeNull())
+  })
+
+  it('tolerates a failing diary month load without crashing', async () => {
+    api.diary.listMonths.mockResolvedValue(['2026-07'])
+    api.diary.getMonth.mockRejectedValueOnce(new Error('io error'))
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText('📝 学习日记'))
+    fireEvent.click(await screen.findByText('2026-07'))
+
+    // The month button stays; no content block appears and nothing throws.
+    await waitFor(() => expect(api.diary.getMonth).toHaveBeenCalledWith('2026-07'))
+    expect(screen.getByText('2026-07')).toBeTruthy()
+  })
+})

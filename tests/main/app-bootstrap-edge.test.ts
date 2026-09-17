@@ -165,3 +165,59 @@ describe('main bootstrap — edge environments', () => {
     cfg.getPathThrows = false
   })
 })
+
+describe('main bootstrap — provider callbacks', () => {
+  it('resolves the stream key and model from the active provider', async () => {
+    const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+
+    const envDir = await mkdtemp(join(tmpdir(), 'sophia-edge-'))
+    process.env['SOPHIA_TEST_DATA'] = envDir
+    try {
+      const configDir = join(envDir, 'LocalData', 'config')
+      await mkdir(configDir, { recursive: true })
+      await writeFile(
+        join(configDir, 'providers.json'),
+        JSON.stringify([
+          {
+            id: 'prov_1',
+            name: 'DeepSeek',
+            type: 'deepseek',
+            baseUrl: 'https://api.deepseek.com',
+            models: ['deepseek-v4-flash'],
+            selectedModel: 'deepseek-v4-flash',
+            isActive: true,
+            createdAt: '2026-09-16T10:00:00Z',
+            updatedAt: '2026-09-16T10:00:00Z'
+          }
+        ]),
+        'utf-8'
+      )
+      await writeFile(join(configDir, 'prov_1.key.enc'), Buffer.from('sk-live'))
+
+      cfg.windows.length = 0
+      cfg.readyResolvers.length = 0
+      cfg.chatStreamArgs = null
+      await import('../../src/main/index')
+      cfg.readyResolvers.forEach((resolve) => resolve())
+      await vi.waitFor(() => expect(cfg.chatStreamArgs).not.toBeNull())
+
+      const args = cfg.chatStreamArgs as unknown as [
+        unknown,
+        unknown,
+        () => Promise<string | null>,
+        () => Promise<{ model: string; baseUrl: string } | null>
+      ]
+      await expect(args[2]()).resolves.toBe('sk-live')
+      await expect(args[3]()).resolves.toEqual({
+        model: 'deepseek-v4-flash',
+        baseUrl: 'https://api.deepseek.com'
+      })
+    } finally {
+      delete process.env['SOPHIA_TEST_DATA']
+      const { rm: remove } = await import('node:fs/promises')
+      await remove(envDir, { recursive: true, force: true })
+    }
+  })
+})

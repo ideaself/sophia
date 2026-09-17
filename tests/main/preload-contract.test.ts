@@ -201,21 +201,65 @@ describe('preload event helpers', () => {
   it('forwards sync progress and dict-blocked events verbatim', () => {
     const api = bridge()
     const onProgress = vi.fn()
-    api.sync.onProgress(onProgress)
+    const unsubscribeProgress = api.sync.onProgress(onProgress)
     const progressHandler = mocks.on.mock.calls.at(-1)![1] as (
       event: unknown,
       payload: unknown
     ) => void
     progressHandler({}, { phase: 'push', percent: 42 })
     expect(onProgress).toHaveBeenCalledWith({ phase: 'push', percent: 42 })
+    unsubscribeProgress()
+    expect(mocks.removeListener).toHaveBeenCalledWith('sync:progress', progressHandler)
 
     const onBlocked = vi.fn()
-    api.app.onDictFrameBlocked(onBlocked)
+    const unsubscribeBlocked = api.app.onDictFrameBlocked(onBlocked)
     const blockedHandler = mocks.on.mock.calls.at(-1)![1] as (
       event: unknown,
       payload: unknown
     ) => void
     blockedHandler({}, { url: 'https://dict.example' })
     expect(onBlocked).toHaveBeenCalledWith({ url: 'https://dict.example' })
+    unsubscribeBlocked()
+    expect(mocks.removeListener).toHaveBeenCalledWith('dict:frame-blocked', blockedHandler)
+  })
+})
+
+describe('preload — remaining subscriptions', () => {
+  it('forwards thinking and end events with their unsubscribe', () => {
+    const api = bridge()
+    const onThinking = vi.fn()
+    const unsubscribeThinking = api.chat.onThinking('sess-1', onThinking)
+    const thinkingHandler = mocks.on.mock.calls.at(-1)![1] as (
+      event: unknown,
+      payload: unknown
+    ) => void
+    thinkingHandler({}, { sessionId: 'sess-1', text: '想一下' })
+    expect(onThinking).toHaveBeenCalledWith('想一下')
+    unsubscribeThinking()
+    expect(mocks.removeListener).toHaveBeenCalledWith('chat:stream:thinking', thinkingHandler)
+
+    const onEnd = vi.fn()
+    const unsubscribeEnd = api.chat.onEnd('sess-1', onEnd)
+    const endHandler = mocks.on.mock.calls.at(-1)![1] as (
+      event: unknown,
+      payload: unknown
+    ) => void
+    endHandler({}, { sessionId: 'sess-1', finishReason: 'stop' })
+    expect(onEnd).toHaveBeenCalledWith('stop')
+    unsubscribeEnd()
+    expect(mocks.removeListener).toHaveBeenCalledWith('chat:stream:end', endHandler)
+  })
+
+  it('forwards simple subscriptions and their unsubscribe', () => {
+    const api = bridge()
+    const onConcepts = vi.fn()
+    const unsubscribe = api.data.onConceptsUpdated(onConcepts)
+    const handler = mocks.on.mock.calls.at(-1)![1] as (event: unknown, payload: unknown) => void
+
+    handler({}, { conversationId: 'c1' })
+    expect(onConcepts).toHaveBeenCalledWith({ conversationId: 'c1' })
+
+    unsubscribe()
+    expect(mocks.removeListener).toHaveBeenCalledWith('concepts:updated', handler)
   })
 })

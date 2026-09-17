@@ -20,11 +20,19 @@ vi.mock('../../../src/renderer/src/lib/MarkdownRenderer', () => ({
 }))
 
 vi.mock('../../../src/renderer/src/reader/PdfReaderView', () => ({
-  PdfReaderView: () => <div data-testid="pdf-reader" />
+  PdfReaderView: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid="pdf-reader">
+      <button onClick={onClose}>关闭阅读器</button>
+    </div>
+  )
 }))
 
 vi.mock('../../../src/renderer/src/reader/EpubReaderView', () => ({
-  EpubReaderView: () => <div data-testid="epub-reader" />
+  EpubReaderView: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid="epub-reader">
+      <button onClick={onClose}>关闭阅读器</button>
+    </div>
+  )
 }))
 
 import { ClassroomView } from '../../../src/renderer/src/chat/ClassroomView'
@@ -779,5 +787,141 @@ describe('ClassroomView — remaining branches', () => {
         expect.objectContaining({ content: expect.stringContaining('继续追问') })
       )
     )
+  })
+})
+
+describe('ClassroomView — remaining handlers', () => {
+  it('debounces the draft save while typing', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.change(screen.getByPlaceholderText(/输入你的问题/), { target: { value: '慢慢写的草稿' } })
+
+    await waitFor(
+      () => {
+        const saved = JSON.parse(localStorage.getItem(CLASSROOM_TABS_KEY) ?? '{}') as {
+          tabs: Array<{ input: string }>
+        }
+        expect(saved.tabs[0]?.input).toBe('慢慢写的草稿')
+      },
+      { timeout: 2000 }
+    )
+  })
+
+  it('renders the streaming bubble while a reply is arriving', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.change(screen.getByPlaceholderText(/输入你的问题/), { target: { value: '新问题' } })
+    fireEvent.click(screen.getByText('发送'))
+    await waitFor(() => expect(chat.startStream).toHaveBeenCalled())
+
+    chat.emitToken('sess-1', '正在生成')
+    expect(await screen.findByText('正在生成')).toBeTruthy()
+
+    chat.emitEnd('sess-1', 'stop')
+    await screen.findByText('正在生成')
+  })
+
+  it('cancels title editing with Escape from the header input', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getByTitle('点击重命名'))
+    const input = await screen.findByDisplayValue('07-06 朗道')
+    fireEvent.keyDown(input, { key: 'Escape' })
+
+    await waitFor(() => expect(screen.queryByDisplayValue('07-06 朗道')).toBeNull())
+    expect(dataMocks.updateTitle).not.toHaveBeenCalled()
+  })
+
+  it('retries a failed turn through the error row', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.change(screen.getByPlaceholderText(/输入你的问题/), { target: { value: '会失败的问题' } })
+    fireEvent.click(screen.getByText('发送'))
+    await waitFor(() => expect(chat.startStream).toHaveBeenCalled())
+
+    // A partial (interrupted) reply flags the turn for retry.
+    chat.emitToken('sess-1', '半截回答')
+    chat.emitEnd('sess-1', 'error:timeout')
+    await screen.findByText('发送失败')
+
+    chat.startStream.mockClear()
+    fireEvent.click(screen.getByText('重试'))
+    await waitFor(() => expect(chat.startStream).toHaveBeenCalled())
+  })
+
+  it('cancels an in-flight stream from the composer', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.change(screen.getByPlaceholderText(/输入你的问题/), { target: { value: '打断它' } })
+    fireEvent.click(screen.getByText('发送'))
+    await waitFor(() => expect(chat.startStream).toHaveBeenCalled())
+
+    fireEvent.click(await screen.findByText('停止'))
+    await waitFor(() => expect(chat.cancelStream).toHaveBeenCalled())
+  })
+
+  it('inserts a saved template from the panel', async () => {
+    localStorage.setItem('sophia.textTemplates', JSON.stringify(['请给一个例子']))
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getByTitle('插入常用文本模板'))
+    fireEvent.click(await screen.findByText(/请给一个例子/))
+
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText(/输入你的问题/) as HTMLTextAreaElement).value).toBe(
+        '请给一个例子'
+      )
+    )
+  })
+
+  it('closes the embedded reader from the reader itself', async () => {
+    const chat = createFakeChat()
+    const { unmount } = render(
+      <Harness
+        chat={chat}
+        textbook={{ id: 'tb_1', title: '物理讲义', format: 'pdf', originalFile: 'x.pdf' }}
+      />
+    )
+    await screen.findByText('A1 一种积分运算')
+    fireEvent.click(screen.getByText(/教材阅读/))
+    fireEvent.click(await screen.findByText('关闭阅读器'))
+    await waitFor(() => expect(screen.queryByTestId('pdf-reader')).toBeNull())
+    unmount()
+
+    const epubChat = createFakeChat()
+    render(
+      <Harness
+        chat={epubChat}
+        textbook={{ id: 'tb_2', title: '化学讲义', format: 'epub', originalFile: 'y.epub' }}
+      />
+    )
+    await screen.findByText('A1 一种积分运算')
+    fireEvent.click(screen.getByText(/教材阅读/))
+    fireEvent.click(await screen.findByText('关闭阅读器'))
+    await waitFor(() => expect(screen.queryByTestId('epub-reader')).toBeNull())
+  })
+
+  it('closes the shortcut sheet from its button', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.keyDown(window, { key: '/', ctrlKey: true })
+    await screen.findByRole('dialog')
+    fireEvent.click(screen.getByText('关闭 (Esc)'))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })
