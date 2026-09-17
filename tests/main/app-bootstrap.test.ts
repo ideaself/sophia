@@ -546,9 +546,12 @@ describe('main bootstrap — environment branches', () => {
     win.emitAll('close', { preventDefault: vi.fn() })
     win.emitAll('closed')
 
-    const saved = JSON.parse(
-      await readFile(join(h.state.userData, 'window-state.json'), 'utf-8')
-    ) as { x: number; width: number }
+    // The save is fire-and-forget; poll until the file is fully written.
+    let saved: { x: number; y: number; width: number; height: number } | null = null
+    await vi.waitFor(async () => {
+      const raw = await readFile(join(h.state.userData, 'window-state.json'), 'utf-8')
+      saved = JSON.parse(raw) as { x: number; y: number; width: number; height: number }
+    })
     expect(saved).toMatchObject({ x: 11, y: 22, width: 640, height: 480 })
   })
 })

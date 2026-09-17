@@ -721,3 +721,36 @@ describe('injection hardening', () => {
     expect(learnerHeadingCount).toBe(1)
   })
 })
+
+describe('buildSystemPrompt — handoff timeline labels', () => {
+  const handoffCases: Array<{ days: number; expected: string }> = [
+    { days: 0, expected: '昨天' },
+    { days: 3, expected: '3 天前' },
+    { days: 20, expected: '2 周前' },
+    { days: 100, expected: '3 个月前' },
+    { days: 800, expected: '2 年前' }
+  ]
+
+  for (const { days, expected } of handoffCases) {
+    it('labels a handoff ' + days + ' days old as ' + expected, () => {
+      const savedAt = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+      const prompt = buildSystemPrompt({
+        companion: find('朗道'),
+        handoffMeta: { savedAt, endingPage: 42 }
+      })
+
+      expect(prompt).toContain('上次课堂结束于' + expected)
+      expect(prompt).toContain('第 42 页')
+    })
+  }
+
+  it('falls back to 上次 when the timestamp is invalid', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('朗道'),
+      handoffMeta: { savedAt: 'not-a-date', endingPage: null }
+    })
+
+    expect(prompt).toContain('上次课堂结束于上次')
+    expect(prompt).not.toContain('当时读到教材第')
+  })
+})

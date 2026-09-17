@@ -685,3 +685,35 @@ describe('StreamChatSession — edge cases', () => {
     expect((endEvent as { finishReason: string }).finishReason).toBe('stop')
   })
 })
+
+describe('StreamChatSession — pre-cancelled and double starts', () => {
+  it('emits an ABORTED error when cancel() precedes start()', async () => {
+    const adapter = mockStreamAdapter([tokenChunk('ignored')])
+    const { events, session, start } = createSession(adapter)
+
+    session.cancel()
+    await start()
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'error', code: 'ABORTED' })
+  })
+
+  it('ignores a second start() while the first is still running', async () => {
+    const adapter: DeepSeekStreamAdapter = {
+      streamChat: async function* () {
+        // Never yields — the session stays "running" until cancelled.
+        await new Promise(() => {})
+        yield undefined as never
+      }
+    } as DeepSeekStreamAdapter
+    const { session, start } = createSession(adapter)
+
+    const first = start()
+    // The second call returns immediately without restarting the adapter.
+    await expect(session.start()).resolves.toBeUndefined()
+    expect(session.isRunning).toBe(true)
+
+    session.cancel()
+    await first
+  }, 15_000)
+})

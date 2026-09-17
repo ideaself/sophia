@@ -45,6 +45,7 @@ import { ProviderStore } from '../../../src/main/storage/provider-store'
 import { ConversationStore } from '../../../src/main/storage/conversation-store'
 import { TextbookStore } from '../../../src/main/storage/textbook-store'
 import { ArtifactStore } from '../../../src/main/storage/artifact-store'
+import { ConceptStore } from '../../../src/main/learning-memory/concept-store'
 import { loadReferenceCompanions } from '../../../src/main/companions/reference-loader'
 import {
   companionDir,
@@ -415,6 +416,17 @@ describe('chat:get-prompt-messages — compression and coaching', () => {
   })
 
   it('falls back to the legacy handoff search when no meta file exists', async () => {
+    const older = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '更早的一课'
+    })
+    await conversations.endConversation(older.id)
+    await artifacts.create(older.id, 'handoff_tail', '更早的接力尾巴：停在温度。')
+
+    // A later timestamp so the newest ended class is unambiguous.
+    await new Promise((resolve) => setTimeout(resolve, 5))
     const previous = await conversations.create({
       companionId: 'comp_landau',
       companionVersion: 1,
@@ -436,6 +448,237 @@ describe('chat:get-prompt-messages — compression and coaching', () => {
       { conversationId: current.id, companionId: 'comp_landau', userMessage: '继续' }
     )
     expect(messages[0].content).toContain('旧版接力尾巴')
+    expect(messages[0].content).not.toContain('更早的接力尾巴')
+  })
+})
+
+describe('chat-prompt — concepts, failures and cache invalidation', () => {
+  it('injects this class’s concepts plus weak cross-session concepts', async () => {
+    const tb = await textbooks.create({
+      title: '热力学',
+      author: '',
+      description: '',
+      format: 'markdown',
+      content: '# 第一章 熵\n\n熵是状态函数。'
+    })
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: tb.id,
+      title: '概念课'
+    })
+
+    const concepts = new ConceptStore(dataRoot)
+    await concepts.applyEvidence({
+      conversationId: conv.id,
+      textbookId: tb.id,
+      messageIds: ['m1', 'm2'],
+      updates: [{ name: '熵', performance: 'correct' }]
+    })
+    await concepts.applyEvidence({
+      conversationId: 'conv_other',
+      textbookId: tb.id,
+      messageIds: ['m3', 'm4'],
+      updates: [{ name: '卡诺循环', performance: 'incorrect', misconception: '混淆效率与功率' }]
+    })
+    // A second miss pushes mastery below the weak-concept threshold.
+    await concepts.applyEvidence({
+      conversationId: 'conv_other',
+      textbookId: tb.id,
+      messageIds: ['m3b', 'm4b'],
+      updates: [{ name: '卡诺循环', performance: 'incorrect', misconception: '混淆效率与功率' }]
+    })
+    // Same name as the local concept → never duplicated.
+    await concepts.applyEvidence({
+      conversationId: 'conv_other_2',
+      textbookId: tb.id,
+      messageIds: ['m5', 'm6'],
+      updates: [{ name: '熵', performance: 'incorrect' }]
+    })
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      {
+        conversationId: conv.id,
+        companionId: 'comp_landau',
+        textbookId: tb.id,
+        userMessage: '继续'
+      }
+    )
+
+    const system = messages[0].content
+    expect(system).toContain('卡诺循环')
+    expect(system).toContain('混淆效率与功率')
+  })
+
+  it('keeps the class running when the concept store is unreadable', async () => {
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: 'tb_x',
+      title: '概念存储坏'
+    })
+    await mkdir(join(dataRoot, 'concepts.json'), { recursive: true })
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: conv.id, companionId: 'comp_landau', userMessage: '继续' }
+    )
+
+    expect(messages.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('uses the reading percentage fallback when page counts are missing', async () => {
+    const tb = await textbooks.create({
+      title: '按比例',
+      author: '',
+      description: '',
+      format: 'markdown',
+      content: '# 第一章 温度\n\n' + '温度是分子平均动能的度量。'.repeat(40)
+    })
+    await textbooks.updateProgress(tb.id, { readingPercentage: 0.66 })
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: tb.id,
+      title: '比例'
+    })
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      {
+        conversationId: conv.id,
+        companionId: 'comp_landau',
+        textbookId: tb.id,
+        userMessage: '继续'
+      }
+    )
+
+    expect(messages[0].content).toContain('按比例')
+  })
+
+  it('reports an unreadable companion index as not found', async () => {
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '坏索引'
+    })
+    await writeFile(join(companionDir(dataRoot), 'index.json'), '{broken', 'utf-8')
+
+    await expect(
+      invoke('chat:get-prompt-messages', {
+        conversationId: conv.id,
+        companionId: 'comp_landau',
+        userMessage: 'hi'
+      })
+    ).rejects.toThrow(/Companion not found/)
+  })
+
+  it('survives a failing history compression', async () => {
+    await withProvider()
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '压缩失败'
+    })
+    await conversations.addMessage(conv.id, 'user', '开场问题')
+    await conversations.addMessage(conv.id, 'assistant', '长回答'.repeat(10_000))
+
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if (messages[0].content.includes('压缩')) throw new Error('compress down')
+      return { content: '' }
+    })
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const messages = await invoke<Array<{ role: string; content: string }>>(
+        'chat:get-prompt-messages',
+        { conversationId: conv.id, companionId: 'comp_landau', userMessage: '继续' }
+      )
+      expect(messages.length).toBeGreaterThan(0)
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to compress conversation history'),
+        expect.anything()
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('survives a failing teaching-coach analysis', async () => {
+    await withProvider()
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '教练失败'
+    })
+    for (let i = 0; i < 3; i++) {
+      await conversations.addMessage(conv.id, 'user', `问题 ${i + 1}`)
+      await conversations.addMessage(conv.id, 'assistant', `回答 ${i + 1}`)
+    }
+
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if (messages[0].content.includes('教学教练')) throw new Error('coach down')
+      return { content: '' }
+    })
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await invoke('chat:get-prompt-messages', {
+        conversationId: conv.id,
+        companionId: 'comp_landau',
+        userMessage: '第四个问题'
+      })
+      await vi.waitFor(() =>
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('Analysis failed (non-fatal)'),
+          'coach down'
+        )
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('drops the cached summary when the conversation caches are cleared', async () => {
+    await withProvider()
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '缓存清理'
+    })
+    await conversations.addMessage(conv.id, 'user', '开场问题')
+    await conversations.addMessage(conv.id, 'assistant', '长回答'.repeat(10_000))
+
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if (messages[0].content.includes('压缩')) return { content: '【压缩摘要】摘要' }
+      return { content: '' }
+    })
+
+    const countCompressCalls = (): number =>
+      llm.chat.mock.calls.filter((c) =>
+        (c[0] as Array<{ content: string }>)[0].content.includes('压缩')
+      ).length
+
+    await invoke('chat:get-prompt-messages', {
+      conversationId: conv.id,
+      companionId: 'comp_landau',
+      userMessage: '继续'
+    })
+    expect(countCompressCalls()).toBe(1)
+
+    clearConversationPromptCaches(conv.id)
+
+    await invoke('chat:get-prompt-messages', {
+      conversationId: conv.id,
+      companionId: 'comp_landau',
+      userMessage: '再继续'
+    })
+    expect(countCompressCalls()).toBe(2)
   })
 })
 

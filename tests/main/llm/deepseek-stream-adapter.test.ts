@@ -19,7 +19,7 @@
  * - Response body is null (edge case)
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 import type { DeepSeekStreamChunk, DeepSeekStreamParams } from '../../../src/main/llm/stream-types'
 import type { DeepSeekChatMessage } from '../../../src/main/llm/types'
@@ -741,5 +741,122 @@ describe('DeepSeekStreamAdapter — endpoint validation', () => {
 
     // The insecure request must never hit the network
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('DeepSeekStreamAdapter — retries, flush and idle timeout', () => {
+  it('retries a transient network failure and then streams', async () => {
+    let attempts = 0
+    const encoder = new TextEncoder()
+    const fetchFn = (async () => {
+      attempts++
+      if (attempts === 1) throw new TypeError('fetch failed')
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              'data: ' + JSON.stringify({ choices: [{ delta: { content: 'hi' } }] }) + '\n\n'
+            )
+          )
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+          controller.close()
+        }
+      })
+      return new Response(stream, { status: 200 })
+    }) as unknown as typeof fetch
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
+
+    const chunks = await collectChunks(adapter, streamParams())
+
+    expect(attempts).toBe(2)
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0].choices?.[0]?.delta?.content).toBe('hi')
+  }, 15_000)
+
+  it('does not retry when the abort signal is already triggered', async () => {
+    let attempts = 0
+    const controller = new AbortController()
+    const fetchFn = (async () => {
+      attempts++
+      // Abort mid-fetch: the adapter must rethrow the original error.
+      controller.abort()
+      throw new TypeError('fetch failed')
+    }) as unknown as typeof fetch
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
+
+    await expect(
+      collectChunks(adapter, streamParams({ signal: controller.signal }))
+    ).rejects.toThrow('fetch failed')
+    expect(attempts).toBe(1)
+  })
+
+  it('gives up after the retry budget is exhausted', async () => {
+    let attempts = 0
+    const fetchFn = (async () => {
+      attempts++
+      throw new TypeError('always failing')
+    }) as unknown as typeof fetch
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
+
+    await expect(collectChunks(adapter, streamParams())).rejects.toThrow('always failing')
+    expect(attempts).toBe(3)
+  }, 15_000)
+
+  it('flushes a malformed trailing line at end-of-stream and warns once', async () => {
+    const warnings: unknown[][] = []
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args) => {
+      warnings.push(args as unknown[])
+    })
+    try {
+      // The final line has no trailing blank line, so it only surfaces in the
+      // end-of-stream flush — after the malformed line in the buffer.
+      const { fetchFn } = mockFetch(200, [
+        'data: {not-json}\n\n' + sseData({ choices: [{ delta: { content: 'last' } }] })
+      ])
+      const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
+
+      const chunks = await collectChunks(adapter, streamParams())
+
+      expect(chunks).toHaveLength(1)
+      expect(chunks[0].choices?.[0]?.delta?.content).toBe('last')
+      expect(warnings.some((w) => String(w[0]).includes('skipped 1 malformed SSE line(s)'))).toBe(
+        true
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('warns when only the final flush finds malformed lines', async () => {
+    const warnings: unknown[][] = []
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args) => {
+      warnings.push(args as unknown[])
+    })
+    try {
+      // No newline at all: the line only becomes "complete" in the flush.
+      const { fetchFn } = mockFetch(200, ['data: {broken}'])
+      const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
+
+      const chunks = await collectChunks(adapter, streamParams())
+
+      expect(chunks).toHaveLength(0)
+      expect(warnings.some((w) => String(w[0]).includes('skipped 1 malformed SSE line(s)'))).toBe(
+        true
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('reads without an idle timeout when the timeout is disabled', async () => {
+    const { fetchFn } = mockFetch(
+      200,
+      [sseLines([sseData({ choices: [{ delta: { content: 'x' } }] }), 'data: [DONE]'])]
+    )
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn, idleTimeoutMs: 0 })
+
+    const chunks = await collectChunks(adapter, streamParams())
+
+    expect(chunks).toHaveLength(1)
   })
 })

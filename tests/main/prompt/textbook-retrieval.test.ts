@@ -153,3 +153,83 @@ describe('extractRegionAroundProgress', () => {
     expect(extractRegionAroundProgress('', 0.5)).toBe('')
   })
 })
+
+describe('textbook-retrieval — fuzzy and degenerate inputs', () => {
+  it('matches on shared 4-gram fragments', () => {
+    // Neither heading contains the other, but they share a 4-gram.
+    expect(headingMatches('abcdefgh', 'xabcdey')).toBe(true)
+  })
+
+  it('rejects blank headings and unrelated ones without shared n-grams', () => {
+    expect(headingMatches('', '第一章')).toBe(false)
+    expect(headingMatches('第一章', '')).toBe(false)
+    expect(headingMatches('abcd', 'wxyz')).toBe(false)
+  })
+
+  it('ignores single-character CJK runs when extracting terms', () => {
+    expect(extractTerms(['字'])).toEqual([])
+  })
+
+  it('returns no passages for content without sections or without usable terms', () => {
+    expect(retrievePassages('', ['anything'])).toEqual([])
+    expect(retrievePassages('# 第一章\n\n正文内容', [''])).toEqual([])
+  })
+
+  it('skips duplicate section headings across passages', () => {
+    const content = [
+      '# 练习',
+      '',
+      '关于熵的练习一，熵是状态函数。',
+      '',
+      '# 练习',
+      '',
+      '关于熵的练习二，状态函数不会减少。',
+      '',
+      '# 熵与热力学',
+      '',
+      '熵增原理说明孤立系统的熵不减少。',
+      '',
+      '# 温度',
+      '',
+      '温度是分子平均动能的度量。',
+      '',
+      '# 压强',
+      '',
+      '压强来自分子对器壁的碰撞。',
+      '',
+      '# 体积',
+      '',
+      '体积随温度与压强变化。'
+    ].join('\n')
+
+    const passages = retrievePassages(content, ['熵 状态函数 熵增'], { maxPassages: 3 })
+
+    const headings = passages.map((p) => p.heading)
+    expect(new Set(headings).size).toBe(headings.length)
+    expect(headings.filter((h) => h === '练习')).toHaveLength(1)
+  })
+
+  it('truncates an oversized matching paragraph to the excerpt budget', () => {
+    const longParagraph = '状态函数 ' + 'x'.repeat(500)
+    const content = [
+      `# 第一章\n\n${longParagraph}`,
+      '',
+      '# 第二章',
+      '',
+      '温度是分子平均动能的度量。',
+      '',
+      '# 第三章',
+      '',
+      '压强来自分子对器壁的碰撞。',
+      '',
+      '# 第四章',
+      '',
+      '体积随温度与压强变化。'
+    ].join('\n')
+
+    const passages = retrievePassages(content, ['状态函数'], { maxExcerptChars: 30 })
+
+    expect(passages).toHaveLength(1)
+    expect(passages[0].excerpt.length).toBeLessThanOrEqual(30)
+  })
+})
