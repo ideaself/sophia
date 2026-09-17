@@ -7,7 +7,7 @@
  * pdf/screenshot flows can run.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
 
   class FakeWebContents {
     send = vi.fn()
+    isDestroyed = vi.fn(() => false)
     printToPDF = vi.fn(async () => Buffer.from('%PDF-1.4 fake'))
     capturePage = vi.fn(async () => ({ toPNG: () => Buffer.from('PNG-BYTES') }))
   }
@@ -58,6 +59,37 @@ vi.mock('electron', () => ({
   BrowserWindow: mocks.FakeBrowserWindow
 }))
 
+/** Scripted EPUB chapter payloads (the epub parser itself has its own tests). */
+const epub = vi.hoisted(() => ({ chapters: [] as unknown[], calls: [] as string[] }))
+
+vi.mock('../../../src/main/parsers', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/main/parsers')>()
+  return {
+    ...actual,
+    getEpubChapters: async (path: string) => {
+      epub.calls.push(path)
+      return epub.chapters
+    }
+  }
+})
+
+/** Lets a single atomic write fail on demand (writeback error paths). */
+const atomicFail = vi.hoisted(() => ({ paths: [] as string[] }))
+
+vi.mock('../../../src/main/storage/atomic-write', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../../src/main/storage/atomic-write')>()
+  return {
+    ...actual,
+    atomicWriteFile: async (path: string, data: string | Buffer, enc?: BufferEncoding) => {
+      if (atomicFail.paths.some((fragment) => path.includes(fragment))) {
+        throw new Error('disk full')
+      }
+      return actual.atomicWriteFile(path, data, enc)
+    }
+  }
+})
+
 const llm = vi.hoisted(() => ({
   chat: vi.fn((_messages: Array<{ role: string; content: string }>) =>
     Promise.resolve({ content: '通用内容' })
@@ -80,11 +112,15 @@ import { registerConversationIpc } from '../../../src/main/ipc/data'
 import { ProviderStore } from '../../../src/main/storage/provider-store'
 import { loadReferenceCompanions } from '../../../src/main/companions/reference-loader'
 import {
+  artifactsDir,
   companionDir,
+  configDir,
   learnerPath,
   palMomentsPathForTextbook,
   relationPath,
-  handoffMetaPath
+  handoffMetaPath,
+  textbookDir,
+  textbookPath
 } from '../../../src/main/storage/app-data'
 import type { SafeStorageAdapter } from '../../../src/main/security/secure-key-store'
 
@@ -676,6 +712,10 @@ describe('artifact pipeline end-to-end', () => {
     })
     expect(end).toMatchObject({ success: true, pending: true })
 
+    // A window is open, so the readiness notification reaches its webContents.
+    const win = new mocks.FakeBrowserWindow()
+    mocks.FakeBrowserWindow.windows = [win]
+
     // The background queue persists every regular artifact type. Generous
     // timeout: the mock is fast but 15 artifact writes + parallel test files
     // can be slow on a loaded machine.
@@ -734,6 +774,49 @@ describe('artifact pipeline end-to-end', () => {
       textbookId: tb.id
     })
     expect(refreshed.progress.lastPosition).toContain('理解程度')
+
+    // The renderer was told the artifacts are ready.
+    expect(win.webContents.send).toHaveBeenCalledWith(
+      'artifacts:generated',
+      expect.objectContaining({ conversationId: conv.id })
+    )
+  })
+
+  it('reports background pipeline crashes to the renderer without wedging the queue', async () => {
+    await withProvider()
+    llmByPrompt()
+    const win = new mocks.FakeBrowserWindow()
+    mocks.FakeBrowserWindow.windows = [win]
+
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '崩溃'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '熵是什么？' })
+    await invoke('message:send', { conversationId: conv.id, content: '状态函数。', role: 'assistant' })
+    // A file where the artifacts directory belongs → persisting throws.
+    await writeFile(artifactsDir(dataRoot, conv.id), 'not a directory')
+
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await invoke('conversation:end', { conversationId: conv.id })
+
+      await vi.waitFor(
+        () =>
+          expect(error).toHaveBeenCalledWith(
+            expect.stringContaining('Background artifact generation error'),
+            expect.anything()
+          ),
+        { timeout: 10_000, interval: 50 }
+      )
+      const payload = win.webContents.send.mock.calls.find(
+        (call) => call[0] === 'artifacts:generated'
+      )?.[1] as { artifacts: number; error?: string } | undefined
+      expect(payload?.artifacts).toBe(0)
+      expect(payload?.error).toBeTruthy()
+    } finally {
+      error.mockRestore()
+    }
   })
 
   it('queues artifact work without a provider and reports no failures', async () => {
@@ -863,5 +946,480 @@ describe('backup round-trip', () => {
     const restored = await invoke<{ success: boolean; error?: string }>('data:restore-backup', zipPath)
     expect(restored.success).toBe(true)
     expect(existsSync(join(dataRoot, 'config', 'providers.json'))).toBe(true)
+  })
+})
+
+describe('save-dialog guards', () => {
+  it('refuses pdf export, screenshot and backup exports without a picked path', async () => {
+    const never = join(dataRoot, '未选过.bin')
+    await expect(invoke('pdf:export', { html: '<p>x</p>', filePath: never })).rejects.toThrow(
+      /save dialog/
+    )
+    await expect(invoke('screenshot:capture', { filePath: never })).rejects.toThrow(/save dialog/)
+    await expect(invoke('data:export-backup', { filePath: never })).rejects.toThrow(/save dialog/)
+  })
+})
+
+describe('artifact failure paths', () => {
+  it('reports failed types and survives every writeback target being unwritable', async () => {
+    await withProvider()
+    llmByPrompt()
+    const base = llm.chat.getMockImplementation()!
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if ((messages[0]?.content ?? '').includes('时间线')) throw new Error('llm down')
+      return base(messages)
+    })
+
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      textbookId: 'tb_missing',
+      title: '写入失败'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '熵是什么？' })
+    await invoke('message:send', { conversationId: conv.id, content: '状态函数。', role: 'assistant' })
+
+    // Directories in place of every writeback target file.
+    const month = new Date().toISOString().slice(0, 7)
+    await mkdir(learnerPath(dataRoot), { recursive: true })
+    await mkdir(palMomentsPathForTextbook(dataRoot, 'tb_missing'), { recursive: true })
+    await mkdir(relationPath(dataRoot, 'comp_landau'), { recursive: true })
+    await mkdir(handoffMetaPath(dataRoot), { recursive: true })
+    await mkdir(join(dataRoot, 'diary', `${month}.md`), { recursive: true })
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const result = await invoke<{ success: boolean; failures: string[] }>(
+        'conversation:redo-artifacts',
+        {
+          conversationId: conv.id,
+          types: [
+            'learner_profile',
+            'pal_moments',
+            'relation',
+            'handoff_tail',
+            'diary',
+            'lesson_timeline',
+            'lesson_summary'
+          ]
+        }
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.failures).toEqual(['lesson_timeline'])
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Artifact generation failures'),
+        expect.anything()
+      )
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to write learner profile'),
+        expect.anything()
+      )
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to write pal moments'),
+        expect.anything()
+      )
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to write relation state'),
+        expect.anything()
+      )
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to write handoff meta'),
+        expect.anything()
+      )
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to append diary'),
+        expect.anything()
+      )
+    } finally {
+      warn.mockRestore()
+    }
+
+    // The successful types still landed.
+    const list = await invoke<Array<{ type: string }>>('artifact:list', {
+      conversationId: conv.id
+    })
+    expect(list.map((a) => a.type)).toEqual(
+      expect.arrayContaining(['lesson_summary', 'handoff_tail', 'diary'])
+    )
+  })
+})
+
+describe('concept updates after assistant messages', () => {
+  it('stores extracted concepts and broadcasts the update', async () => {
+    await withProvider()
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if ((messages[0]?.content ?? '').includes('学习分析助手')) {
+        return { content: JSON.stringify([{ name: '熵', performance: 'correct' }]) }
+      }
+      return { content: '通用内容' }
+    })
+    const win = new mocks.FakeBrowserWindow()
+    mocks.FakeBrowserWindow.windows = [win]
+
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '概念'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '熵是什么？' })
+    await invoke('message:send', { conversationId: conv.id, content: '熵是状态函数。', role: 'assistant' })
+
+    await vi.waitFor(
+      async () => {
+        const concepts = await invoke<
+          Array<{ name: string; attemptCount: number; correctCount: number; mastery: number }>
+        >('concepts:list', conv.id)
+        expect(concepts).toHaveLength(1)
+        expect(concepts[0]).toMatchObject({
+          name: '熵',
+          attemptCount: 1,
+          correctCount: 1
+        })
+        expect(concepts[0].mastery).toBeGreaterThan(0)
+      },
+      { timeout: 10_000, interval: 50 }
+    )
+    expect(win.webContents.send).toHaveBeenCalledWith('concepts:updated', {
+      conversationId: conv.id
+    })
+
+    // A second assistant message right after is debounced (no new extraction).
+    await invoke('message:send', { conversationId: conv.id, content: '补充一句。', role: 'assistant' })
+    await flush()
+    const extractCalls = llm.chat.mock.calls.filter((call) =>
+      String(call[0]?.[0]?.content ?? '').includes('学习分析助手')
+    )
+    expect(extractCalls).toHaveLength(1)
+  })
+
+  it('skips extraction without a Q&A pair or without a stored key', async () => {
+    await withProvider()
+
+    // Assistant-only conversation: no user message to pair with.
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '仅导师'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '先看这个。', role: 'assistant' })
+    await flush()
+    expect(llm.chat).not.toHaveBeenCalled()
+
+    // Active provider whose key file is gone (fresh conversation → no debounce).
+    const providerStore = new ProviderStore(dataRoot, fakeSafeStorage)
+    const active = await providerStore.getActive()
+    await rm(join(configDir(dataRoot), `${active!.id}.key.enc`), { force: true })
+    const keystoreless = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '无钥匙'
+    })
+    await invoke('message:send', { conversationId: keystoreless.id, content: '熵是什么？' })
+    await invoke('message:send', {
+      conversationId: keystoreless.id,
+      content: '状态函数。',
+      role: 'assistant'
+    })
+    await flush()
+    expect(llm.chat).not.toHaveBeenCalled()
+  })
+
+  it('keeps the class running when the concept store fails', async () => {
+    await withProvider()
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if ((messages[0]?.content ?? '').includes('学习分析助手')) {
+        return { content: JSON.stringify([{ name: '热力学', performance: 'partial' }]) }
+      }
+      return { content: '通用内容' }
+    })
+    // A directory where the concept store expects its JSON file.
+    await mkdir(join(dataRoot, 'concepts.json'), { recursive: true })
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const conv = await invoke<{ id: string }>('conversation:create', {
+        companionId: 'comp_landau',
+        title: '存储失败'
+      })
+      await invoke('message:send', { conversationId: conv.id, content: '问' })
+      await invoke('message:send', { conversationId: conv.id, content: '答', role: 'assistant' })
+
+      await vi.waitFor(
+        () =>
+          expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('概念更新失败'),
+            expect.anything()
+          ),
+        { timeout: 10_000, interval: 50 }
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
+describe('flashcard card cleanup', () => {
+  it('skips missing artifacts and untouched cards, and empties fully deleted ones', async () => {
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '卡片边界'
+    })
+    const artifact = await invoke<{ id: string }>('artifact:create', {
+      conversationId: conv.id,
+      type: 'flashcards',
+      content: '- 问题：a\n- 答案：b\n'
+    })
+
+    // Unknown artifact → nothing to do.
+    expect(
+      await invoke('flashcard:delete-cards', {
+        cards: [{ conversationId: conv.id, artifactId: 'art_missing', cardIndex: 0 }]
+      })
+    ).toEqual({ success: true, deleted: 0 })
+
+    // Out-of-range index → no card removed.
+    expect(
+      await invoke('flashcard:delete-cards', {
+        cards: [{ conversationId: conv.id, artifactId: artifact.id, cardIndex: 9 }]
+      })
+    ).toEqual({ success: true, deleted: 0 })
+
+    // Deleting the only card clears the artifact content instead of deleting it.
+    expect(
+      await invoke('flashcard:delete-cards', {
+        cards: [{ conversationId: conv.id, artifactId: artifact.id, cardIndex: 0 }]
+      })
+    ).toEqual({ success: true, deleted: 1 })
+    const cleared = await invoke<{ content: string } | null>('artifact:get', {
+      artifactId: artifact.id,
+      conversationId: conv.id
+    })
+    expect(cleared?.content ?? '').toBe('')
+  })
+})
+
+describe('stats: due flashcards', () => {
+  it('counts cards from ended conversations only', async () => {
+    const ended = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '已下课'
+    })
+    await invoke('artifact:create', {
+      conversationId: ended.id,
+      type: 'flashcards',
+      content: '- 问题：熵\n- 答案：状态函数\n'
+    })
+    await invoke('conversation:end', { conversationId: ended.id })
+
+    const running = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '进行中'
+    })
+    await invoke('artifact:create', {
+      conversationId: running.id,
+      type: 'flashcards',
+      content: '- 问题：焓\n- 答案：等压热效应\n'
+    })
+
+    const due = await invoke<{ due: number; total: number }>('stats:due-flashcards')
+    expect(due).toMatchObject({ due: 1, total: 1 })
+  })
+})
+
+describe('archive warnings', () => {
+  it('keeps deleting when moving items into the archive fails', async () => {
+    // A file where the archive directory should be → every archive attempt fails.
+    await writeFile(join(dataRoot, 'archive'), 'not a directory')
+
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '待删教材',
+      format: 'markdown',
+      content: '# 第一章\n正文'
+    })
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '待删课堂'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '消息' })
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await expect(invoke('textbook:delete', { textbookId: tb.id })).resolves.toBe(true)
+      await expect(invoke('conversation:delete', { conversationId: conv.id })).resolves.toBe(true)
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Archive textbook'),
+        expect.anything()
+      )
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Archive conversation'),
+        expect.anything()
+      )
+    } finally {
+      warn.mockRestore()
+    }
+
+    await expect(invoke('textbook:get', { textbookId: tb.id })).resolves.toBeNull()
+    await expect(invoke('conversation:get', { conversationId: conv.id })).resolves.toBeNull()
+  })
+})
+
+describe('epub handlers', () => {
+  async function withEpubTextbook(): Promise<{ id: string }> {
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '电子书',
+      format: 'markdown',
+      content: '# 第一章\n正文'
+    })
+    const jsonPath = textbookPath(dataRoot, tb.id)
+    const meta = JSON.parse(await readFile(jsonPath, 'utf-8')) as Record<string, unknown>
+    meta.originalFile = 'book.epub'
+    await writeFile(jsonPath, JSON.stringify(meta, null, 2))
+    await writeFile(join(textbookDir(dataRoot, tb.id), 'book.epub'), 'fake epub')
+    return tb
+  }
+
+  it('reads chapters from the original file', async () => {
+    epub.calls.length = 0
+    epub.chapters = {
+      chapters: [{ id: 'c1', title: 't', html: '<p>正文</p>' }],
+      title: 'T',
+      author: 'A'
+    } as never
+    const tb = await withEpubTextbook()
+
+    const result = await invoke<{ chapters: Array<{ id: string }>; title: string }>(
+      'epub:read-chapters',
+      { textbookId: tb.id }
+    )
+
+    expect(result.title).toBe('T')
+    expect(result.chapters).toHaveLength(1)
+    expect(epub.calls[0].endsWith('book.epub')).toBe(true)
+
+    await expect(invoke('epub:read-chapters', { textbookId: 'tb_missing' })).rejects.toThrow(
+      /no original file/
+    )
+  })
+
+  it('reparses content and rejects books without readable chapters', async () => {
+    const tb = await withEpubTextbook()
+
+    epub.chapters = { chapters: [], title: '', author: '' } as never
+    await expect(invoke('epub:reparse-content', { textbookId: tb.id })).rejects.toThrow(
+      /没有可读的章节/
+    )
+
+    epub.chapters = {
+      chapters: [{ id: 'c1', title: 't', html: '<p>重解析正文</p>' }],
+      title: 'T',
+      author: ''
+    } as never
+    const reparsed = await invoke<{ success: boolean; content: string }>(
+      'epub:reparse-content',
+      { textbookId: tb.id }
+    )
+    expect(reparsed.success).toBe(true)
+    expect(reparsed.content).toContain('重解析正文')
+
+    const search = await invoke<{ excerpt: string } | null>('textbook:search-excerpt', {
+      textbookId: tb.id,
+      chapter: 'T'
+    })
+    expect(search?.excerpt).toContain('重解析正文')
+
+    await expect(invoke('epub:reparse-content', { textbookId: 'tb_missing' })).rejects.toThrow(
+      /no original file/
+    )
+  })
+
+  it('returns null when the translation model answers with nothing', async () => {
+    await withProvider()
+    llm.chat.mockResolvedValue({ content: '' })
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '空翻译',
+      format: 'markdown',
+      content: '# 第一章 熵\n\n熵是状态函数。'
+    })
+
+    await expect(
+      invoke('textbook:translate-excerpt', { textbookId: tb.id, chapter: '第一章' })
+    ).resolves.toBeNull()
+  })
+})
+
+describe('writeback failure logging', () => {
+  it('warns when the textbook progress writeback fails', async () => {
+    await withProvider()
+    llmByPrompt()
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '进度写回',
+      format: 'markdown',
+      content: '# 第一章 熵\n\n熵是状态函数。'
+    })
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      textbookId: tb.id,
+      title: '进度失败'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '熵是什么？' })
+    await invoke('message:send', { conversationId: conv.id, content: '状态函数。', role: 'assistant' })
+
+    atomicFail.paths.push(textbookPath(dataRoot, tb.id).replace(/\\/g, '/').split('/').pop()!)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const result = await invoke<{ success: boolean }>('conversation:redo-artifacts', {
+        conversationId: conv.id,
+        types: ['progress', 'lesson_summary']
+      })
+      expect(result.success).toBe(true)
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to write textbook progress'),
+        expect.anything()
+      )
+    } finally {
+      warn.mockRestore()
+      atomicFail.paths.length = 0
+    }
+  })
+})
+
+describe('reading notes in the diary prompt', () => {
+  it('formats chapter, position and reader notes into the prompt', async () => {
+    await withProvider()
+    llmByPrompt()
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '带批注',
+      format: 'markdown',
+      content: '# 第一章 熵\n\n熵是状态函数。'
+    })
+    await invoke('reading-note:create', {
+      textbookId: tb.id,
+      content: '熵增原理很重要',
+      position: '3',
+      chapter: '第一章',
+      readerNote: '复习重点'
+    })
+    await invoke('reading-note:create', {
+      textbookId: tb.id,
+      content: '第二处批注',
+      position: '12'
+    })
+    await invoke('reading-note:create', { textbookId: tb.id, content: '没有定位', position: '' })
+
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      textbookId: tb.id,
+      title: '批注课堂'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '熵是什么？' })
+    await invoke('message:send', { conversationId: conv.id, content: '状态函数。', role: 'assistant' })
+    await invoke('conversation:redo-artifacts', { conversationId: conv.id, types: ['diary'] })
+
+    const diaryCall = llm.chat.mock.calls.find((call) =>
+      String(call[0]?.[0]?.content ?? '').includes('课后日记')
+    )
+    const prompt = String(diaryCall?.[0]?.[1]?.content ?? '')
+    expect(prompt).toContain('第一章')
+    expect(prompt).toContain('位置 12')
+    expect(prompt).toContain('- 教材：没有定位')
+    expect(prompt).toContain('（笔记：复习重点）')
+    expect(prompt).toContain('熵增原理很重要')
   })
 })

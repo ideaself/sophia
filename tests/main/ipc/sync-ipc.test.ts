@@ -171,6 +171,16 @@ describe('sync IPC — transfers', () => {
     expect(result.timestamp).toBeUndefined()
   })
 
+  it('omits the timestamp for failed pushes and adds it for successful pulls', async () => {
+    mocks.managers[0].push.mockResolvedValueOnce({ success: false, error: 'disk full' })
+    await expect(invoke('sync:push', CONFIG)).resolves.toEqual({ success: false, error: 'disk full' })
+
+    mocks.managers[0].pull.mockResolvedValueOnce({ success: true, pulled: 3 })
+    const pulled = await invoke('sync:pull', CONFIG)
+    expect(pulled.success).toBe(true)
+    expect(Date.parse(pulled.timestamp)).not.toBeNaN()
+  })
+
   it('skips progress sends for destroyed renderers', async () => {
     const handler = mocks.handlers.get('sync:push')!
     const dead = { sender: { isDestroyed: () => true, send: vi.fn() } }
