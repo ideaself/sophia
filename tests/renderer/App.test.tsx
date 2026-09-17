@@ -10,22 +10,70 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react'
 
 vi.mock('../../src/renderer/src/chat/ClassroomView', () => ({
-  ClassroomView: ({ companion }: { companion: { name: string } | null }) => (
-    <div data-testid="classroom-view">{companion?.name ?? '无伙伴'}</div>
+  ClassroomView: ({
+    companion,
+    textbook,
+    onConversationLoaded
+  }: {
+    companion: { name: string } | null
+    textbook: { title: string } | null
+    onConversationLoaded?: () => void
+  }) => (
+    <div data-testid="classroom-view">
+      <span>{companion?.name ?? '无伙伴'}</span>
+      <span>{textbook?.title ?? '无教材'}</span>
+      <button onClick={onConversationLoaded}>已加载会话</button>
+    </div>
   )
 }))
 vi.mock('../../src/renderer/src/components/SettingsView', () => ({
   SettingsView: () => <div data-testid="settings-view" />
 }))
 vi.mock('../../src/renderer/src/components/CompanionsManageView', () => ({
-  CompanionsManageView: () => <div data-testid="companions-view" />
+  CompanionsManageView: ({ onStartConversation }: { onStartConversation: (c: unknown) => void }) => (
+    <div data-testid="companions-view">
+      <button
+        onClick={() =>
+          onStartConversation({
+            id: 'comp_landau',
+            name: '朗道',
+            identity: '理论物理学家',
+            personalityKeywords: []
+          })
+        }
+      >
+        开始对话
+      </button>
+    </div>
+  )
 }))
 vi.mock('../../src/renderer/src/components/StatsView', () => ({
   StatsView: () => <div data-testid="stats-view" />
 }))
 vi.mock('../../src/renderer/src/components/NewClassroomModal', () => ({
-  NewClassroomModal: ({ initialCompanion }: { initialCompanion: { name: string } | null }) => (
-    <div data-testid="new-classroom-modal">{initialCompanion?.name ?? '未预选'}</div>
+  NewClassroomModal: ({
+    initialCompanion,
+    onConfirm,
+    onCancel
+  }: {
+    initialCompanion: { name: string } | null
+    onConfirm: (c: unknown, t: unknown) => void
+    onCancel: () => void
+  }) => (
+    <div data-testid="new-classroom-modal">
+      <span>{initialCompanion?.name ?? '未预选'}</span>
+      <button onClick={onCancel}>取消</button>
+      <button
+        onClick={() =>
+          onConfirm(
+            { id: 'comp_new', name: '新伙伴', identity: 'x', personalityKeywords: [] },
+            { id: 'tb9', title: '教材九', format: 'pdf', originalFile: 'f.pdf' }
+          )
+        }
+      >
+        确认
+      </button>
+    </div>
   )
 }))
 vi.mock('../../src/renderer/src/components/CompanionEditModal', () => ({
@@ -48,7 +96,11 @@ vi.mock('../../src/renderer/src/components/HistoryView', () => ({
   HistoryView: () => <div data-testid="history-view" />
 }))
 vi.mock('../../src/renderer/src/components/FlashcardReviewView', () => ({
-  FlashcardReviewView: () => <div data-testid="flashcards-view" />
+  FlashcardReviewView: ({ onClearScope }: { onClearScope: () => void }) => (
+    <div data-testid="flashcards-view">
+      <button onClick={onClearScope}>清除范围</button>
+    </div>
+  )
 }))
 vi.mock('../../src/renderer/src/components/ReviewView', () => ({
   ReviewView: () => <div data-testid="review-view" />
@@ -63,7 +115,7 @@ import { useConversationStore } from '../../src/renderer/src/stores/useConversat
 const data = {
   lock: { has: vi.fn(async () => false), verify: vi.fn(async () => true) },
   listConversations: vi.fn(async () => [] as unknown[]),
-  getTextbook: vi.fn(async () => null),
+  getTextbook: vi.fn(async (): Promise<unknown> => null),
   dueFlashcardCount: vi.fn(async () => ({ due: 0, total: 0 }))
 }
 const companionsApi = { get: vi.fn(async () => null as unknown) }
@@ -292,6 +344,14 @@ describe('App — bootstrapping', () => {
         title: '新',
         endedAt: null,
         updatedAt: '2026-09-16T10:00:00Z',
+        textbookId: 'tb_thermo'
+      },
+      {
+        id: 'c_mid',
+        companionId: 'comp_landau',
+        title: '中间',
+        endedAt: null,
+        updatedAt: '2026-09-10T10:00:00Z',
         textbookId: null
       }
     ])
@@ -301,11 +361,21 @@ describe('App — bootstrapping', () => {
       identity: '理论物理学家',
       personalityKeywords: []
     })
+    data.getTextbook.mockResolvedValue({
+      id: 'tb_thermo',
+      title: '热力学教材',
+      format: 'pdf',
+      originalFile: 'th.pdf'
+    })
 
     render(<App />)
 
     await waitFor(() => expect(useAppStore.getState().loadConversationId).toBe('c_new'))
     expect(await screen.findByText('朗道')).toBeTruthy()
+    expect(data.getTextbook).toHaveBeenCalledWith('tb_thermo')
+    await waitFor(() =>
+      expect(useTextbookStore.getState().selectedTextbook?.title).toBe('热力学教材')
+    )
   })
 
   it('shows the offline banner when the connection drops', async () => {
@@ -379,5 +449,240 @@ describe('App — modals', () => {
     render(<App />)
 
     expect(await screen.findByTestId('companion-edit-modal')).toBeTruthy()
+  })
+
+  it('confirms a new classroom and clears the modal state', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    render(<App />)
+    await screen.findByTestId('classroom-view')
+
+    fireEvent.click(menu('课堂'))
+    fireEvent.click(await screen.findByText('+ 新建课堂'))
+    fireEvent.click(await screen.findByText('确认'))
+
+    await waitFor(() => expect(screen.queryByTestId('new-classroom-modal')).toBeNull())
+    expect(useAppStore.getState().view).toBe('classroom')
+    expect(useAppStore.getState().newClassroomOpen).toBe(false)
+    expect(useAppStore.getState().newClassroomPreselect).toBeNull()
+    expect(useCompanionStore.getState().selectedCompanion?.name).toBe('新伙伴')
+    expect(useTextbookStore.getState().selectedTextbook?.title).toBe('教材九')
+    expect(await screen.findByText('教材九')).toBeTruthy()
+  })
+
+  it('cancels the new-classroom modal', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    render(<App />)
+    await screen.findByTestId('classroom-view')
+
+    fireEvent.click(menu('课堂'))
+    fireEvent.click(await screen.findByText('+ 新建课堂'))
+    fireEvent.click(await screen.findByText('取消'))
+
+    await waitFor(() => expect(screen.queryByTestId('new-classroom-modal')).toBeNull())
+    expect(useAppStore.getState().newClassroomOpen).toBe(false)
+  })
+})
+
+describe('App — classroom shell wiring', () => {
+  it('revalidates the selected companion and toggles the dropdown', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    companionsApi.get.mockResolvedValue({
+      id: 'comp_landau',
+      name: '朗道',
+      identity: '理论物理学家',
+      personalityKeywords: []
+    })
+    useCompanionStore.setState({
+      selectedCompanion: { id: 'comp_landau', name: '旧名', identity: 'x', personalityKeywords: [] } as never
+    })
+    render(<App />)
+    await screen.findByTestId('classroom-view')
+
+    // Selected companion → first click opens the dropdown (and refreshes data).
+    fireEvent.click(menu('课堂'))
+    expect(await screen.findByText('没有进行中的课堂')).toBeTruthy()
+    await waitFor(() =>
+      expect(useCompanionStore.getState().selectedCompanion?.name).toBe('朗道')
+    )
+
+    // Second click closes it again.
+    fireEvent.click(menu('课堂'))
+    await waitFor(() => expect(screen.queryByText('选择课堂')).toBeNull())
+
+    // Escape closes it too.
+    fireEvent.click(menu('课堂'))
+    await screen.findByText('选择课堂')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByText('选择课堂')).toBeNull())
+  })
+
+  it('clears a stale selected companion that no longer exists', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    companionsApi.get.mockRejectedValue(new Error('companion gone'))
+    useCompanionStore.setState({
+      selectedCompanion: { id: 'comp_gone', name: '旧伙伴', identity: 'x', personalityKeywords: [] } as never
+    })
+    render(<App />)
+    await screen.findByTestId('classroom-view')
+
+    fireEvent.click(menu('课堂'))
+
+    await waitFor(() => expect(useCompanionStore.getState().selectedCompanion).toBeNull())
+    expect(await screen.findByText('无伙伴')).toBeTruthy()
+  })
+
+  it('resumes a conversation with its textbook attached', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    useConversationStore.setState({
+      activeConversations: [
+        {
+          id: 'c_tb',
+          title: '热力学',
+          companionId: 'comp_landau',
+          companionName: '朗道',
+          textbookId: 'tb_thermo',
+          textbookTitle: '热力学教材',
+          updatedAt: '2026-09-16T10:00:00Z',
+          endedAt: null
+        } as never
+      ],
+      fetchActive: vi.fn(async () => {})
+    })
+    companionsApi.get.mockResolvedValue({
+      id: 'comp_landau',
+      name: '朗道',
+      identity: '理论物理学家',
+      personalityKeywords: []
+    })
+    data.getTextbook.mockResolvedValue({
+      id: 'tb_thermo',
+      title: '热力学教材',
+      format: 'pdf',
+      originalFile: 'th.pdf'
+    })
+
+    render(<App />)
+    await screen.findByTestId('classroom-view')
+
+    fireEvent.click(menu('课堂'))
+    fireEvent.click(await screen.findByText('朗道'))
+
+    await waitFor(() => expect(data.getTextbook).toHaveBeenCalledWith('tb_thermo'))
+    await waitFor(() =>
+      expect(useTextbookStore.getState().selectedTextbook?.title).toBe('热力学教材')
+    )
+    expect(await screen.findByText('热力学教材')).toBeTruthy()
+  })
+
+  it('starts a classroom for a companion picked in the manage view', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    render(<App />)
+    await screen.findByTestId('classroom-view')
+
+    fireEvent.click(menu('角色'))
+    fireEvent.click(await screen.findByText('开始对话'))
+
+    const modal = await screen.findByTestId('new-classroom-modal')
+    expect(modal.textContent).toContain('朗道')
+  })
+
+  it('clears the flashcards scope and renders the review view', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    useAppStore.setState({ view: 'flashcards', flashcardScope: { conversationId: 'c1', title: '复盘' } })
+    render(<App />)
+
+    fireEvent.click(await screen.findByText('清除范围'))
+    await waitFor(() => expect(useAppStore.getState().flashcardScope).toBeNull())
+
+    act(() => {
+      useAppStore.setState({ view: 'review' })
+    })
+    expect(await screen.findByTestId('review-view')).toBeTruthy()
+  })
+
+  it('clears the pending conversation load when the classroom reports it loaded', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    useAppStore.setState({ loadConversationId: 'c1' })
+    render(<App />)
+    await screen.findByTestId('classroom-view')
+
+    fireEvent.click(await screen.findByText('已加载会话'))
+    await waitFor(() => expect(useAppStore.getState().loadConversationId).toBeNull())
+  })
+})
+
+describe('App — bootstrapping edge cases', () => {
+  it('unlocks when the lock check fails', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    data.lock.has.mockRejectedValueOnce(new Error('ipc down'))
+    render(<App />)
+    expect(await screen.findByTestId('classroom-view')).toBeTruthy()
+  })
+
+  it('skips the daily reminder when one was already sent today', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    localStorage.setItem('sophia.dueReminderDate', new Date().toDateString())
+    const NotificationSpy = vi.fn()
+    Object.defineProperty(window, 'Notification', { configurable: true, value: NotificationSpy })
+    data.dueFlashcardCount.mockResolvedValue({ due: 3, total: 3 })
+
+    render(<App />)
+    expect(await screen.findByText('3')).toBeTruthy()
+    expect(NotificationSpy).not.toHaveBeenCalled()
+  })
+
+  it('re-applies the auto theme when the system scheme changes', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    localStorage.setItem('sophia-theme', 'auto')
+    let dark = false
+    const listeners: Array<() => void> = []
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (query: string) => ({
+        matches: dark,
+        media: query,
+        onchange: null,
+        addEventListener: (_event: string, cb: () => void) => listeners.push(cb),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn()
+      })
+    })
+
+    render(<App />)
+    await screen.findByTestId('classroom-view')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+
+    dark = true
+    act(() => {
+      listeners.forEach((cb) => cb())
+    })
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+  })
+
+  it('ignores lock submits without a PIN and while busy', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    data.lock.has.mockResolvedValue(true)
+    render(<App />)
+    await screen.findByText('学习档案已锁定')
+
+    const form = document.querySelector('form')!
+    fireEvent.submit(form)
+    expect(data.lock.verify).not.toHaveBeenCalled()
+
+    let release: (ok: boolean) => void = () => {}
+    data.lock.verify.mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => (release = resolve))
+    )
+    fireEvent.change(screen.getByPlaceholderText('解锁密码'), { target: { value: '1234' } })
+    fireEvent.click(screen.getByText('解锁'))
+    expect(await screen.findByText('验证中...')).toBeTruthy()
+
+    fireEvent.submit(form)
+    expect(data.lock.verify).toHaveBeenCalledTimes(1)
+
+    act(() => release(true))
+    expect(await screen.findByTestId('classroom-view')).toBeTruthy()
   })
 })
