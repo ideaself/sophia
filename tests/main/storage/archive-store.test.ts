@@ -9,6 +9,7 @@ import {
   listArchive,
   restoreArchiveItem,
   purgeArchiveItem,
+  isSafeOriginalPath,
   archiveDir
 } from '../../../src/main/storage/archive-store'
 
@@ -192,5 +193,61 @@ describe('archive-store', () => {
     const entries = await listArchive(dataRoot)
     expect(entries).toHaveLength(1)
     expect(entries[0].id).toBe('ok_entry')
+  })
+
+  it('drops manifests that are not plain objects and entries with junk values', async () => {
+    await mkdir(archiveDir(dataRoot), { recursive: true })
+    const manifestPath = join(archiveDir(dataRoot), 'manifest.json')
+
+    // An array (or scalar) instead of an object → empty manifest.
+    await writeFile(manifestPath, '[]', 'utf-8')
+    await expect(listArchive(dataRoot)).resolves.toEqual([])
+
+    // Entries rejected field by field.
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        array_value: [{ kind: 'textbook', label: 'x', movedAt: 't' }],
+        no_kind: { label: 'x', movedAt: 't' },
+        no_label: { kind: 'textbook', movedAt: 't' },
+        no_moved_at: { kind: 'textbook', label: 'x' }
+      }),
+      'utf-8'
+    )
+
+    await expect(listArchive(dataRoot)).resolves.toEqual([])
+  })
+
+  it('refuses unsafe ids and companion entries on restore', async () => {
+    await mkdir(archiveDir(dataRoot), { recursive: true })
+
+    await expect(restoreArchiveItem(dataRoot, '../escape')).resolves.toBe(false)
+
+    // A companion entry can only be restored through the archive IPC.
+    const entryId = 'companion_entry'
+    await writeFile(
+      join(archiveDir(dataRoot), 'manifest.json'),
+      JSON.stringify({
+        [entryId]: {
+          id: entryId,
+          kind: 'companion',
+          label: '朗道',
+          movedAt: new Date().toISOString(),
+          originalPath: ''
+        }
+      }),
+      'utf-8'
+    )
+    await expect(restoreArchiveItem(dataRoot, entryId)).resolves.toBe(false)
+  })
+
+  it('rejects unsafe candidate paths and empty ids', async () => {
+    // Empty / non-string / absolute / escaping paths are all refused.
+    expect(isSafeOriginalPath(dataRoot, '')).toBe(false)
+    expect(isSafeOriginalPath(dataRoot, 42)).toBe(false)
+    expect(isSafeOriginalPath(dataRoot, '../outside')).toBe(false)
+    expect(isSafeOriginalPath(dataRoot, 'profiles/ok.json')).toBe(true)
+
+    await expect(purgeArchiveItem(dataRoot, '')).resolves.toBe(false)
   })
 })

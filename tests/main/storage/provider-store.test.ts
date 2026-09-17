@@ -66,6 +66,24 @@ describe('ProviderStore — providers', () => {
     await expect(store.update('prov_missing', { name: 'x' })).resolves.toBeNull()
   })
 
+  it('updates the connection fields', async () => {
+    const created = await store.create({ name: 'A', type: 'deepseek', baseUrl: 'u', apiKey: 'k' })
+
+    const updated = await store.update(created.id, {
+      type: 'custom',
+      baseUrl: 'https://new.example.com/v1',
+      models: ['m1', 'm2'],
+      selectedModel: 'm2'
+    })
+
+    expect(updated).toMatchObject({
+      type: 'custom',
+      baseUrl: 'https://new.example.com/v1',
+      models: ['m1', 'm2'],
+      selectedModel: 'm2'
+    })
+  })
+
   it('deletes providers and their key material', async () => {
     const created = await store.create({ name: 'A', type: 'deepseek', baseUrl: 'u', apiKey: 'k' })
     await expect(store.hasApiKey(created.id)).resolves.toBe(true)
