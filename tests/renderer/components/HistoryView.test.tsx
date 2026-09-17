@@ -387,3 +387,130 @@ describe('HistoryView — exports', () => {
     expect(html).toContain('<p>## 总结')
   })
 })
+
+// --------------- remaining branches ---------------
+
+describe('HistoryView — action branches', () => {
+  it('collapses and expands textbook groups', async () => {
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    // Collapse the group: the caret flips and stays collapsed.
+    fireEvent.click(screen.getByText('📖 热力学入门'))
+    await waitFor(() => expect(screen.getAllByText('▸').length).toBeGreaterThan(0))
+
+    // Expand again.
+    fireEvent.click(screen.getByText('📖 热力学入门'))
+    await waitFor(() => expect(screen.queryByText('▸')).toBeNull())
+  })
+
+  it('opens the new-classroom flow from the tree header', async () => {
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText('+ 新建课堂'))
+    expect(useAppStore.getState().newClassroomOpen).toBe(true)
+  })
+
+  it('continues an ended lesson and resumes an active one', async () => {
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    // 07-06 朗道 is ended → 继续学习 (same companion + textbook flow).
+    fireEvent.click(screen.getByText('继续学习'))
+    await waitFor(() => expect(useAppStore.getState().newClassroomOpen).toBe(true))
+    expect(useAppStore.getState().view).toBe('classroom')
+
+    // 07-05 祖冲之 is still open → 继续上课 loads it back into the classroom.
+    fireEvent.click(screen.getByText(/祖冲之/).closest('button')!)
+    await screen.findByText('另一个课堂的问题')
+    fireEvent.click(screen.getByText('继续上课'))
+    await waitFor(() => expect(useAppStore.getState().loadConversationId).toBe('c2'))
+    expect(useAppStore.getState().view).toBe('classroom')
+  })
+
+  it('opens the review page for the selected lesson', async () => {
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByTitle('课程复盘：总结 / 自测 / 闪卡 / 日记一页回顾'))
+
+    await waitFor(() => expect(useAppStore.getState().view).toBe('review'))
+    expect(useAppStore.getState().reviewScope).toMatchObject({ conversationId: 'c1' })
+  })
+
+  it('falls back to empty messages/artifacts when the detail loads fail', async () => {
+    // First lesson loads fine; switching to the second fails.
+    api.listMessages
+      .mockImplementationOnce(api.listMessages.getMockImplementation()!)
+      .mockRejectedValueOnce(new Error('db closed'))
+    api.listArtifacts
+      .mockImplementationOnce(api.listArtifacts.getMockImplementation()!)
+      .mockRejectedValueOnce(new Error('db closed'))
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText(/祖冲之/).closest('button')!)
+
+    await waitFor(() => expect(screen.queryByText('第一问：什么是熵？')).toBeNull())
+    expect(screen.queryByText('📋 课堂总结')).toBeNull()
+  })
+
+  it('clears a failed search without leaving stale results', async () => {
+    api.searchMessages.mockRejectedValueOnce(new Error('search down'))
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.change(screen.getByPlaceholderText('搜索对话内容...'), { target: { value: '熵是' } })
+
+    await screen.findByText('结果 0/0', undefined, { timeout: 2000 })
+    expect(screen.getByText('无匹配结果')).toBeTruthy()
+  })
+
+  it('collapses an open diary month', async () => {
+    api.diary.listMonths.mockResolvedValue(['2026-07'])
+    api.diary.getMonth.mockResolvedValue('七月日记内容')
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText('📝 学习日记'))
+    fireEvent.click(await screen.findByText('2026-07'))
+    await screen.findByText(/七月日记内容/)
+
+    fireEvent.click(screen.getByText('2026-07'))
+    await waitFor(() => expect(screen.queryByText(/七月日记内容/)).toBeNull())
+  })
+
+  it('opens the self-test modal from the lesson summary artifact', async () => {
+    api.listArtifacts.mockResolvedValue([
+      {
+        id: 'a1',
+        conversationId: 'c1',
+        type: 'lesson_summary',
+        content: '**自测 1：什么是熵？**\n- 提示 1：与无序度有关\n- 答案：状态度量',
+        createdAt: '2026-07-06T10:00:00Z'
+      }
+    ])
+    render(<HistoryView />)
+    await screen.findByText('📋 课堂总结')
+
+    fireEvent.click(screen.getByText('🎯 自测'))
+    // The modal is identified by its close control.
+    await screen.findByTitle('关闭 (Esc)')
+
+    fireEvent.click(screen.getByTitle('关闭 (Esc)'))
+    await waitFor(() => expect(screen.queryByTitle('关闭 (Esc)')).toBeNull())
+  })
+
+  it('cancels artifact editing without persisting', async () => {
+    render(<HistoryView />)
+    await screen.findByText('📋 课堂总结')
+
+    fireEvent.click(screen.getByTitle('编辑产物内容'))
+    await screen.findByText('保存')
+    fireEvent.click(screen.getByText('取消'))
+
+    await waitFor(() => expect(screen.queryByText('保存')).toBeNull())
+    expect(api.updateArtifact).not.toHaveBeenCalled()
+  })
+})
