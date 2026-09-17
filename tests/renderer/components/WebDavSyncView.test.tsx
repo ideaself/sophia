@@ -304,3 +304,101 @@ describe('WebDavSyncView — remote trash', () => {
     expect(screen.getByText(/推送时被移除的远端文件/)).toBeTruthy()
   })
 })
+
+describe('WebDavSyncView — remaining error branches', () => {
+  it('does not fetch the trash without a server URL', async () => {
+    setupMocks()
+    render(<WebDavSyncView />)
+    await screen.findByText('WebDAV Sync')
+
+    // No URL configured → the trash lookup is skipped entirely.
+    expect(sync.listTrash).not.toHaveBeenCalled()
+  })
+
+  it('reports a thrown push failure', async () => {
+    setupMocks({ push: vi.fn(async () => { throw new Error('disk full') }) })
+    render(<WebDavSyncView />)
+    await screen.findByText('WebDAV Sync')
+
+    fillUrl()
+    fireEvent.click(screen.getByText('Push (Upload)'))
+
+    await waitFor(() => expect(sync.push).toHaveBeenCalled())
+    expect(await screen.findByText(/disk full/)).toBeTruthy()
+  })
+
+  it('reports pull planning failures and thrown pull failures', async () => {
+    setupMocks({
+      planPull: vi.fn(async () => {
+        throw new Error('plan exploded')
+      })
+    })
+    render(<WebDavSyncView />)
+    await screen.findByText('WebDAV Sync')
+
+    fillUrl()
+    fireEvent.click(screen.getByText('Pull (Download)'))
+    expect(await screen.findByText(/plan exploded/)).toBeTruthy()
+
+    setupMocks({
+      planPull: vi.fn(async () => ({ deleteCount: 0, deleteSample: [] })),
+      pull: vi.fn(async () => {
+        throw new Error('pull exploded')
+      })
+    })
+    fireEvent.click(screen.getByText('Pull (Download)'))
+    expect(await screen.findByText(/pull exploded/)).toBeTruthy()
+  })
+
+  it('aborts the pull when the local-deletion warning is declined', async () => {
+    setupMocks({
+      planPull: vi.fn(async () => ({ deleteCount: 3, deleteSample: ['a.md', 'b.md'] }))
+    })
+    render(<WebDavSyncView />)
+    await screen.findByText('WebDAV Sync')
+    fillUrl()
+
+    // Decline the deletion warning.
+    confirmDialog.mockResolvedValue(false)
+    fireEvent.click(screen.getByText('Pull (Download)'))
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalled())
+    expect(sync.pull).not.toHaveBeenCalled()
+  })
+
+  it('ignores emptying an empty trash and reports clear failures', async () => {
+    setupMocks()
+    const view = render(<WebDavSyncView />)
+    await screen.findByText('WebDAV Sync')
+    fillUrl()
+
+    // Nothing to empty → the button is not even rendered.
+    fireEvent.click(screen.getByText('刷新'))
+    await waitFor(() => expect(sync.listTrash).toHaveBeenCalled())
+    expect(await screen.findByText('回收站为空。')).toBeTruthy()
+    expect(screen.queryByText('清空回收站')).toBeNull()
+    expect(sync.emptyTrash).not.toHaveBeenCalled()
+    view.unmount()
+
+    setupMocks({
+      hasWebdavPassword: vi.fn(async () => true),
+      listTrash: vi.fn(async () => ({
+        batches: [{ name: 'b1', fileCount: 2, totalSize: 100 }],
+        fileCount: 2,
+        totalSize: 100
+      })),
+      emptyTrash: vi.fn(async () => {
+        throw new Error('trash exploded')
+      })
+    })
+    render(<WebDavSyncView />)
+    await screen.findByText('WebDAV Sync')
+    fillUrl()
+
+    fireEvent.click(screen.getByText('刷新'))
+    await waitFor(() => expect(sync.listTrash).toHaveBeenCalled())
+    fireEvent.click(await screen.findByText('清空回收站'))
+    await waitFor(() => expect(sync.emptyTrash).toHaveBeenCalled())
+    expect(await screen.findByText(/trash exploded/)).toBeTruthy()
+  })
+})
