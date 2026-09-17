@@ -58,14 +58,104 @@ vi.mock('electron', () => ({
   BrowserWindow: mocks.FakeBrowserWindow
 }))
 
+const llm = vi.hoisted(() => ({
+  chat: vi.fn((_messages: Array<{ role: string; content: string }>) =>
+    Promise.resolve({ content: '通用内容' })
+  ),
+  clients: [] as Array<{ apiKey: string; model: string }>
+}))
+
+vi.mock('../../../src/main/llm/deepseek-client', () => ({
+  DeepSeekClient: class {
+    constructor(apiKey: string, _adapter: unknown, model: string) {
+      llm.clients.push({ apiKey, model })
+    }
+    chat(messages: Array<{ role: string; content: string }>): Promise<{ content: string }> {
+      return llm.chat(messages) as Promise<{ content: string }>
+    }
+  }
+}))
+
 import { registerConversationIpc } from '../../../src/main/ipc/data'
 import { ProviderStore } from '../../../src/main/storage/provider-store'
+import { loadReferenceCompanions } from '../../../src/main/companions/reference-loader'
+import {
+  companionDir,
+  learnerPath,
+  palMomentsPath,
+  palMomentsPathForTextbook,
+  relationPath,
+  handoffMetaPath
+} from '../../../src/main/storage/app-data'
 import type { SafeStorageAdapter } from '../../../src/main/security/secure-key-store'
+
+const projectsRoot = join(__dirname, '..', '..', '..')
+const candidatesDir = join(projectsRoot, 'reference', '角色设定', 'candidates')
 
 const fakeSafeStorage: SafeStorageAdapter = {
   isEncryptionAvailable: () => true,
   encryptString: (plaintext: string) => Buffer.from(plaintext, 'utf8'),
   decryptString: (encrypted: Buffer) => encrypted.toString('utf8')
+}
+
+/** Configure an active provider with a stored API key for the pipeline. */
+async function withProvider(model = 'deepseek-v4-flash'): Promise<void> {
+  const providerStore = new ProviderStore(dataRoot, fakeSafeStorage)
+  const provider = await providerStore.create({
+    name: 'DeepSeek',
+    type: 'deepseek',
+    baseUrl: 'https://api.example.com',
+    apiKey: 'sk-live',
+    models: [model],
+    selectedModel: model
+  })
+  await providerStore.update(provider.id, { isActive: true })
+}
+
+/** Answer each artifact prompt with plausible, distinctly-marked content. */
+function llmByPrompt(): void {
+  llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+    const sys = messages[0]?.content ?? ''
+    if (sys.includes('课堂总结')) return { content: '## 总结\n本节讲了熵。' }
+    if (sys.includes('记忆卡片')) return { content: '- 问题：熵是什么？\n- 答案：状态函数' }
+    if (sys.includes('课后日记')) return { content: '今天理解了熵的含义。' }
+    if (sys.includes('学习进展')) return { content: '理解程度：理解\n建议下一步：练习' }
+    if (sys.includes('接力尾巴')) return { content: '上次讲到熵，下次从第二定律继续。' }
+    if (sys.includes('告别语')) return { content: '今天很有收获，下次见。' }
+    if (sys.includes('画像评估')) return { content: '认知水平：理解' }
+    if (sys.includes('教学互动备忘')) return { content: '## 2026-09-16 | 朗道\n讨论了熵。' }
+    if (sys.includes('关系状态')) return { content: '关系更亲近了一点。' }
+    if (sys.includes('知识蛋')) return { content: '## 学习者讲解了什么\n熵。' }
+    if (sys.includes('Mermaid')) return { content: '```mermaid\ngraph TD\nA-->B\n```' }
+    if (sys.includes('双人回顾对话')) return { content: '【导师】熵是什么？\n【学习者】状态函数。' }
+    if (sys.includes('时间线')) return { content: '- 00:00 引入：熵' }
+    if (sys.includes('FAQ')) return { content: '- 问：熵是什么？\n- 答：状态函数' }
+    if (sys.includes('翻译')) return { content: '熵是状态函数。' }
+    return { content: '通用内容' }
+  })
+}
+
+/** Minimal single-page PDF with a valid xref table (dependency-free). */
+function buildMinimalPdf(text: string): Buffer {
+  const stream = `BT /F1 24 Tf 100 700 Td (${text}) Tj ET`
+  const objects = [
+    '<</Type/Catalog/Pages 2 0 R>>',
+    '<</Type/Pages/Kids[3 0 R]/Count 1>>',
+    '<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>',
+    '<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>',
+    `<</Length ${stream.length}>>\nstream\n${stream}\nendstream`
+  ]
+  let pdf = '%PDF-1.4\n'
+  const offsets: number[] = []
+  for (let i = 0; i < objects.length; i++) {
+    offsets.push(Buffer.byteLength(pdf, 'latin1'))
+    pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`
+  }
+  const xrefOffset = Buffer.byteLength(pdf, 'latin1')
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  for (const off of offsets) pdf += `${String(off).padStart(10, '0')} 00000 n \n`
+  pdf += `trailer\n<</Size ${objects.length + 1}/Root 1 0 R>>\nstartxref\n${xrefOffset}\n%%EOF\n`
+  return Buffer.from(pdf, 'latin1')
 }
 
 let dataRoot = ''
@@ -90,6 +180,8 @@ beforeEach(async () => {
   mocks.showMessageBox.mockReset()
   mocks.FakeBrowserWindow.windows = []
   mocks.FakeBrowserWindow.focused = null
+  llm.chat.mockReset().mockResolvedValue({ content: '通用内容' })
+  llm.clients.length = 0
 
   const providerStore = new ProviderStore(dataRoot, fakeSafeStorage)
   stores = registerConversationIpc(dataRoot, providerStore)
@@ -554,5 +646,215 @@ describe('reading note + artifact handlers', () => {
     await invoke('diary:list-months', {})
     const month = await invoke<string | null>('diary:get-month', { month: '2026-09' })
     expect(month === null || month === '').toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------
+// LLM-dependent flows (DeepSeekClient is mocked)
+// ---------------------------------------------------------------
+
+describe('artifact pipeline end-to-end', () => {
+  it('generates artifacts and writes back learner/diary/handoff state', async () => {
+    await withProvider()
+    await loadReferenceCompanions({ candidatesDir, companionDir: companionDir(dataRoot) })
+    llmByPrompt()
+
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '讲义',
+      format: 'markdown',
+      content: '# 第一章 熵\n\n熵是状态函数。'
+    })
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      textbookId: tb.id,
+      title: '下课流水线'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '熵是什么？' })
+    await invoke('message:send', { conversationId: conv.id, content: '状态函数。', role: 'assistant' })
+
+    const end = await invoke<{ success: boolean; pending: boolean }>('conversation:end', {
+      conversationId: conv.id,
+      classMode: 'feynman'
+    })
+    expect(end).toMatchObject({ success: true, pending: true })
+
+    // The background queue persists every regular artifact type.
+    await vi.waitFor(
+      async () => {
+        const list = await invoke<Array<{ type: string }>>('artifact:list', {
+          conversationId: conv.id
+        })
+        expect(list.length).toBeGreaterThanOrEqual(10)
+      },
+      { timeout: 5000 }
+    )
+    const types = (
+      await invoke<Array<{ type: string }>>('artifact:list', { conversationId: conv.id })
+    ).map((a) => a.type)
+    expect(types).toEqual(
+      expect.arrayContaining([
+        'lesson_summary',
+        'flashcards',
+        'diary',
+        'progress',
+        'handoff_tail',
+        'feynman_note',
+        'lesson_timeline',
+        'lesson_faq'
+      ])
+    )
+
+    // Diary writeback (monthly file).
+    const months = await invoke<string[]>('diary:list-months', {})
+    expect(months).toHaveLength(1)
+    expect(await invoke<string>('diary:get-month', { month: months[0] })).toContain(
+      '今天理解了熵'
+    )
+
+    // Learner profile / pal moments / relation / handoff meta writebacks.
+    expect(await readFile(learnerPath(dataRoot), 'utf-8')).toContain('认知水平')
+    expect(await readFile(palMomentsPathForTextbook(dataRoot, tb.id), 'utf-8')).toContain('讨论了熵')
+    expect(await readFile(relationPath(dataRoot, 'comp_landau'), 'utf-8')).toContain('更亲近')
+    const meta = JSON.parse(await readFile(handoffMetaPath(dataRoot), 'utf-8')) as Record<
+      string,
+      { prevConvId: string; companionName: string }
+    >
+    expect(meta.comp_landau.prevConvId).toBe(conv.id)
+    expect(meta.comp_landau.companionName).toBe('朗道')
+
+    // Progress artifact content is written back to the textbook.
+    const refreshed = await invoke<{ progress: { lastPosition: string } }>('textbook:get', {
+      textbookId: tb.id
+    })
+    expect(refreshed.progress.lastPosition).toContain('理解程度')
+  })
+
+  it('queues artifact work without a provider and reports no failures', async () => {
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '无钥匙'
+    })
+    const end = await invoke<{ success: boolean }>('conversation:end', { conversationId: conv.id })
+    expect(end.success).toBe(true)
+
+    await flush()
+    expect(llm.chat).not.toHaveBeenCalled()
+    await expect(
+      invoke<unknown[]>('artifact:list', { conversationId: conv.id })
+    ).resolves.toEqual([])
+  })
+
+  it('re-runs only the requested artifact types on redo', async () => {
+    await withProvider()
+    llmByPrompt()
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '补做'
+    })
+
+    const result = await invoke<{ success: boolean; artifacts: number; types: string[] }>(
+      'conversation:redo-artifacts',
+      { conversationId: conv.id, types: ['lesson_summary', 'lesson_faq'] }
+    )
+
+    expect(result).toMatchObject({ success: true, artifacts: 2 })
+    const list = await invoke<Array<{ type: string }>>('artifact:list', { conversationId: conv.id })
+    expect(list.map((a) => a.type).sort()).toEqual(['lesson_faq', 'lesson_summary'])
+  })
+})
+
+describe('provider-powered textbook and AI helpers', () => {
+  it('translates a citation excerpt through the active provider', async () => {
+    await withProvider()
+    llmByPrompt()
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '讲义',
+      format: 'markdown',
+      content: '# 第二章 熵\n\n熵是状态函数，永不减少。'
+    })
+
+    const result = await invoke<{ chapter: string; excerpt: string; translation: string }>(
+      'textbook:translate-excerpt',
+      { textbookId: tb.id, chapter: '熵' }
+    )
+
+    expect(result.translation).toBe('熵是状态函数。')
+    expect(result.excerpt).toContain('永不减少')
+    expect(llm.clients[0]?.apiKey).toBe('sk-live')
+  })
+
+  it('returns null for missing excerpts or unknown chapters', async () => {
+    await withProvider()
+    await expect(
+      invoke('textbook:translate-excerpt', { textbookId: 'tb_missing', chapter: '熵' })
+    ).resolves.toBeNull()
+
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '讲义',
+      format: 'markdown',
+      content: '# 一\n\n内容'
+    })
+    await expect(
+      invoke('textbook:translate-excerpt', { textbookId: tb.id, chapter: '不存在' })
+    ).resolves.toBeNull()
+  })
+})
+
+describe('textbook import through the file dialog', () => {
+  it('parses a picked PDF into textbook content', async () => {
+    const pdfPath = join(dataRoot, 'thermo.pdf')
+    await writeFile(pdfPath, buildMinimalPdf('Hello Thermaldynamics'))
+    mocks.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [pdfPath] })
+    await invoke('dialog:openFile', {})
+
+    const tb = await invoke<{ id: string; content: string; originalFile: string }>(
+      'textbook:create',
+      { title: '热力学', format: 'pdf', sourceFile: pdfPath }
+    )
+
+    expect(tb.content).toContain('Hello Thermaldynamics')
+    expect(tb.originalFile).toBeTruthy()
+    // The original is readable for the reader views.
+    const original = await invoke<{ data: Uint8Array; fileName: string } | null>(
+      'textbook:read-original',
+      { textbookId: tb.id }
+    )
+    expect(original?.fileName).toContain('thermo')
+  })
+
+  it('rejects a corrupt PDF with a parse error', async () => {
+    const badPath = join(dataRoot, 'broken.pdf')
+    await writeFile(badPath, 'this is not a pdf')
+    mocks.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [badPath] })
+    await invoke('dialog:openFile', {})
+
+    await expect(
+      invoke('textbook:create', { title: '坏文件', format: 'pdf', sourceFile: badPath })
+    ).rejects.toThrow(/Failed to parse PDF file/)
+  })
+})
+
+describe('backup round-trip', () => {
+  it('exports a complete data root and restores it', async () => {
+    await withProvider()
+    await loadReferenceCompanions({ candidatesDir, companionDir: companionDir(dataRoot) })
+
+    const zipPath = join(await mkdtemp(join(tmpdir(), 'sophia-backup-')), 'backup.zip')
+    mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: zipPath })
+    await invoke('dialog:saveFile', {})
+
+    const exported = await invoke<{ fileCount: number }>('data:export-backup', {
+      filePath: zipPath
+    })
+    expect(exported.fileCount).toBeGreaterThan(0)
+
+    // Drop the config directory, then restore it from the backup.
+    await rm(join(dataRoot, 'config'), { recursive: true, force: true })
+    mocks.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [zipPath] })
+    await invoke('dialog:openFile', {})
+
+    const restored = await invoke<{ success: boolean; error?: string }>('data:restore-backup', zipPath)
+    expect(restored.success).toBe(true)
+    expect(existsSync(join(dataRoot, 'config', 'providers.json'))).toBe(true)
   })
 })
