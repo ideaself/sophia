@@ -7,7 +7,7 @@
  * panel (messages + artifacts) for the selected lesson.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 
 vi.mock('../../../src/renderer/src/lib/MarkdownRenderer', () => ({
   default: ({ children }: { children?: React.ReactNode }) => (
@@ -88,6 +88,7 @@ const api = {
   getTextbook: vi.fn(),
   deleteConversation: vi.fn(),
   updateArtifact: vi.fn(),
+  redoArtifacts: vi.fn(),
   diary: {
     listMonths: vi.fn(),
     getMonth: vi.fn()
@@ -115,6 +116,7 @@ beforeEach(() => {
   api.getTextbook.mockResolvedValue({ id: 'tb_1', title: '热力学入门', format: 'pdf', originalFile: 'thermo.pdf' })
   api.deleteConversation.mockResolvedValue(true)
   api.updateArtifact.mockResolvedValue(null)
+  api.redoArtifacts.mockResolvedValue({ success: true, artifacts: 0, failures: [] })
   api.diary.listMonths.mockResolvedValue([])
   api.diary.getMonth.mockResolvedValue('')
 
@@ -176,5 +178,147 @@ describe('HistoryView', () => {
 
     expect(await screen.findByText('另一个课堂的问题')).toBeTruthy()
     expect(screen.queryByText('第一问：什么是熵？')).toBeNull()
+  })
+})
+
+// --------------- search, artifacts, diary ---------------
+
+describe('HistoryView — search', () => {
+  it('searches messages, jumps to a result and clears the query', async () => {
+    api.searchMessages.mockResolvedValue({
+      results: [
+        {
+          conversationId: 'c2',
+          message: { id: 'n1', role: 'user', content: '另一个课堂的问题', createdAt: '2026-07-05T09:01:00' }
+        }
+      ],
+      total: 1
+    })
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.change(screen.getByPlaceholderText('搜索对话内容...'), { target: { value: '另一个' } })
+
+    await screen.findByText('结果 1/1', undefined, { timeout: 2000 })
+    fireEvent.click(screen.getByTitle('另一个课堂的问题'))
+
+    // The jump selects the conversation and shows its message in the detail.
+    await screen.findByText('另一个课堂的问题')
+  })
+
+  it('shows the empty state for fruitless searches and can clear them', async () => {
+    api.searchMessages.mockResolvedValue({ results: [], total: 0 })
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.change(screen.getByPlaceholderText('搜索对话内容...'), { target: { value: 'zzz' } })
+
+    await screen.findByText('结果 0/0', undefined, { timeout: 2000 })
+    expect(screen.getByText('无匹配结果')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('清除'))
+    await waitFor(() => expect(screen.queryByText('结果 0/0')).toBeNull())
+    expect(screen.getAllByText(/朗道/).length).toBeGreaterThan(0)
+  })
+
+  it('loads more results when the total exceeds the page', async () => {
+    api.searchMessages
+      .mockResolvedValueOnce({
+        results: [
+          { conversationId: 'c1', message: { id: 'm1', role: 'user', content: 'A 结果', createdAt: '2026-07-06T09:00:00' } }
+        ],
+        total: 3
+      })
+      .mockResolvedValueOnce({
+        results: [
+          { conversationId: 'c1', message: { id: 'm2', role: 'assistant', content: 'B 结果', createdAt: '2026-07-06T09:01:00' } }
+        ],
+        total: 3
+      })
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.change(screen.getByPlaceholderText('搜索对话内容...'), { target: { value: '结果' } })
+    await screen.findByText('结果 1/3', undefined, { timeout: 2000 })
+
+    fireEvent.click(screen.getByText('加载更多'))
+    await screen.findByText('结果 2/3', undefined, { timeout: 2000 })
+    expect(api.searchMessages).toHaveBeenLastCalledWith('结果', 50, 1)
+  })
+})
+
+describe('HistoryView — delete and artifacts', () => {
+  it('deletes the selected conversation after confirmation', async () => {
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText('🗑 删除'))
+
+    await waitFor(() => expect(api.deleteConversation).toHaveBeenCalledWith('c1'))
+    await screen.findByText(/课程已删除/)
+    // The deleted conversation disappears and the selection moves on.
+    await waitFor(() => expect(screen.queryByText('第一问：什么是熵？')).toBeNull())
+    expect(screen.getAllByText(/祖冲之/).length).toBeGreaterThan(0)
+  })
+
+  it('edits an artifact and persists the new content', async () => {
+    render(<HistoryView />)
+    await screen.findByText('📋 课堂总结')
+
+    fireEvent.click(screen.getByTitle('编辑产物内容'))
+    await screen.findByText('保存')
+    const editor = document.querySelector('textarea') as HTMLTextAreaElement
+    expect(editor.value).toContain('本节讲了熵')
+
+    fireEvent.change(editor, { target: { value: '## 总结\n本节讲了热力学第二定律。' } })
+    fireEvent.click(screen.getByText('保存'))
+
+    await waitFor(() =>
+      expect(api.updateArtifact).toHaveBeenCalledWith('a1', 'c1', '## 总结\n本节讲了热力学第二定律。')
+    )
+    await screen.findByText(/本节讲了热力学第二定律/)
+  })
+
+  it('re-runs only the missing artifact types', async () => {
+    api.redoArtifacts.mockResolvedValue({ success: true, artifacts: 3, failures: [] })
+    render(<HistoryView />)
+    await screen.findByText('有学习摘要缺失，可只补齐缺失项')
+
+    fireEvent.click(screen.getByText('补齐缺失产物'))
+
+    await waitFor(() => expect(api.redoArtifacts).toHaveBeenCalledTimes(1))
+    const [convId, types] = api.redoArtifacts.mock.calls[0] as [string, string[]]
+    expect(convId).toBe('c1')
+    expect(types.length).toBeGreaterThan(0)
+    expect(types).not.toContain('lesson_summary')
+    expect(api.listArtifacts).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('HistoryView — diary', () => {
+  it('lists diary months and expands a month on click', async () => {
+    api.diary.listMonths.mockResolvedValue(['2026-07', '2026-08'])
+    api.diary.getMonth.mockResolvedValue('# 七月日记\n今天学了熵。')
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText('📝 学习日记'))
+    fireEvent.click(await screen.findByText('2026-07'))
+
+    await screen.findByText(/七月日记/)
+    expect(api.diary.getMonth).toHaveBeenCalledWith('2026-07')
+
+    // Clicking the same month collapses it again.
+    fireEvent.click(screen.getByText('2026-07'))
+    await waitFor(() => expect(screen.queryByText(/七月日记/)).toBeNull())
+  })
+
+  it('shows the empty diary hint when no months exist', async () => {
+    api.diary.listMonths.mockResolvedValue([])
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText('📝 学习日记'))
+    expect(await screen.findByText(/还没有日记/)).toBeTruthy()
   })
 })
