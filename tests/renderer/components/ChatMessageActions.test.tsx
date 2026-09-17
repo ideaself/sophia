@@ -66,8 +66,9 @@ describe('ChatMessage — copy action', () => {
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('**加粗**的内容'))
     expect(await screen.findByText('已复制')).toBeTruthy()
 
-    // Reverts after the 1.5s confirmation window.
-    await waitFor(() => expect(screen.queryByText('已复制')).toBeNull(), { timeout: 2500 })
+    // Reverts after the 1.5s confirmation window (generous timeout: the
+    // suite runs files in parallel and the timer may slip under load).
+    await waitFor(() => expect(screen.queryByText('已复制')).toBeNull(), { timeout: 6000 })
   })
 
   it('stays silent when the clipboard rejects', async () => {

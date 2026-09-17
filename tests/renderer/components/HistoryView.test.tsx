@@ -15,6 +15,10 @@ vi.mock('../../../src/renderer/src/lib/MarkdownRenderer', () => ({
   )
 }))
 
+vi.mock('../../../src/renderer/src/lib/markdownToHtml', () => ({
+  markdownToHtml: async (md: string) => `<p>${md}</p>`
+}))
+
 import { HistoryView } from '../../../src/renderer/src/components/HistoryView'
 import { useTextbookStore } from '../../../src/renderer/src/stores/useTextbookStore'
 import { useAppStore } from '../../../src/renderer/src/stores/useAppStore'
@@ -89,6 +93,9 @@ const api = {
   deleteConversation: vi.fn(),
   updateArtifact: vi.fn(),
   redoArtifacts: vi.fn(),
+  writeTextFile: vi.fn(),
+  exportPdf: vi.fn(),
+  saveFile: vi.fn(),
   diary: {
     listMonths: vi.fn(),
     getMonth: vi.fn()
@@ -117,6 +124,9 @@ beforeEach(() => {
   api.deleteConversation.mockResolvedValue(true)
   api.updateArtifact.mockResolvedValue(null)
   api.redoArtifacts.mockResolvedValue({ success: true, artifacts: 0, failures: [] })
+  api.writeTextFile.mockResolvedValue(undefined)
+  api.exportPdf.mockResolvedValue(undefined)
+  api.saveFile.mockResolvedValue({ canceled: false, filePath: 'C:\\导出' })
   api.diary.listMonths.mockResolvedValue([])
   api.diary.getMonth.mockResolvedValue('')
 
@@ -135,7 +145,7 @@ beforeEach(() => {
           personalityKeywords: []
         }))
       },
-      dialog: { confirm: vi.fn().mockResolvedValue(true) }
+      dialog: { confirm: vi.fn().mockResolvedValue(true), saveFile: api.saveFile }
     }
   })
 })
@@ -320,5 +330,60 @@ describe('HistoryView — diary', () => {
 
     fireEvent.click(screen.getByText('📝 学习日记'))
     expect(await screen.findByText(/还没有日记/)).toBeTruthy()
+  })
+})
+
+// --------------- exports ---------------
+
+describe('HistoryView — exports', () => {
+  it('exports the conversation as Markdown', async () => {
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByTitle('导出为 Markdown'))
+
+    await waitFor(() => expect(api.writeTextFile).toHaveBeenCalledTimes(1))
+    const [path, content] = api.writeTextFile.mock.calls[0] as [string, string]
+    expect(path).toBe('C:\\导出')
+    expect(content).toContain('# 第一课')
+    expect(content).toContain('**AI 角色**: 朗道')
+    expect(content).toContain('第一问：什么是熵？')
+    expect(content).toContain('熵是无序度的度量。')
+  })
+
+  it('skips the Markdown write when the dialog is cancelled', async () => {
+    api.saveFile.mockResolvedValueOnce({ canceled: true })
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByTitle('导出为 Markdown'))
+
+    await waitFor(() => expect(api.saveFile).toHaveBeenCalled())
+    expect(api.writeTextFile).not.toHaveBeenCalled()
+  })
+
+  it('exports the conversation as PDF through the markdown pipeline', async () => {
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByTitle('导出为 PDF（含公式渲染）'))
+
+    await waitFor(() => expect(api.exportPdf).toHaveBeenCalledTimes(1))
+    const [html, path] = api.exportPdf.mock.calls[0] as [string, string]
+    expect(path).toBe('C:\\导出')
+    expect(html).toContain('<h1>第一课</h1>')
+    expect(html).toContain('<p>第一问：什么是熵？</p>')
+  })
+
+  it('exports a single artifact as PDF with the notes suffix', async () => {
+    render(<HistoryView />)
+    await screen.findByText('📋 课堂总结')
+
+    fireEvent.click(screen.getByTitle('导出为 PDF'))
+
+    await waitFor(() => expect(api.exportPdf).toHaveBeenCalledTimes(1))
+    const [html] = api.exportPdf.mock.calls[0] as [string, string]
+    expect(html).toContain('第一课 · 课后笔记')
+    expect(html).toContain('<p>## 总结')
   })
 })
