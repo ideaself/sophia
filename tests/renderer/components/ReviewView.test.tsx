@@ -4,7 +4,7 @@
  * switching, concept mastery list, rule-based next steps and continue-learning.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react'
 
 vi.mock('../../../src/renderer/src/lib/MarkdownRenderer', () => ({
   default: ({ children }: { children?: React.ReactNode }) => (
@@ -45,7 +45,16 @@ const dataMocks = {
   listArtifacts: vi.fn(),
   listConcepts: vi.fn(),
   getTextbook: vi.fn(),
-  onConceptsUpdated: vi.fn(() => () => {})
+  onConceptsUpdated: vi.fn((_cb?: (event: { conversationId: string }) => void) => () => {}),
+  listConversations: vi.fn(async () => [] as unknown[]),
+  getFlashcardSrsState: vi.fn(async () => ({})),
+  getFlashcardFavorites: vi.fn(async () => []),
+  saveFlashcardSrsState: vi.fn(async () => undefined),
+  saveFlashcardFavorites: vi.fn(async () => undefined),
+  getArtifact: vi.fn(async () => null),
+  updateArtifact: vi.fn(async () => null),
+  deleteFlashcardCards: vi.fn(async () => ({ success: true, deleted: 0 })),
+  writeTextFile: vi.fn(async () => ({ success: true }))
 }
 const companionsGet = vi.fn()
 
@@ -150,5 +159,148 @@ describe('ReviewView', () => {
 
     await waitFor(() => expect(useAppStore.getState().view).toBe('classroom'))
     expect(useAppStore.getState().reviewScope).toBeNull()
+  })
+})
+
+describe('ReviewView — fallbacks and media panels', () => {
+  it('survives failing message, artifact, concept, companion and textbook lookups', async () => {
+    dataMocks.listMessages.mockRejectedValue(new Error('x'))
+    dataMocks.listArtifacts.mockRejectedValue(new Error('x'))
+    dataMocks.listConcepts.mockRejectedValue(new Error('x'))
+    companionsGet.mockRejectedValue(new Error('x'))
+    dataMocks.getTextbook.mockRejectedValue(new Error('x'))
+
+    render(<ReviewView />)
+
+    // No artifacts → no tabs, but the header falls back to the raw companion id.
+    expect(await screen.findByText(/comp_a/)).toBeTruthy()
+    expect(screen.queryByText('课堂总结')).toBeNull()
+    expect(screen.queryByText('🎧 音频回顾')).toBeNull()
+  })
+
+  it('renders a bare header when the class has no companion or textbook', async () => {
+    dataMocks.getConversation.mockResolvedValue({ id: 'c1', title: '第一课' })
+
+    render(<ReviewView />)
+
+    await screen.findByText('课堂总结')
+    expect(screen.queryByText(/朗道/)).toBeNull()
+    expect(screen.queryByText(/化学课本/)).toBeNull()
+    expect(companionsGet).not.toHaveBeenCalled()
+  })
+
+  it('refreshes concepts when the classroom reports an update', async () => {
+    let cb: ((event: { conversationId: string }) => void) | null = null
+    dataMocks.onConceptsUpdated.mockImplementation(
+      (fn?: (event: { conversationId: string }) => void) => {
+        if (fn) cb = fn
+        return () => {}
+      }
+    )
+
+    render(<ReviewView />)
+    await screen.findByText('📊 概念掌握')
+
+    dataMocks.listConcepts.mockClear()
+    act(() => cb?.({ conversationId: 'c1' }))
+    await waitFor(() => expect(dataMocks.listConcepts).toHaveBeenCalledWith('c1'))
+
+    dataMocks.listConcepts.mockClear()
+    act(() => cb?.({ conversationId: 'other' }))
+    expect(dataMocks.listConcepts).not.toHaveBeenCalled()
+  })
+
+  it('labels the 理解 and 未接触 mastery tiers', async () => {
+    dataMocks.listConcepts.mockResolvedValue([
+      { ...CONCEPTS[0], id: 'k3', name: '温度', mastery: 0.6, misconception: null },
+      { ...CONCEPTS[0], id: 'k4', name: '功', mastery: 0.1, misconception: null }
+    ])
+
+    render(<ReviewView />)
+    await screen.findByText('📊 概念掌握')
+    fireEvent.click(screen.getByText('📊 概念掌握'))
+
+    expect(screen.getByText('理解 · 60%')).toBeTruthy()
+    expect(screen.getByText('未接触 · 10%')).toBeTruthy()
+  })
+
+  it('returns to the history view', async () => {
+    render(<ReviewView />)
+    await screen.findByText('返回历史')
+
+    fireEvent.click(screen.getByText('返回历史'))
+
+    expect(useAppStore.getState().view).toBe('history')
+    expect(useAppStore.getState().reviewScope).toBeNull()
+  })
+
+  it('renders the timeline from the lesson artifact', async () => {
+    dataMocks.listArtifacts.mockResolvedValue([
+      ...ARTIFACTS,
+      {
+        id: 'a4',
+        type: 'lesson_timeline',
+        content: '- 00:00 引入：熵的定义\n- 00:05 练习：计算熵变',
+        createdAt: '2026-07-06T10:03:00Z'
+      }
+    ])
+
+    render(<ReviewView />)
+    await screen.findByText('🕐 课堂时间线')
+    fireEvent.click(screen.getByText('🕐 课堂时间线'))
+
+    expect(screen.getByText('00:00')).toBeTruthy()
+    expect(screen.getByText('引入')).toBeTruthy()
+    expect(screen.getByText('熵的定义')).toBeTruthy()
+    expect(screen.getByText('00:05')).toBeTruthy()
+  })
+
+  it('shows the raw timeline text when nothing parses', async () => {
+    dataMocks.listArtifacts.mockResolvedValue([
+      ...ARTIFACTS,
+      { id: 'a4', type: 'lesson_timeline', content: '没有可解析的时间线', createdAt: '2026-07-06T10:03:00Z' }
+    ])
+
+    render(<ReviewView />)
+    await screen.findByText('🕐 课堂时间线')
+    fireEvent.click(screen.getByText('🕐 课堂时间线'))
+
+    expect(screen.getByText('没有可解析的时间线')).toBeTruthy()
+  })
+
+  it('expands and collapses FAQ entries', async () => {
+    dataMocks.listArtifacts.mockResolvedValue([
+      ...ARTIFACTS,
+      { id: 'a5', type: 'lesson_faq', content: '- 问：熵是什么？\n- 答：状态函数', createdAt: '2026-07-06T10:04:00Z' }
+    ])
+
+    render(<ReviewView />)
+    await screen.findByText('❓ 课堂 FAQ')
+    fireEvent.click(screen.getByText('❓ 课堂 FAQ'))
+
+    // The first entry starts expanded.
+    expect(screen.getByText('状态函数')).toBeTruthy()
+    fireEvent.click(screen.getByText(/Q1\. 熵是什么/))
+    await waitFor(() => expect(screen.queryByText('状态函数')).toBeNull())
+    fireEvent.click(screen.getByText(/Q1\. 熵是什么/))
+    expect(screen.getByText('状态函数')).toBeTruthy()
+  })
+
+  it('clears the flashcards scope back to the summary tab', async () => {
+    dataMocks.listArtifacts.mockResolvedValue([
+      ...ARTIFACTS.filter((a) => a.id !== 'a3'),
+      { id: 'a3', type: 'flashcards', content: '- 问题：a\n- 答案：b', createdAt: '2026-07-06T10:02:00Z' }
+    ])
+    dataMocks.listConversations.mockResolvedValue([
+      { id: 'c1', title: '第一课', companionId: 'comp_a', endedAt: '2026-07-06T10:00:00Z' }
+    ])
+
+    render(<ReviewView />)
+    await screen.findByText('记忆卡片')
+    fireEvent.click(screen.getByText('记忆卡片'))
+
+    fireEvent.click(await screen.findByText('返回全部卡片'))
+
+    expect(await screen.findByText(/什么是熵/)).toBeTruthy()
   })
 })

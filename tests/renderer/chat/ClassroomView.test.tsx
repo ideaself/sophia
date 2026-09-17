@@ -925,3 +925,156 @@ describe('ClassroomView — remaining handlers', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })
+
+describe('ClassroomView — guard branches', () => {
+  function freshTab(): void {
+    localStorage.setItem(
+      CLASSROOM_TABS_KEY,
+      JSON.stringify({ tabs: [{ title: '新课堂', conversationId: null, input: '' }], activeIdx: 0 })
+    )
+  }
+
+  it('ignores tab shortcuts when only one tab is open', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.keyDown(window, { key: 'w', ctrlKey: true, shiftKey: true })
+    fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true, shiftKey: true })
+
+    await waitFor(() => expect(screen.getAllByRole('tab')).toHaveLength(1))
+    expect(screen.getByText('A1 一种积分运算')).toBeTruthy()
+  })
+
+  it('ignores Alt+N templates that are unsaved or out of range', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    const input = screen.getByPlaceholderText(/输入你的问题/) as HTMLTextAreaElement
+    fireEvent.keyDown(window, { key: '1', altKey: true }) // no snippets saved
+    fireEvent.keyDown(window, { key: '0', altKey: true }) // out of range
+    fireEvent.keyDown(window, { key: '9', altKey: true }) // out of range
+
+    expect(input.value).toBe('')
+  })
+
+  it('does nothing when ending a class without a conversation', async () => {
+    freshTab()
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+
+    // A fresh tab has no header controls at all — nothing to click.
+    expect(screen.queryByText('下课')).toBeNull()
+    expect(dialogMocks.confirm).not.toHaveBeenCalled()
+    expect(dataMocks.endConversation).not.toHaveBeenCalled()
+  })
+
+  it('keeps the class running when the end-class confirmation is declined', async () => {
+    dialogMocks.confirm.mockResolvedValue(false)
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getByText('下课'))
+
+    await waitFor(() => expect(dialogMocks.confirm).toHaveBeenCalled())
+    expect(dataMocks.endConversation).not.toHaveBeenCalled()
+    expect(screen.getByText('A1 一种积分运算')).toBeTruthy()
+  })
+
+  it('skips the screenshot when the save dialog is cancelled', async () => {
+    dialogMocks.saveFile.mockResolvedValue({ canceled: true, filePath: '' })
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getByTitle('截图当前课堂窗口并保存为图片'))
+
+    await waitFor(() => expect(dialogMocks.saveFile).toHaveBeenCalled())
+    expect(dataMocks.captureScreenshot).not.toHaveBeenCalled()
+  })
+
+  it('skips the AI draft without a companion', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} companion={null} />)
+    await screen.findByText('请先选择一位学习伙伴')
+
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true, shiftKey: true })
+    fireEvent.keyDown(window, { key: 'A', ctrlKey: true, shiftKey: true })
+
+    expect(dataMocks.composeAiAnswer).not.toHaveBeenCalled()
+  })
+
+  it('keeps the conversation when the rewind confirmation is declined', async () => {
+    dialogMocks.confirm.mockResolvedValue(false)
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getAllByLabelText('从这里重新开始')[0])
+
+    await waitFor(() => expect(dialogMocks.confirm).toHaveBeenCalled())
+    expect(dataMocks.truncateConversation).not.toHaveBeenCalled()
+    expect(screen.getByText('A1 一种积分运算')).toBeTruthy()
+  })
+
+  it('ignores artifact events addressed to another conversation', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getByText('下课'))
+    await screen.findByText('课程已结束')
+
+    act(() => {
+      artifactsCb?.({ conversationId: 'other_conv', artifacts: 5, farewell: '别的课', failures: [] })
+    })
+    expect(screen.queryByText('别的课')).toBeNull()
+
+    act(() => {
+      artifactsCb?.({ conversationId: 'conv_1', artifacts: 3, farewell: '下节课见', failures: [] })
+    })
+    expect(await screen.findByText('下节课见')).toBeTruthy()
+  })
+
+  it('stops loading a history conversation after unmount', async () => {
+    function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+      let resolve!: (value: T) => void
+      const promise = new Promise<T>((res) => {
+        resolve = res
+      })
+      return { promise, resolve }
+    }
+
+    // Phase 1: unmount before the conversation lookup resolves.
+    const convGate = deferred<{ id: string; title: string; endedAt: null }>()
+    dataMocks.getConversation.mockImplementation(async (id: string) =>
+      id === 'conv_hist' ? convGate.promise : { id, title: 't', endedAt: null }
+    )
+    const first = render(<Harness chat={createFakeChat()} loadConversationId="conv_hist" />)
+    await waitFor(() => expect(dataMocks.getConversation).toHaveBeenCalledWith('conv_hist'))
+    first.unmount()
+    convGate.resolve({ id: 'conv_hist', title: '历史课', endedAt: null })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // Phase 2: unmount while the messages are still loading.
+    const msgsGate = deferred<typeof STORED_MESSAGES>()
+    dataMocks.getConversation.mockImplementation(async (id: string) => ({
+      id,
+      title: '历史课',
+      endedAt: null
+    }))
+    dataMocks.listMessages.mockImplementation(async (id: string) =>
+      id === 'conv_hist' ? msgsGate.promise : STORED_MESSAGES
+    )
+    const second = render(<Harness chat={createFakeChat()} loadConversationId="conv_hist" />)
+    await waitFor(() => expect(dataMocks.listMessages).toHaveBeenCalledWith('conv_hist'))
+    second.unmount()
+    msgsGate.resolve(STORED_MESSAGES)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(screen.queryByText('历史课')).toBeNull()
+  })
+})

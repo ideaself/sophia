@@ -22,30 +22,55 @@ const CARD_CONTENT = [
 ].join('\n')
 
 const saveSrsSpy = vi.fn().mockResolvedValue(undefined)
+const data = {
+  listConversations: vi.fn(),
+  listArtifacts: vi.fn(),
+  getFlashcardSrsState: vi.fn(),
+  getFlashcardFavorites: vi.fn(),
+  saveFlashcardSrsState: saveSrsSpy,
+  saveFlashcardFavorites: vi.fn().mockResolvedValue(undefined),
+  getArtifact: vi.fn(),
+  updateArtifact: vi.fn(),
+  deleteFlashcardCards: vi.fn(),
+  writeTextFile: vi.fn()
+}
+const dialog = {
+  saveFile: vi.fn(),
+  confirm: vi.fn()
+}
+
+function conversation(id: string, title: string): Record<string, unknown> {
+  return { id, title, companionId: 'comp_a', endedAt: '2026-07-06T10:00:00Z' }
+}
+
+function flashcardsArtifact(
+  id: string,
+  conversationId: string,
+  content: string
+): Record<string, unknown> {
+  return { id, conversationId, type: 'flashcards', content, createdAt: '2026-07-06T10:00:00Z' }
+}
 
 beforeEach(() => {
+  for (const fn of Object.values(data)) fn.mockClear()
+  for (const fn of Object.values(dialog)) fn.mockClear()
+
+  data.listConversations.mockResolvedValue([conversation('c1', '07-06 朗道')])
+  data.listArtifacts.mockResolvedValue([flashcardsArtifact('art_1', 'c1', CARD_CONTENT)])
+  data.getFlashcardSrsState.mockResolvedValue({})
+  data.getFlashcardFavorites.mockResolvedValue([])
+  data.saveFlashcardSrsState.mockResolvedValue(undefined)
+  data.saveFlashcardFavorites.mockResolvedValue(undefined)
+  data.getArtifact.mockResolvedValue(null)
+  data.updateArtifact.mockResolvedValue(null)
+  data.deleteFlashcardCards.mockResolvedValue({ success: true, deleted: 0 })
+  data.writeTextFile.mockResolvedValue({ success: true })
+  dialog.saveFile.mockResolvedValue({ canceled: false, filePath: 'C:\\out.txt' })
+  dialog.confirm.mockResolvedValue(true)
+
   Object.defineProperty(window, 'sophia', {
     configurable: true,
-    value: {
-      data: {
-        listConversations: vi.fn().mockResolvedValue([
-          { id: 'c1', title: '07-06 朗道', companionId: 'comp_a', endedAt: '2026-07-06T10:00:00Z' }
-        ]),
-        listArtifacts: vi.fn().mockResolvedValue([
-          {
-            id: 'art_1',
-            conversationId: 'c1',
-            type: 'flashcards',
-            content: CARD_CONTENT,
-            createdAt: '2026-07-06T10:00:00Z'
-          }
-        ]),
-        getFlashcardSrsState: vi.fn().mockResolvedValue({}),
-        getFlashcardFavorites: vi.fn().mockResolvedValue([]),
-        saveFlashcardSrsState: saveSrsSpy,
-        saveFlashcardFavorites: vi.fn().mockResolvedValue(undefined)
-      }
-    }
+    value: { data, dialog }
   })
   saveSrsSpy.mockClear()
 })
@@ -123,5 +148,209 @@ describe('FlashcardReviewView — review flow', () => {
     fireEvent.keyDown(textareas[0], { key: '3' })
 
     expect(saveSrsSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('FlashcardReviewView — deck, tabs and empty states', () => {
+  it('shows the no-cards empty state', async () => {
+    data.listArtifacts.mockResolvedValue([])
+
+    render(<FlashcardReviewView />)
+
+    expect(await screen.findByText('暂无记忆卡片')).toBeTruthy()
+  })
+
+  it('shows the empty favorites state and can switch back to all', async () => {
+    render(<FlashcardReviewView />)
+    await screen.findByText('什么是卷积？')
+
+    fireEvent.click(screen.getByText('珍藏（0）'))
+
+    expect(await screen.findByText('还没有珍藏卡片')).toBeTruthy()
+    fireEvent.click(screen.getByText('全部（2）'))
+    expect(await screen.findByText('什么是卷积？')).toBeTruthy()
+  })
+
+  it('sorts due cards ahead of future-scheduled ones', async () => {
+    data.getFlashcardSrsState.mockResolvedValue({
+      art_1_0: { nextReview: Date.now() + 3 * 24 * 60 * 60 * 1000, interval: 3, reps: 2 },
+      art_1_1: { nextReview: 0, interval: 0, reps: 0 }
+    })
+
+    render(<FlashcardReviewView />)
+
+    // The due (second) card is shown first.
+    expect(await screen.findByText('傅里叶变换的作用？')).toBeTruthy()
+  })
+
+  it('shuffles within the favorites tab and keeps favorites first', async () => {
+    data.getFlashcardFavorites.mockResolvedValue(['art_1_0'])
+
+    render(<FlashcardReviewView />)
+    await screen.findByText('什么是卷积？')
+
+    fireEvent.click(screen.getByText('珍藏（1）'))
+    fireEvent.click(screen.getByText('打乱顺序'))
+
+    // The favorited card stays in the deck after the favorites-aware shuffle.
+    expect(await screen.findByText('什么是卷积？')).toBeTruthy()
+
+    // And the 全部 tab is reachable again from the main UI.
+    fireEvent.click(screen.getByText('全部（2）'))
+    expect(await screen.findByText('什么是卷积？')).toBeTruthy()
+  })
+
+  it('runs a scoped lesson review when the lesson has enough cards', async () => {
+    const lessonContent = Array.from({ length: 5 }, (_, i) =>
+      [`- 问题：本课问题 ${i + 1}？`, `- 答案：本课答案 ${i + 1}`].join('\n')
+    ).join('\n')
+    data.listArtifacts.mockResolvedValue([flashcardsArtifact('art_scope', 'c1', lessonContent)])
+
+    render(
+      <FlashcardReviewView
+        scope={{ conversationId: 'c1', title: '本课' }}
+        onClearScope={vi.fn()}
+      />
+    )
+
+    expect(await screen.findByText('本课问题 1？')).toBeTruthy()
+    expect(screen.getByText(/正在复习/)).toBeTruthy()
+    expect(screen.getByText('返回全部卡片')).toBeTruthy()
+  })
+})
+
+describe('FlashcardReviewView — selection, export and management', () => {
+  it('selects, clears and batch-deletes cards', async () => {
+    render(<FlashcardReviewView />)
+    await screen.findByText('什么是卷积？')
+
+    fireEvent.click(screen.getByText('批量操作'))
+    await waitFor(() => expect(document.body.textContent).toContain('已选 0 张'))
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    fireEvent.click(checkboxes[0])
+    await waitFor(() => expect(document.body.textContent).toContain('已选 1 张'))
+
+    fireEvent.click(screen.getByText('全选当前列表'))
+    await waitFor(() => expect(document.body.textContent).toContain('已选 2 张'))
+
+    fireEvent.click(screen.getByText('清空'))
+    await waitFor(() => expect(document.body.textContent).toContain('已选 0 张'))
+
+    // Delete flow: confirm → data call → selection cleared.
+    fireEvent.click(screen.getByText('全选当前列表'))
+    fireEvent.click(screen.getByText('批量删除'))
+
+    await waitFor(() =>
+      expect(data.deleteFlashcardCards).toHaveBeenCalledWith([
+        { conversationId: 'c1', artifactId: 'art_1', cardIndex: 0 },
+        { conversationId: 'c1', artifactId: 'art_1', cardIndex: 1 }
+      ])
+    )
+    await waitFor(() => expect(document.body.textContent).toContain('已选 0 张'))
+  })
+
+  it('keeps the selection when the delete confirmation is declined', async () => {
+    dialog.confirm.mockResolvedValue(false)
+
+    render(<FlashcardReviewView />)
+    await screen.findByText('什么是卷积？')
+
+    fireEvent.click(screen.getByText('批量操作'))
+    fireEvent.click(screen.getByText('全选当前列表'))
+    fireEvent.click(screen.getByText('批量删除'))
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(data.deleteFlashcardCards).not.toHaveBeenCalled()
+    await waitFor(() => expect(document.body.textContent).toContain('已选 2 张'))
+  })
+
+  it('skips the export when the selection no longer matches the visible tab', async () => {
+    data.getFlashcardFavorites.mockResolvedValue(['art_1_0'])
+
+    render(<FlashcardReviewView />)
+    await screen.findByText('什么是卷积？')
+
+    fireEvent.click(screen.getByText('批量操作'))
+    // Select the non-favorited card, then switch to the favorites tab.
+    const checkboxes = screen.getAllByRole('checkbox')
+    fireEvent.click(checkboxes[1])
+    await waitFor(() => expect(document.body.textContent).toContain('已选 1 张'))
+
+    fireEvent.click(screen.getByText('珍藏（1）'))
+    fireEvent.click(screen.getByText('批量导出 Anki'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // Target list was empty → no file dialog, no write.
+    expect(dialog.saveFile).not.toHaveBeenCalled()
+    expect(data.writeTextFile).not.toHaveBeenCalled()
+  })
+
+  it('exports the selected cards through the save dialog', async () => {
+    render(<FlashcardReviewView />)
+    await screen.findByText('什么是卷积？')
+
+    fireEvent.click(screen.getByText('批量操作'))
+    fireEvent.click(screen.getByText('全选当前列表'))
+    fireEvent.click(screen.getByText('批量导出 Anki'))
+
+    await waitFor(() => expect(data.writeTextFile).toHaveBeenCalled())
+    const [filePath, content] = data.writeTextFile.mock.calls[0] as [string, string]
+    expect(filePath).toBe('C:\\out.txt')
+    expect(content).toContain('什么是卷积？')
+    expect(content).toContain('时频转换')
+  })
+})
+
+describe('FlashcardReviewView — rating and editing', () => {
+  it('rates with 再看', async () => {
+    render(<FlashcardReviewView />)
+    await screen.findByText('什么是卷积？')
+
+    fireEvent.click(screen.getByText('什么是卷积？'))
+    fireEvent.click(screen.getByText('再看'))
+
+    await waitFor(() => expect(saveSrsSpy).toHaveBeenCalledTimes(1))
+    // "Again" resets the card: reps drop back to 0, review due tomorrow.
+    const payload = saveSrsSpy.mock.calls[0][0] as Record<string, { reps: number; nextReview: number }>
+    expect(payload['art_1_0']?.reps).toBe(0)
+    expect(payload['art_1_0']?.nextReview).toBeGreaterThan(Date.now())
+  })
+
+  it('rates with 困难', async () => {
+    render(<FlashcardReviewView />)
+    await screen.findByText('什么是卷积？')
+
+    fireEvent.click(screen.getByText('什么是卷积？'))
+    fireEvent.click(screen.getByText('困难'))
+
+    await waitFor(() => expect(saveSrsSpy).toHaveBeenCalledTimes(1))
+    expect((saveSrsSpy.mock.calls[0][0] as Record<string, unknown>)['art_1_0']).toBeDefined()
+  })
+
+  it('rates with 简单', async () => {
+    render(<FlashcardReviewView />)
+    await screen.findByText('什么是卷积？')
+
+    fireEvent.click(screen.getByText('什么是卷积？'))
+    fireEvent.click(screen.getByText('简单'))
+
+    await waitFor(() => expect(saveSrsSpy).toHaveBeenCalledTimes(1))
+    expect((saveSrsSpy.mock.calls[0][0] as Record<string, unknown>)['art_1_0']).toBeDefined()
+  })
+
+  it('closes the edit form without saving', async () => {
+    render(<FlashcardReviewView />)
+    await screen.findByText('什么是卷积？')
+
+    fireEvent.click(screen.getByText('什么是卷积？'))
+    fireEvent.click(screen.getByText('修正'))
+    expect(await screen.findByText('修正卡片')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('取消'))
+
+    await waitFor(() => expect(screen.queryByText('修正卡片')).toBeNull())
+    expect(data.updateArtifact).not.toHaveBeenCalled()
+    expect(screen.getByText('上一张')).toBeTruthy()
   })
 })
