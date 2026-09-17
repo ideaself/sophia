@@ -7,7 +7,7 @@
  * panel (messages + artifacts) for the selected lesson.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react'
 
 vi.mock('../../../src/renderer/src/lib/MarkdownRenderer', () => ({
   default: ({ children }: { children?: React.ReactNode }) => (
@@ -550,5 +550,109 @@ describe('HistoryView — failure tolerances', () => {
     // The month button stays; no content block appears and nothing throws.
     await waitFor(() => expect(api.diary.getMonth).toHaveBeenCalledWith('2026-07'))
     expect(screen.getByText('2026-07')).toBeTruthy()
+  })
+})
+
+describe('HistoryView — remaining branches', () => {
+  it('sorts several lessons in the same textbook group by recency', async () => {
+    api.listConversations.mockResolvedValue([
+      ...CONVERSATIONS,
+      {
+        id: 'c3',
+        title: '更早的一课',
+        companionId: 'comp_a',
+        textbookId: 'tb_1',
+        createdAt: '2026-07-04T09:00:00',
+        updatedAt: '2026-07-04T10:00:00',
+        endedAt: '2026-07-04T10:00:00'
+      }
+    ])
+    api.getConversation.mockResolvedValue(CONVERSATIONS[0])
+
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    // Both lessons appear; the newest is first in the group.
+    const titles = screen.getAllByText(/第一课|更早的一课/).map((el) => el.textContent)
+    expect(titles[0]).toContain('第一课')
+  })
+
+  it('ignores a resume request for a conversation that vanished', async () => {
+    api.getConversation.mockResolvedValue(null)
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText(/祖冲之/).closest('button')!)
+    await screen.findByText('另一个课堂的问题')
+    fireEvent.click(screen.getByText('继续上课'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(useAppStore.getState().loadConversationId).toBeNull()
+  })
+
+  it('clears the selected textbook when resuming a class without one', async () => {
+    useTextbookStore.setState({ selectedTextbook: { id: 'tb_1', title: '旧教材' } as never })
+    api.getConversation.mockResolvedValue(CONVERSATIONS[1])
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText(/祖冲之/).closest('button')!)
+    await screen.findByText('另一个课堂的问题')
+    fireEvent.click(screen.getByText('继续上课'))
+
+    await waitFor(() => expect(useTextbookStore.getState().selectedTextbook).toBeNull())
+  })
+
+  it('keeps the lesson when the delete confirmation is declined', async () => {
+    ;(window.sophia.dialog.confirm as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false)
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText('🗑 删除'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(api.deleteConversation).not.toHaveBeenCalled()
+    expect(screen.getByText('第一问：什么是熵？')).toBeTruthy()
+  })
+
+  it('skips exports for lessons without messages', async () => {
+    api.listMessages.mockResolvedValueOnce(MESSAGES.c1).mockResolvedValue([])
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByTitle('导出为 Markdown'))
+    fireEvent.click(screen.getByTitle('导出为 PDF（含公式渲染）'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(api.writeTextFile).not.toHaveBeenCalled()
+    expect(api.exportPdf).not.toHaveBeenCalled()
+  })
+
+  it('skips the PDF write when the save dialog is cancelled', async () => {
+    api.saveFile.mockResolvedValue({ canceled: true, filePath: '' })
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByTitle('导出为 PDF（含公式渲染）'))
+    await waitFor(() => expect(api.saveFile).toHaveBeenCalled())
+    expect(api.exportPdf).not.toHaveBeenCalled()
+  })
+
+  it('hides the delete notice after a few seconds', async () => {
+    vi.useFakeTimers()
+    try {
+      render(<HistoryView />)
+      await vi.waitFor(() => expect(screen.getByText('第一问：什么是熵？')).toBeTruthy())
+
+      fireEvent.click(screen.getByText('🗑 删除'))
+      await vi.waitFor(() => expect(screen.getByText(/课程已删除/)).toBeTruthy())
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+      expect(screen.queryByText(/课程已删除/)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

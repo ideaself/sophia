@@ -261,3 +261,107 @@ describe('TextbooksView — EPUB repair', () => {
     await screen.findByText(/重新提取的正文/)
   })
 })
+
+describe('TextbooksView — import format inference', () => {
+  it.each([
+    ['book.pdf', 'pdf'],
+    ['notes.txt', 'text'],
+    ['book.md', 'markdown']
+  ])('infers the format for %s', async (fileName, expectedFormat) => {
+    dialog.openFile.mockResolvedValue({ canceled: false, filePaths: [`C:\\books\\${fileName}`] })
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getByText('从文件导入 (PDF/EPUB)'))
+
+    await waitFor(() =>
+      expect(data.createTextbook).toHaveBeenCalledWith(
+        expect.objectContaining({ format: expectedFormat, sourceFile: `C:\\books\\${fileName}` })
+      )
+    )
+  })
+
+  it('surfaces a non-Error file-import failure with the fallback message', async () => {
+    dialog.openFile.mockResolvedValue({ canceled: false, filePaths: ['C:\\books\\broken.pdf'] })
+    data.createTextbook.mockRejectedValueOnce('plain string failure')
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getByText('从文件导入 (PDF/EPUB)'))
+
+    expect(await screen.findByText('导入失败')).toBeTruthy()
+  })
+})
+
+describe('TextbooksView — content and edit failures', () => {
+  it('shows a load failure when the content cannot be fetched', async () => {
+    data.getTextbook.mockRejectedValueOnce(new Error('db closed'))
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getAllByText('查看')[0])
+
+    expect(await screen.findByText('加载失败')).toBeTruthy()
+  })
+
+  it('falls back to an empty editor when the content load fails', async () => {
+    data.getTextbook.mockRejectedValueOnce(new Error('db closed'))
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getAllByText('编辑')[0])
+
+    await waitFor(() => {
+      const areas = screen.getAllByRole('textbox') as HTMLTextAreaElement[]
+      expect(areas.some((el) => el.value === '')).toBe(true)
+    })
+  })
+
+  it('reports a save failure and keeps the editor open', async () => {
+    data.updateTextbook.mockRejectedValueOnce('plain string failure')
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getAllByText('编辑')[0])
+    await screen.findByDisplayValue('热力学讲义')
+    fireEvent.click(screen.getByText('保存'))
+
+    expect(await screen.findByText('保存失败')).toBeTruthy()
+  })
+})
+
+describe('TextbooksView — modal closers', () => {
+  it('closes the content and edit modals through their buttons', async () => {
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getAllByText('查看')[0])
+    const contentModal = await screen.findByText('# 第一章', { exact: false })
+    expect(contentModal).toBeTruthy()
+    fireEvent.click(screen.getAllByText('✕')[0])
+    await waitFor(() => expect(screen.queryByText('# 第一章', { exact: false })).toBeNull())
+
+    fireEvent.click(screen.getAllByText('编辑')[0])
+    await screen.findByDisplayValue('热力学讲义')
+    fireEvent.click(screen.getAllByText('取消')[0])
+    await waitFor(() => expect(screen.queryByDisplayValue('热力学讲义')).toBeNull())
+  })
+})
+
+describe('TextbooksView — readers', () => {
+  it('closes the PDF and EPUB readers from inside them', async () => {
+    useTextbookStore.setState({
+      textbooks: [textbook({ format: 'pdf', originalFile: 'book.pdf' })],
+      fetch: fetchTextbooks,
+      select: selectTextbook
+    })
+    const view = render(<TextbooksView />)
+    fireEvent.click(screen.getByText('阅读原件'))
+    expect(await screen.findByTestId('pdf-reader')).toBeTruthy()
+    view.unmount()
+
+    useTextbookStore.setState({
+      textbooks: [textbook({ format: 'epub', originalFile: 'book.epub' })],
+      fetch: fetchTextbooks,
+      select: selectTextbook
+    })
+    const second = render(<TextbooksView />)
+    fireEvent.click(screen.getByText('阅读原件'))
+    expect(await screen.findByTestId('epub-reader')).toBeTruthy()
+    second.unmount()
+  })
+})
