@@ -1221,6 +1221,28 @@ describe('stats: due flashcards', () => {
     const due = await invoke<{ due: number; total: number }>('stats:due-flashcards')
     expect(due).toMatchObject({ due: 1, total: 1 })
   })
+
+  it('tolerates unreadable conversations and skips empty ones', async () => {
+    // A conversation with no messages contributes nothing to the study time.
+    await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '空会话'
+    })
+
+    // A conversation whose artifact listing cannot be read.
+    const broken = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '坏会话'
+    })
+    await invoke('message:send', { conversationId: broken.id, content: '今天学了点东西' })
+    await writeFile(artifactsDir(dataRoot, broken.id), 'not a directory')
+
+    const minutes = await invoke<number>('stats:today-study-minutes')
+    expect(typeof minutes).toBe('number')
+
+    const overview = await invoke<unknown>('stats:overview')
+    expect(overview).toBeTruthy()
+  })
 })
 
 describe('archive warnings', () => {
@@ -1341,6 +1363,69 @@ describe('epub handlers', () => {
     await expect(
       invoke('textbook:translate-excerpt', { textbookId: tb.id, chapter: '第一章' })
     ).resolves.toBeNull()
+  })
+})
+
+describe('textbook excerpt guards', () => {
+  it('reports null when the textbook has no readable content', async () => {
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '空内容',
+      format: 'markdown',
+      content: '# 第一章\n\n正文'
+    })
+    // Strip the content both from disk and from the record.
+    const jsonPath = textbookPath(dataRoot, tb.id)
+    const meta = JSON.parse(await readFile(jsonPath, 'utf-8')) as Record<string, unknown>
+    meta.content = ''
+    await writeFile(jsonPath, JSON.stringify(meta, null, 2))
+    await rm(join(textbookDir(dataRoot, tb.id), 'source.md'), { force: true })
+
+    await expect(
+      invoke('textbook:search-excerpt', { textbookId: tb.id, chapter: '第一章' })
+    ).resolves.toBeNull()
+    await expect(
+      invoke('textbook:translate-excerpt', { textbookId: tb.id, chapter: '第一章' })
+    ).resolves.toBeNull()
+  })
+
+  it('returns null when a matching section has no body text', async () => {
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '只有标题',
+      format: 'markdown',
+      content: '# 第一章'
+    })
+
+    await expect(
+      invoke('textbook:search-excerpt', { textbookId: tb.id, chapter: '第一章' })
+    ).resolves.toBeNull()
+  })
+
+  it('reports a redo failure without breaking the handler', async () => {
+    await withProvider()
+    llmByPrompt()
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '补做出错'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '问' })
+    await invoke('message:send', { conversationId: conv.id, content: '答', role: 'assistant' })
+    // A file where the artifacts directory belongs → persisting throws.
+    await writeFile(artifactsDir(dataRoot, conv.id), 'not a directory')
+
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const result = await invoke<{ success: boolean; artifacts: number; types: string[] }>(
+        'conversation:redo-artifacts',
+        { conversationId: conv.id, types: ['lesson_summary'] }
+      )
+      expect(result).toEqual({ success: false, artifacts: 0, types: ['lesson_summary'] })
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining('Artifact redo error'),
+        expect.anything()
+      )
+    } finally {
+      error.mockRestore()
+    }
   })
 })
 

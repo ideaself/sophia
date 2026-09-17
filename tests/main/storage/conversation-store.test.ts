@@ -201,3 +201,130 @@ describe('ConversationStore write path', () => {
     expect(await store.getMessages(conv.id)).toHaveLength(1)
   })
 })
+
+describe('ConversationStore — missing targets and patchy files', () => {
+  it('returns null/false for operations on a missing conversation', async () => {
+    const store = new ConversationStore(dataRoot)
+
+    await expect(store.endConversation('conv_missing')).resolves.toBe(false)
+    await expect(store.updateTitle('conv_missing', 'x')).resolves.toBeNull()
+    await expect(store.updateMessage('conv_missing', 'msg_x', 'x')).resolves.toBeNull()
+    await expect(store.deleteMessage('conv_missing', 'msg_x')).resolves.toBe(false)
+  })
+
+  it('returns null/false for missing messages in an existing conversation', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
+
+    await expect(store.updateMessage(conv.id, 'msg_missing', 'x')).resolves.toBeNull()
+    await expect(store.deleteMessage(conv.id, 'msg_missing')).resolves.toBe(false)
+  })
+
+  it('skips blank lines in the JSONL message file', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
+    const first = await store.addMessage(conv.id, 'user', '内容A')
+    const second = await store.addMessage(conv.id, 'user', '内容B')
+
+    // Blank lines between records must be skipped, not treated as corrupt.
+    const path = conversationMessagesPath(dataRoot, conv.id)
+    await writeFile(
+      path,
+      `${JSON.stringify(first)}\n\n   \n${JSON.stringify(second)}\n`
+    )
+
+    const messages = await store.getMessages(conv.id)
+    expect(messages.map((m) => m.id)).toEqual([first.id, second.id])
+  })
+
+  it('ignores stale index hits whose message no longer matches', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
+    const msg = await store.addMessage(conv.id, 'user', '关于熵')
+
+    await store.searchMessages('熵') // builds and caches the index
+
+    // Rewrite the file behind the store's back — the cached index is stale.
+    await writeFile(
+      conversationMessagesPath(dataRoot, conv.id),
+      JSON.stringify({ ...msg, content: '改成了别的词' }) + '\n',
+      'utf-8'
+    )
+
+    const result = await store.searchMessages('熵')
+
+    expect(result.results).toHaveLength(0)
+    expect(result.total).toBe(1) // the stale index still reports a hit
+  })
+
+  it('returns an empty list before any conversation exists', async () => {
+    const store = new ConversationStore(dataRoot)
+    await expect(store.list()).resolves.toEqual([])
+  })
+
+  it('keeps the search index warm across new messages', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
+    await store.addMessage(conv.id, 'user', '第一句关于熵')
+
+    const first = await store.searchMessages('熵')
+    expect(first.results).toHaveLength(1)
+
+    // The cached index is updated in place by addMessage.
+    await store.addMessage(conv.id, 'assistant', '第二句也关于熵')
+    const second = await store.searchMessages('熵')
+    expect(second.results).toHaveLength(2)
+    expect(second.total).toBe(2)
+  })
+
+  it('scans only indexed messages across conversations', async () => {
+    const store = new ConversationStore(dataRoot)
+    const first = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 'a' })
+    const second = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 'b' })
+    await store.addMessage(first.id, 'user', '关于熵的讨论')
+    await store.addMessage(first.id, 'assistant', '无关内容')
+    await store.addMessage(second.id, 'user', '另一条关于熵的')
+    await store.addMessage(second.id, 'assistant', '也无关')
+
+    const all = await store.searchMessages('熵', 50, 0)
+
+    expect(all.total).toBe(2)
+    expect(all.results).toHaveLength(2)
+    expect(all.results.map((r) => r.message.content).sort()).toEqual(['关于熵的讨论', '另一条关于熵的'])
+
+    // A limit smaller than the first conversation's hits stops the scan.
+    const limited = await store.searchMessages('熵', 1, 0)
+    expect(limited.results).toHaveLength(1)
+  })
+
+  it('paginates search results with limit and offset', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
+    for (let i = 0; i < 5; i++) {
+      await store.addMessage(conv.id, 'user', `关于熵的第 ${i} 条`)
+    }
+
+    const page = await store.searchMessages('熵', 2, 2)
+
+    expect(page.results).toHaveLength(2)
+    expect(page.total).toBe(5)
+    expect(page.results.map((m) => m.message.content)).toEqual([
+      '关于熵的第 2 条',
+      '关于熵的第 3 条'
+    ])
+  })
+
+  it('keeps working after a queued write fails', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
+    // A directory where the message file belongs makes the append fail.
+    await rm(conversationMessagesPath(dataRoot, conv.id), { recursive: true, force: true })
+    await mkdir(conversationMessagesPath(dataRoot, conv.id), { recursive: true })
+
+    await expect(store.addMessage(conv.id, 'user', 'x')).rejects.toThrow()
+
+    // The queue tail swallowed the rejection — later writes still run.
+    await rm(conversationMessagesPath(dataRoot, conv.id), { recursive: true, force: true })
+    await expect(store.addMessage(conv.id, 'user', 'ok')).resolves.toMatchObject({ content: 'ok' })
+  })
+})

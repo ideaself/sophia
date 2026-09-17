@@ -18,6 +18,11 @@ class FakeClient {
   downloads: string[] = []
   deletions: string[] = []
   moves: { path: string; target: string }[] = []
+  /** Test hooks: paths whose corresponding operation should fail. */
+  failUploads = new Set<string>()
+  failDownloads = new Set<string>()
+  failMoves = new Set<string>()
+  failDeletes = new Set<string>()
 
   /** Register parent directories of a path (WebDAV collections exist implicitly). */
   private ensureParentDirs(path: string): void {
@@ -59,6 +64,7 @@ class FakeClient {
     } else {
       buf = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf-8')
     }
+    if (this.failUploads.has(path)) throw new Error(`upload rejected: ${path}`)
     this.uploads.push({ path, content: buf })
     this.setRemote(path, buf)
   }
@@ -73,6 +79,7 @@ class FakeClient {
     return [...children.entries()].map(([name, isDir]) => ({ path: `${dir}/${name}`, isDir }))
   }
   async deleteFile(path: string): Promise<void> {
+    if (this.failDeletes.has(path)) throw new Error(`delete rejected: ${path}`)
     // Real servers delete collections recursively — simulate that with
     // directory tracking: files under the path, then the collection itself.
     const keys = [...this.remote.keys()]
@@ -89,6 +96,7 @@ class FakeClient {
     throw new Error(`no such remote file: ${path}`)
   }
   async moveFile(path: string, target: string): Promise<void> {
+    if (this.failMoves.has(path)) throw new Error(`move rejected: ${path}`)
     const keys = [...this.remote.keys()]
     const children = keys.filter((k) => k === path || k.startsWith(path + '/'))
     const wasDir = this.dirs.has(path)
@@ -114,12 +122,14 @@ class FakeClient {
   async downloadFile(path: string): Promise<string> {
     const f = this.remote.get(path)
     if (!f) throw new Error(`no such remote file: ${path}`)
+    if (this.failDownloads.has(path)) throw new Error(`download rejected: ${path}`)
     this.downloads.push(path)
     return f.content.toString('utf-8')
   }
   async downloadToFile(path: string, localPath: string): Promise<void> {
     const f = this.remote.get(path)
     if (!f) throw new Error(`no such remote file: ${path}`)
+    if (this.failDownloads.has(path)) throw new Error(`download rejected: ${path}`)
     this.downloads.push(path)
     await writeFile(localPath, f.content)
   }
@@ -897,6 +907,176 @@ describe('SyncManager — single-flight lock', () => {
     const result = await manager.push(CONFIG)
     expect(result.success).toBe(true)
   })
+})
+
+describe('SyncManager — error and safety branches', () => {
+  it('reports upload failures per file and keeps going', async () => {
+    const fake = new FakeClient()
+    await touch('a.md', 'A')
+    await touch('b.md', 'B')
+    fake.failUploads.add(R('a.md'))
+
+    const result = await makeManager(dataRoot, fake).push(CONFIG)
+
+    expect(result.success).toBe(false)
+    expect(result.transferred).toBe(1)
+    expect(result.errors).toEqual([expect.stringContaining('upload rejected')])
+    expect(fake.uploads.map((u) => u.path)).toEqual([R('b.md')])
+  })
+
+  it('falls back to DELETE when moving a file to the trash fails', async () => {
+    const fake = new FakeClient()
+    fake.setRemote(R('junk.md'), 'x', 'mod-1')
+    await saveSyncState(dataRoot, { version: 1, files: { 'junk.md': entry(null, { size: 1, lastmod: 'mod-1' }) } })
+    fake.failMoves.add(R('junk.md'))
+
+    const result = await makeManager(dataRoot, fake).push(CONFIG)
+
+    expect(result.trashed).toBe(0)
+    expect(result.deleted).toBe(1)
+    expect(fake.deletions).toContain(R('junk.md'))
+  })
+
+  it('reports a file when both the trash move and the delete fail', async () => {
+    const fake = new FakeClient()
+    fake.setRemote(R('junk.md'), 'x', 'mod-1')
+    await saveSyncState(dataRoot, { version: 1, files: { 'junk.md': entry(null, { size: 1, lastmod: 'mod-1' }) } })
+    fake.failMoves.add(R('junk.md'))
+    fake.failDeletes.add(R('junk.md'))
+
+    const result = await makeManager(dataRoot, fake).push(CONFIG)
+
+    expect(result.success).toBe(false)
+    expect(result.errors).toEqual([expect.stringContaining('delete rejected')])
+  })
+
+  it('reports download failures and leaves no temp file behind', async () => {
+    const fake = new FakeClient()
+    fake.setRemote(R('a.md'), 'content')
+    fake.failDownloads.add(R('a.md'))
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.success).toBe(false)
+    expect(result.errors).toEqual([expect.stringContaining('download rejected')])
+    const files = await readdir(dataRoot)
+    expect(files.filter((f) => f.includes('.part-'))).toHaveLength(0)
+  })
+
+  it('reports local deletions that cannot be removed', async () => {
+    // A directory where the state expects a file → rm(force) refuses it.
+    await mkdir(join(dataRoot, 'profiles', 'ghost'), { recursive: true })
+    const s = await stat(join(dataRoot, 'profiles', 'ghost'))
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: { 'profiles/ghost': entry({ size: s.size, mtimeMs: s.mtimeMs }, { size: 1, lastmod: 'mod-1' }) }
+    })
+    const fake = new FakeClient()
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.success).toBe(false)
+    expect(result.errors).toEqual([expect.stringContaining('profiles/ghost')])
+  })
+
+  it('refuses empty, drive-lettered and state-recorded unsafe paths', async () => {
+    const fake = new FakeClient()
+    fake.setRemote('/sophia/', 'ignored')
+    fake.setRemote('/sophia/C:/windows', 'ignored')
+    fake.setRemote(R('ok.md'), 'fine')
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: { '../escape.txt': entry(null, { size: 1, lastmod: 'mod-x' }) }
+    })
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.errors.filter((e) => e.includes('unsafe remote path')).length).toBe(2)
+    expect(result.transferred).toBe(1)
+    await expect(access(join(parentDir, 'escape.txt'))).rejects.toThrow()
+  })
+
+  it('does not seed junk remote files into a fresh push state', async () => {
+    const fake = new FakeClient()
+    fake.setRemote(R('sync-state.json'), '{"version":1}', 'mod-1')
+    fake.setRemote(R('keep.md'), 'valid', 'mod-2')
+    await touch('keep.md', 'valid')
+
+    const result = await makeManager(dataRoot, fake).push(CONFIG)
+
+    // Junk is trashed; the valid file stays and is recorded in state.
+    expect(result.trashed).toBe(1)
+    const state = JSON.parse(await readFile(join(dataRoot, 'sync-state.json'), 'utf-8')) as {
+      files: Record<string, unknown>
+    }
+    expect(Object.keys(state.files)).toEqual(['keep.md'])
+  })
+
+  it('rotates old pre-sync backups keeping only the newest three', async () => {
+    const fake = new FakeClient()
+    await touch('a.md', 'A')
+    const cacheDir = join(dataRoot, '.sync-cache')
+    for (let i = 0; i < 5; i++) {
+      await mkdir(join(cacheDir, `backup_2026-01-0${i + 1}T00-00-00-000Z`), { recursive: true })
+    }
+    // Non-backup entries in the cache dir are ignored by the rotation.
+    await writeFile(join(cacheDir, 'notes.txt'), 'keep me')
+
+    await makeManager(dataRoot, fake).push(CONFIG)
+
+    const backups = (await readdir(cacheDir)).filter((e) => e.startsWith('backup_'))
+    expect(backups).toHaveLength(3)
+    expect(await readFile(join(cacheDir, 'notes.txt'), 'utf-8')).toBe('keep me')
+  })
+
+  it('keeps pruning when a parent directory is already gone', async () => {
+    // Two deletions whose parent chain overlaps: the second start is removed
+    // by the first pass, so its readdir fails and pruning stops cleanly.
+    await touch('profiles/a/deep/b.md', 'B')
+    await touch('profiles/a.md', 'A')
+    const deep = await localStat('profiles/a/deep/b.md')
+    const top = await localStat('profiles/a.md')
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: {
+        'profiles/a/deep/b.md': entry(deep, { size: 1, lastmod: 'mod-1' }),
+        'profiles/a.md': entry(top, { size: 1, lastmod: 'mod-2' })
+      }
+    })
+    const fake = new FakeClient()
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.success).toBe(true)
+    expect(result.deleted).toBe(2)
+    await expect(access(join(dataRoot, 'profiles'))).rejects.toThrow()
+  })
+
+  it('lists and empties the remote trash while ignoring stray files', async () => {
+    const fake = new FakeClient()
+    fake.setRemote('/sophia/.trash/stray.md', 'not a batch')
+    fake.setRemote('/sophia/.trash/batch-1/a.md', 'x')
+    fake.setRemote('/sophia/.trash/batch-1/b.md', 'y')
+
+    const manager = makeManager(dataRoot, fake)
+    const trash = await manager.listRemoteTrash(CONFIG)
+    expect(trash.batches.map((b) => b.name)).toEqual(['batch-1'])
+    expect(trash.fileCount).toBe(2)
+
+    const cleared = await manager.emptyRemoteTrash(CONFIG)
+    expect(cleared).toEqual({ success: true, deletedBatches: 1 })
+    expect(fake.hasRemote('/sophia/.trash/stray.md')).toBe(true)
+  })
+
+  it('answers a connectivity probe through the real client timeout path', async () => {
+    const manager = new SyncManager(dataRoot)
+    const result = await manager.test({
+      url: 'http://127.0.0.1:9/dav',
+      username: 'u',
+      password: 'p'
+    })
+    expect(result.success).toBe(false)
+  }, 30_000)
 })
 
 

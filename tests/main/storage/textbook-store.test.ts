@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { TextbookStore } from '../../../src/main/storage/textbook-store'
-import { textbookContentPath } from '../../../src/main/storage/app-data'
+import { textbookContentPath, textbookDir, textbookPath } from '../../../src/main/storage/app-data'
 
 const PDF_BYTES = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff, 0xfe, 0x01, 0x02, 0x03])
 
@@ -135,5 +135,96 @@ describe('TextbookStore mutations', () => {
     const tb = await createPdfTextbook(store, false)
     await rm(textbookContentPath(dataRoot, tb.id), { force: true })
     expect(await store.getContent(tb.id)).toBe(tb.content)
+  })
+})
+
+describe('TextbookStore — read failures and legacy originals', () => {
+  it('returns an empty list before any textbook exists', async () => {
+    const store = new TextbookStore(dataRoot)
+    await expect(store.list()).resolves.toEqual([])
+  })
+
+  it('sorts the list by most recent update', async () => {
+    const store = new TextbookStore(dataRoot)
+    const first = await createPdfTextbook(store, false)
+    const second = await store.create({
+      title: '第二本',
+      format: 'markdown',
+      content: '# x'
+    })
+
+    // Touch the first one so it becomes newer than the second.
+    await store.update(first.id, { title: '第一本（改）' })
+
+    const list = await store.list()
+    expect(list.map((t) => t.id)).toEqual([first.id, second.id])
+  })
+
+  it('rejects records with a schema mismatch and warns for unreadable files', async () => {
+    const store = new TextbookStore(dataRoot)
+    const tb = await createPdfTextbook(store, false)
+
+    // Valid JSON, wrong shape → schema mismatch.
+    await writeFile(textbookPath(dataRoot, tb.id), JSON.stringify({ id: tb.id }))
+    await expect(store.get(tb.id)).resolves.toBeNull()
+
+    // Unreadable path (a directory where the JSON file belongs) → warn + null.
+    await rm(textbookPath(dataRoot, tb.id), { force: true })
+    await mkdir(textbookPath(dataRoot, tb.id), { recursive: true })
+    await expect(store.get(tb.id)).resolves.toBeNull()
+  })
+
+  it('update persists description and content together', async () => {
+    const store = new TextbookStore(dataRoot)
+    const tb = await createPdfTextbook(store, false)
+
+    const updated = await store.update(tb.id, { description: '简明讲义', content: '# 新正文' })
+
+    expect(updated?.description).toBe('简明讲义')
+    expect(await store.getContent(tb.id)).toBe('# 新正文')
+    expect((await store.get(tb.id))?.content).toBe('# 新正文')
+  })
+
+  it('softDelete returns false for a missing textbook', async () => {
+    const store = new TextbookStore(dataRoot)
+    await expect(store.softDelete('tb_missing')).resolves.toBe(false)
+  })
+
+  it('reads a legacy source.pdf when the stored original name is gone', async () => {
+    const store = new TextbookStore(dataRoot)
+    const tb = await createPdfTextbook(store, true)
+    // Old layout: the original was stored as source.pdf.
+    await rm(join(textbookDir(dataRoot, tb.id), tb.originalFile), { force: true })
+    await writeFile(join(textbookDir(dataRoot, tb.id), 'source.pdf'), PDF_BYTES)
+
+    const result = await store.readOriginal(tb.id)
+
+    expect(result?.data.equals(PDF_BYTES)).toBe(true)
+    expect(result?.fileName).toBe('高等数学.pdf')
+  })
+
+  it('reads a legacy source.epub for epub textbooks', async () => {
+    const store = new TextbookStore(dataRoot)
+    const tb = await store.create({
+      title: '电子书',
+      format: 'epub',
+      sourceFile: 'book.epub',
+      content: '# x'
+    })
+    // Simulate a record with an original name that no longer resolves.
+    await writeFile(textbookPath(dataRoot, tb.id), JSON.stringify({ ...tb, originalFile: 'ghost.epub' }))
+    await writeFile(join(textbookDir(dataRoot, tb.id), 'source.epub'), Buffer.from('EPUB'))
+
+    const result = await store.readOriginal(tb.id)
+
+    expect(result?.data.toString()).toBe('EPUB')
+  })
+
+  it('returns null when neither the stored name nor a legacy source exists', async () => {
+    const store = new TextbookStore(dataRoot)
+    const tb = await createPdfTextbook(store, true)
+    await rm(join(textbookDir(dataRoot, tb.id), tb.originalFile), { force: true })
+
+    await expect(store.readOriginal(tb.id)).resolves.toBeNull()
   })
 })
