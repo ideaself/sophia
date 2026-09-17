@@ -248,22 +248,25 @@ async function inlineImages(
   const chapterDir = chapterHref ? posixDirname(chapterHref) : ''
 
   // Cache: same image reused across a chapter (very common for icons) should
-  // only be read + base64'd once.
-  const cache = new Map<string, string | null>()
+  // only be read + base64'd once. Stores the in-flight promise so repeated
+  // srcs launched in the same batch share one read instead of racing misses.
+  const cache = new Map<string, Promise<string | null>>()
 
-  async function toDataUri(zipPath: string, hintedMime?: string): Promise<string | null> {
-    if (cache.has(zipPath)) return cache.get(zipPath)!
-    try {
-      const buf = await anyEpub.readFile(zipPath) as Buffer
-      const mime = hintedMime || mimeFromExt(zipPath) || 'application/octet-stream'
-      const uri = `data:${mime};base64,${buf.toString('base64')}`
-      cache.set(zipPath, uri)
-      return uri
-    } catch (err) {
-      console.warn(`[epub-parser] Failed to inline image ${zipPath}:`, err instanceof Error ? err.message : String(err))
-      cache.set(zipPath, null)
-      return null
-    }
+  function toDataUri(zipPath: string, hintedMime?: string): Promise<string | null> {
+    const cached = cache.get(zipPath)
+    if (cached) return cached
+    const task = (async (): Promise<string | null> => {
+      try {
+        const buf = (await anyEpub.readFile(zipPath)) as Buffer
+        const mime = hintedMime || mimeFromExt(zipPath) || 'application/octet-stream'
+        return `data:${mime};base64,${buf.toString('base64')}`
+      } catch (err) {
+        console.warn(`[epub-parser] Failed to inline image ${zipPath}:`, err instanceof Error ? err.message : String(err))
+        return null
+      }
+    })()
+    cache.set(zipPath, task)
+    return task
   }
 
   async function resolveSrc(src: string): Promise<string | null> {

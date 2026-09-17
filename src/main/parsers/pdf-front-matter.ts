@@ -26,7 +26,7 @@ const FRONT_HEADING_SIGNALS: RegExp[] = [
 ]
 
 /** A real chapter start heading (chapter N / 第X章 / numbered section). */
-const CHAPTER_HEADING: RegExp = /^(\s*)(第\s*[一二三四五六七八九十百0-9]+\s*[章节部篇]|chapter\s+[0-9ivxlcdm]+|chapter\s+[一二三四五六七八九十]|[0-9]+\s*\.[0-9]+|part\s+[0-9ivxlcdm]+)\b/im
+const CHAPTER_HEADING: RegExp = /^(\s*)(第\s*[一二三四五六七八九十百0-9]+\s*[章节部篇]|chapter\s+[0-9ivxlcdm]+|chapter\s+[一二三四五六七八九十]|[0-9]+\s*\.[0-9]+|part\s+[0-9ivxlcdm]+)/im
 
 function proseRatio(text: string): number {
   const lines = text

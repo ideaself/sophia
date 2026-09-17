@@ -168,7 +168,7 @@ describe('main bootstrap — edge environments', () => {
 
 describe('main bootstrap — provider callbacks', () => {
   it('resolves the stream key and model from the active provider', async () => {
-    const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises')
+    const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
     const { tmpdir } = await import('node:os')
     const { join } = await import('node:path')
 
