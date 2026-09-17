@@ -164,9 +164,10 @@ async function generateArtifact(
     { role: 'user', content: userContent }
   ])
 
-  if (!response.content) return null
+  const content = (response.content ?? '').trim()
+  if (!content) return null
 
-  return { type, content: response.content.trim() }
+  return { type, content }
 }
 
 function buildArtifactPrompt(type: ArtifactType, cardTarget?: string): string {

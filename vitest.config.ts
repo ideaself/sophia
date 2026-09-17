@@ -22,10 +22,10 @@ export default defineConfig({
       // Raise as coverage actually improves — never lower them to unblock
       // a build.
       thresholds: {
-        statements: 63,
-        branches: 53,
-        functions: 60,
-        lines: 65
+        statements: 65,
+        branches: 55,
+        functions: 61,
+        lines: 67
       }
     }
   }
