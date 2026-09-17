@@ -168,3 +168,44 @@ describe('StatsView', () => {
     expect(dataMocks.writeTextFile).not.toHaveBeenCalled()
   })
 })
+
+describe('StatsView — heat levels and title fallbacks', () => {
+  it('covers every heatmap intensity band', async () => {
+    const fiveMin = new Date(today.getTime() - 2 * DAY_MS)
+    const oneHour = new Date(today.getTime() - 3 * DAY_MS)
+    dataMocks.statsOverview.mockResolvedValue({
+      ...OVERVIEW,
+      dailyMinutes: {
+        ...OVERVIEW.dailyMinutes,
+        [localDayKey(fiveMin)]: 5 * MIN_MS,
+        [localDayKey(oneHour)]: 60 * MIN_MS
+      }
+    })
+
+    const { container } = render(<StatsView />)
+    await screen.findByText('学习统计')
+
+    const titles = Array.from(container.querySelectorAll('[title]')).map((el) =>
+      el.getAttribute('title')
+    )
+    expect(titles.some((t) => t?.includes('5 分钟'))).toBe(true)
+    expect(titles.some((t) => t?.includes('1 小时'))).toBe(true)
+    // Distinct colors per band.
+    const bars = Array.from(container.querySelectorAll('[title]')).map(
+      (el) => (el as HTMLElement).style.backgroundColor
+    )
+    expect(new Set(bars).size).toBeGreaterThanOrEqual(3)
+  })
+
+  it('falls back to raw ids when the textbook titles cannot be loaded', async () => {
+    dataMocks.listTextbooks.mockRejectedValue(new Error('db closed'))
+
+    render(<StatsView />)
+    await screen.findByText('学习统计')
+
+    // The distribution falls back to the unknown-textbook label and keeps the
+    // none bucket.
+    await waitFor(() => expect(screen.getByText('未绑定教材')).toBeTruthy())
+    expect(await screen.findByText('未知教材')).toBeTruthy()
+  })
+})

@@ -166,4 +166,18 @@ describe('ConversationSearchBar', () => {
     expect((screen.getByTitle('上一个 (Shift+Enter)') as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByTitle('下一个 (Enter)') as HTMLButtonElement).disabled).toBe(true)
   })
+
+  it('navigates with the arrow buttons when matches exist', () => {
+    const props = searchProps()
+    render(<ConversationSearchBar {...props} />)
+
+    fireEvent.click(screen.getByTitle('上一个 (Shift+Enter)'))
+    expect(props.onGoToMatch).toHaveBeenCalledWith(-1)
+
+    fireEvent.click(screen.getByTitle('下一个 (Enter)'))
+    expect(props.onGoToMatch).toHaveBeenCalledWith(1)
+
+    fireEvent.click(screen.getByTitle('关闭搜索 (Esc)'))
+    expect(props.onClose).toHaveBeenCalled()
+  })
 })

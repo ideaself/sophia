@@ -139,3 +139,19 @@ describe('chat-stream-store', () => {
     expect(listener).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('useChatStream hook wrapper', () => {
+  it('returns the shared controller and survives a stream tick', async () => {
+    const { renderHook, act } = await import('@testing-library/react')
+    const { useChatStream } = await import('../../../src/renderer/src/chat/useChatStream')
+
+    const hook = renderHook(() => useChatStream())
+    const controller = getChatStreamController()
+    expect(hook.result.current).toBe(controller)
+
+    await act(async () => {
+      await controller.send([{ role: 'user', content: 'hi' }], 'deepseek-v4-flash')
+    })
+    expect(hook.result.current).toBe(controller)
+  })
+})

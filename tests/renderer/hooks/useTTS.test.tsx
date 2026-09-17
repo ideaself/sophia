@@ -131,3 +131,65 @@ describe('transport controls', () => {
     expect(getTTSState().rate).toBe(1.25)
   })
 })
+
+describe('useTTS hook wrappers', () => {
+  it('drives speech through the hook actions', async () => {
+    const { renderHook, act } = await import('@testing-library/react')
+    const { useTTS } = await import('../../../src/renderer/src/hooks/useTTS')
+
+    const hook = renderHook(() => useTTS('zh-CN'))
+
+    // speak → the utterance starts.
+    act(() => hook.result.current.speak('你好世界'))
+    const utterance = lastUtterance()
+    act(() => utterance.onstart?.())
+    expect(hook.result.current.speaking).toBe(true)
+
+    // pause while speaking, then resume.
+    act(() => hook.result.current.pause())
+    expect(hook.result.current.paused).toBe(true)
+    act(() => hook.result.current.resume())
+    expect(hook.result.current.paused).toBe(false)
+
+    // rate and loop setters.
+    act(() => hook.result.current.setRate(1.5))
+    expect(hook.result.current.rate).toBe(1.5)
+    act(() => hook.result.current.setLoop(true))
+    expect(hook.result.current.loop).toBe(true)
+
+    // toggle() stops while speaking, then starts again.
+    act(() => hook.result.current.toggle('再来一次'))
+    expect(hook.result.current.speaking).toBe(false)
+    act(() => hook.result.current.toggle('再来一次'))
+    expect(speakSpy).toHaveBeenCalled()
+
+    act(() => hook.result.current.stop())
+    expect(hook.result.current.speaking).toBe(false)
+  })
+
+  it('treats an utterance error as speech end', async () => {
+    const { renderHook, act } = await import('@testing-library/react')
+    const { useTTS } = await import('../../../src/renderer/src/hooks/useTTS')
+
+    const hook = renderHook(() => useTTS('zh-CN'))
+    act(() => hook.result.current.speak('会出错的文本'))
+    const utterance = lastUtterance()
+    act(() => utterance.onstart?.())
+    expect(hook.result.current.speaking).toBe(true)
+
+    act(() => utterance.onerror?.())
+    expect(hook.result.current.speaking).toBe(false)
+  })
+
+  it('pause/resume are no-ops when nothing is speaking', async () => {
+    const { renderHook, act } = await import('@testing-library/react')
+    const { useTTS } = await import('../../../src/renderer/src/hooks/useTTS')
+
+    const hook = renderHook(() => useTTS('zh-CN'))
+    act(() => hook.result.current.pause())
+    act(() => hook.result.current.resume())
+
+    expect(pauseSpy).not.toHaveBeenCalled()
+    expect(resumeSpy).not.toHaveBeenCalled()
+  })
+})
