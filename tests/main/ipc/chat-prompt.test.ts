@@ -21,6 +21,24 @@ vi.mock('electron', () => ({
   }
 }))
 
+const llm = vi.hoisted(() => ({
+  chat: vi.fn((_messages: Array<{ role: string; content: string }>) =>
+    Promise.resolve({ content: '' })
+  ),
+  clients: [] as Array<{ apiKey: string; model: string }>
+}))
+
+vi.mock('../../../src/main/llm/deepseek-client', () => ({
+  DeepSeekClient: class {
+    constructor(apiKey: string, _adapter: unknown, model: string) {
+      llm.clients.push({ apiKey, model })
+    }
+    chat(messages: Array<{ role: string; content: string }>): Promise<{ content: string }> {
+      return llm.chat(messages) as Promise<{ content: string }>
+    }
+  }
+}))
+
 import { registerChatPromptIpc, clearConversationPromptCaches } from '../../../src/main/ipc/chat-prompt'
 import { registerConversationIpc } from '../../../src/main/ipc/data'
 import { ProviderStore } from '../../../src/main/storage/provider-store'
@@ -61,6 +79,8 @@ async function invoke<T = unknown>(channel: string, input?: unknown): Promise<T>
 beforeEach(async () => {
   dataRoot = await mkdtemp(join(tmpdir(), 'sophia-prompt-'))
   mocks.handlers.clear()
+  llm.chat.mockReset().mockResolvedValue({ content: '' })
+  llm.clients.length = 0
 
   conversations = new ConversationStore(dataRoot)
   textbooks = new TextbookStore(dataRoot)
@@ -73,6 +93,19 @@ beforeEach(async () => {
   registerConversationIpc(dataRoot, providerStore)
   registerChatPromptIpc(dataRoot, providerStore)
 })
+
+/** Activate a provider with a stored API key. */
+async function withProvider(): Promise<void> {
+  const provider = await providerStore.create({
+    name: 'DeepSeek',
+    type: 'deepseek',
+    baseUrl: 'https://api.example.com',
+    apiKey: 'sk-live',
+    models: ['deepseek-v4-flash'],
+    selectedModel: 'deepseek-v4-flash'
+  })
+  await providerStore.update(provider.id, { isActive: true })
+}
 
 afterEach(async () => {
   await rm(dataRoot, { recursive: true, force: true })
@@ -240,5 +273,186 @@ describe('ai:compose-answer', () => {
     await expect(
       invoke('ai:compose-answer', { question: '什么是熵？', history: '' })
     ).rejects.toThrow(/未配置 API Key/)
+  })
+})
+
+// ---------------------------------------------------------------
+// Provider-powered paths (DeepSeekClient mocked)
+// ---------------------------------------------------------------
+
+describe('chat:get-prompt-messages — compression and coaching', () => {
+  it('compresses an over-long history once and reuses the summary', async () => {
+    await withProvider()
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '长课'
+    })
+    await conversations.addMessage(conv.id, 'user', '开场问题')
+    await conversations.addMessage(conv.id, 'assistant', '长回答'.repeat(10_000))
+
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if (messages[0].content.includes('压缩')) {
+        return { content: '【压缩摘要】早前讨论了熵与第二定律。' }
+      }
+      return { content: '' }
+    })
+
+    const first = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: conv.id, companionId: 'comp_landau', userMessage: '继续' }
+    )
+
+    // The compressed window carries the summary plus the kept tail (the
+    // summary rides in the history as the first message, not the system prompt).
+    expect(first.some((m) => m.content.includes('【早期对话摘要】'))).toBe(true)
+    expect(first.some((m) => m.content.includes('早前讨论了熵与第二定律'))).toBe(true)
+
+    const compressCalls = llm.chat.mock.calls.filter((c) =>
+      (c[0] as Array<{ content: string }>)[0].content.includes('压缩')
+    ).length
+    expect(compressCalls).toBe(1)
+
+    // A second identical request hits the compression cache.
+    await invoke('chat:get-prompt-messages', {
+      conversationId: conv.id,
+      companionId: 'comp_landau',
+      userMessage: '再继续'
+    })
+    const compressCallsAfter = llm.chat.mock.calls.filter((c) =>
+      (c[0] as Array<{ content: string }>)[0].content.includes('压缩')
+    ).length
+    expect(compressCallsAfter).toBe(1)
+  })
+
+  it('injects the teaching-coach assessment on the next turn', async () => {
+    await withProvider()
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '教练'
+    })
+    for (let i = 0; i < 3; i++) {
+      await conversations.addMessage(conv.id, 'user', `问题 ${i + 1}`)
+      await conversations.addMessage(conv.id, 'assistant', `回答 ${i + 1}`)
+    }
+
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if (messages[0].content.includes('教学教练')) {
+        return {
+          content: JSON.stringify({
+            companionBehavior: 'normal',
+            learnerEngagement: 'curious',
+            contentProgress: 'second_half',
+            currentFocus: '熵',
+            qualityFlags: ['示例提醒']
+          })
+        }
+      }
+      return { content: '' }
+    })
+
+    // 3 user messages + the current one = round 4 → analysis kicks off async.
+    await invoke('chat:get-prompt-messages', {
+      conversationId: conv.id,
+      companionId: 'comp_landau',
+      userMessage: '第四个问题'
+    })
+    await vi.waitFor(() => {
+      const coachCalls = llm.chat.mock.calls.filter((c) =>
+        (c[0] as Array<{ content: string }>)[0].content.includes('教学教练')
+      )
+      expect(coachCalls.length).toBe(1)
+    })
+
+    const second = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: conv.id, companionId: 'comp_landau', userMessage: '第五个问题' }
+    )
+    expect(second[0].content).toContain('教学教练分析')
+    expect(second[0].content).toContain('第 1 轮')
+    expect(second[0].content).toContain('当前焦点：熵')
+  })
+
+  it('retrieves related textbook passages from the recent conversation', async () => {
+    const tb = await textbooks.create({
+      title: '热力学讲义',
+      author: '',
+      description: '',
+      format: 'markdown',
+      content: [
+        '# 第一章 温度',
+        '温度是分子平均动能的度量。'.repeat(20),
+        '# 第二章 熵',
+        '熵是状态函数，孤立系统的熵永不减少。卡诺循环给出了效率上限。'.repeat(20),
+        '# 第三章 热机',
+        '热机把热量转化为功，效率受第二定律约束。'.repeat(20)
+      ].join('\n\n')
+    })
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: tb.id,
+      title: '检索'
+    })
+    await conversations.addMessage(conv.id, 'user', '卡诺循环的效率怎么算？')
+    await conversations.addMessage(conv.id, 'assistant', '先看热机的上限。')
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      {
+        conversationId: conv.id,
+        companionId: 'comp_landau',
+        textbookId: tb.id,
+        userMessage: '那熵呢？'
+      }
+    )
+
+    expect(messages[0].content).toContain('【相关教材段落 1')
+    expect(messages[0].content).toContain('热力学讲义')
+  })
+
+  it('falls back to the legacy handoff search when no meta file exists', async () => {
+    const previous = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '上一课'
+    })
+    await conversations.endConversation(previous.id)
+    await artifacts.create(previous.id, 'handoff_tail', '旧版接力尾巴：停在卡诺循环。')
+
+    const current = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '新一课'
+    })
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: current.id, companionId: 'comp_landau', userMessage: '继续' }
+    )
+    expect(messages[0].content).toContain('旧版接力尾巴')
+  })
+})
+
+describe('ai:compose-answer — provider-powered path', () => {
+  it('drafts a reply through the active provider', async () => {
+    await withProvider()
+    llm.chat.mockResolvedValue({ content: '  我的理解是熵是无序度。  ' })
+
+    const result = await invoke<{ content: string }>('ai:compose-answer', {
+      question: '什么是熵？',
+      history: '学习者: 熵是什么？'
+    })
+
+    expect(result.content).toBe('我的理解是熵是无序度。')
+    const call = llm.chat.mock.calls.at(-1)![0] as Array<{ role: string; content: string }>
+    expect(call[0].content).toContain('代答助手')
+    expect(call[1].content).toContain('什么是熵？')
+    expect(llm.clients.at(-1)).toEqual({ apiKey: 'sk-live', model: 'deepseek-v4-flash' })
   })
 })
