@@ -11,6 +11,33 @@ vi.mock('../../../src/renderer/src/components/DictionaryPopup', () => ({
   DictionaryPopup: () => <div data-testid="dict-popup" />
 }))
 
+// The TTS store samples support once at module load → stub before importing.
+const tts = vi.hoisted(() => {
+  const synth = {
+    speaking: false,
+    paused: false,
+    speak: vi.fn(),
+    cancel: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn()
+  }
+  class FakeUtterance {
+    text: string
+    lang = ''
+    rate = 1
+    pitch = 1
+    onend?: () => void
+    onerror?: () => void
+    constructor(text: string) {
+      this.text = text
+    }
+  }
+  const g = globalThis as Record<string, unknown>
+  g['SpeechSynthesisUtterance'] = FakeUtterance
+  g['speechSynthesis'] = synth
+  return { synth }
+})
+
 import { EpubReaderView } from '../../../src/renderer/src/reader/EpubReaderView'
 
 const data = {
@@ -45,6 +72,10 @@ const NOTE = {
 beforeEach(() => {
   localStorage.clear()
   for (const fn of Object.values(data)) fn.mockClear()
+  tts.synth.speaking = false
+  tts.synth.paused = false
+  tts.synth.speak.mockReset()
+  tts.synth.cancel.mockReset()
   data.readEpubChapters.mockResolvedValue({ chapters: CHAPTERS, title: '热力学讲义', author: '朗道' })
   data.getTextbook.mockResolvedValue({
     id: 'tb_1',
@@ -96,6 +127,29 @@ function selectText(searchText: string): void {
   const range = document.createRange()
   range.setStart(node, 0)
   range.setEnd(node, node.nodeValue?.length ?? 0)
+  const selection = window.getSelection()!
+  selection.removeAllRanges()
+  selection.addRange(range)
+  fireEvent.mouseUp(container)
+}
+
+/** Select just the matched word (not the whole text node). */
+function selectWord(searchText: string): void {
+  const container = contentEl()
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+  let node: Text | null = null
+  while (walker.nextNode()) {
+    const candidate = walker.currentNode as Text
+    if (candidate.nodeValue?.includes(searchText)) {
+      node = candidate
+      break
+    }
+  }
+  if (!node) throw new Error(`text not found in content: ${searchText}`)
+  const idx = node.nodeValue!.indexOf(searchText)
+  const range = document.createRange()
+  range.setStart(node, idx)
+  range.setEnd(node, idx + searchText.length)
   const selection = window.getSelection()!
   selection.removeAllRanges()
   selection.addRange(range)
@@ -336,5 +390,152 @@ describe('EpubReaderView — progress', () => {
 
     expect(await screen.findByText('熵是状态函数。熵永不减少。')).toBeTruthy()
     expect(contentEl().style.fontSize).toBe('12px')
+  })
+})
+
+describe('EpubReaderView — search navigation', () => {
+  it('navigates matches with Enter/Shift+Enter, the arrows and the results list', async () => {
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    const input = await screen.findByPlaceholderText('输入关键词，回车跳转...')
+    fireEvent.change(input, { target: { value: '熵' } })
+    await screen.findByText(/本页 1\/2 · 全书共 2 处/)
+
+    // Enter advances, Shift+Enter goes back (marks exist in this chapter).
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+
+    fireEvent.click(screen.getByTitle('上一个 (Shift+Enter)'))
+    fireEvent.click(screen.getByTitle('下一个 (Enter)'))
+
+    // Clicking a per-chapter hit jumps to that chapter.
+    fireEvent.click(await screen.findByText(/第二章 熵 · 2 处/))
+    expect(screen.getByText('第二章 熵 - 2/3')).toBeTruthy()
+  })
+})
+
+describe('EpubReaderView — TTS', () => {
+  it('reads the chapter aloud and stops on the second click', async () => {
+    tts.synth.speak.mockImplementation(() => {
+      tts.synth.speaking = true
+    })
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    fireEvent.click(await screen.findByText('朗读'))
+
+    expect(tts.synth.speak).toHaveBeenCalledTimes(1)
+    const utterance = tts.synth.speak.mock.calls[0][0] as { text: string }
+    expect(utterance.text).toContain('温度是分子平均动能的度量')
+
+    await waitFor(() => expect(screen.getAllByText('停止朗读').length).toBeGreaterThan(0))
+    tts.synth.cancel.mockImplementation(() => {
+      tts.synth.speaking = false
+    })
+    fireEvent.click(screen.getAllByText('停止朗读')[0])
+    expect(tts.synth.cancel).toHaveBeenCalled()
+  })
+})
+
+describe('EpubReaderView — selection edge cases and notes', () => {
+  it('ignores empty and out-of-content selections', async () => {
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    // Collapsed selection → no menu.
+    window.getSelection()!.removeAllRanges()
+    fireEvent.mouseUp(contentEl())
+    expect(screen.queryByLabelText('高亮选中文字')).toBeNull()
+
+    // A selection outside the chapter content is ignored too.
+    const outside = document.createElement('p')
+    outside.textContent = '外部文字'
+    document.body.appendChild(outside)
+    const range = document.createRange()
+    range.selectNodeContents(outside)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+    fireEvent.mouseUp(contentEl())
+    expect(screen.queryByLabelText('高亮选中文字')).toBeNull()
+    outside.remove()
+  })
+
+  it('offers the dictionary button for English words when the popup is disabled', async () => {
+    localStorage.setItem('sophia.dictEnabled', '0')
+    data.readEpubChapters.mockResolvedValueOnce({
+      chapters: [{ id: 'e1', title: 'English', html: '<p>entropy is conserved</p>' }],
+      title: 'x',
+      author: ''
+    })
+    renderReader()
+    await screen.findByText(/entropy is conserved/)
+
+    // Let the initial loads settle before selecting (a pending re-render
+    // replaces the content DOM and collapses the selection in jsdom).
+    await waitFor(() => expect(data.listReadingNotes).toHaveBeenCalled())
+    selectWord('entropy')
+    fireEvent.click(await screen.findByLabelText('在线词典查词'))
+
+    expect(screen.getByTestId('dict-popup')).toBeTruthy()
+  })
+
+  it('auto-opens the dictionary for English words when enabled', async () => {
+    localStorage.setItem('sophia.dictEnabled', '1')
+    data.readEpubChapters.mockResolvedValueOnce({
+      chapters: [{ id: 'e1', title: 'English', html: '<p>entropy is conserved</p>' }],
+      title: 'x',
+      author: ''
+    })
+    renderReader()
+    await screen.findByText(/entropy is conserved/)
+
+    selectWord('entropy')
+
+    expect(await screen.findByTestId('dict-popup')).toBeTruthy()
+  })
+
+  it('jumps to a note position and cancels note editing', async () => {
+    data.listReadingNotes.mockResolvedValue([NOTE])
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    fireEvent.click(screen.getByText(/📌 笔记 \(1\)/))
+    fireEvent.click(await screen.findByTitle('跳转到文中位置'))
+    await waitFor(() => expect(screen.getByText('第二章 熵 - 2/3')).toBeTruthy())
+
+    fireEvent.click(screen.getByLabelText('编辑笔记'))
+    fireEvent.click(await screen.findByText('取消'))
+    await waitFor(() => expect(screen.queryByDisplayValue('重点')).toBeNull())
+  })
+
+  it('cancels the note draft without creating anything', async () => {
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    selectText('分子平均动能')
+    fireEvent.click(await screen.findByLabelText('添加笔记'))
+    fireEvent.change(screen.getByPlaceholderText('写下你的想法...'), {
+      target: { value: '不要了' }
+    })
+    fireEvent.click(screen.getByText('取消'))
+
+    await waitFor(() => expect(screen.queryByPlaceholderText('写下你的想法...')).toBeNull())
+    expect(data.createReadingNote).not.toHaveBeenCalled()
+  })
+
+  it('restores a saved scroll offset after the chapter loads', async () => {
+    localStorage.setItem(
+      'epub-progress-tb_1',
+      JSON.stringify({ chapterIndex: 0, fontSize: 16, scrollY: 120 })
+    )
+    data.getTextbook.mockResolvedValue(null)
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    // The restore runs on an 80ms timer; let it fire without errors.
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(screen.getByText('第一章 温度 - 1/3')).toBeTruthy()
   })
 })
