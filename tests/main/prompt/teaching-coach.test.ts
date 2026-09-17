@@ -1,5 +1,25 @@
-import { describe, it, expect } from 'vitest'
-import { shouldAnalyze, formatAssessment, type TeachingCoachAssessment } from '../../../src/main/prompt/teaching-coach'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+const llm = vi.hoisted(() => ({ chat: vi.fn() }))
+
+vi.mock('../../../src/main/llm/deepseek-client', () => ({
+  DeepSeekClient: class {
+    constructor() {}
+    chat = (messages: unknown): Promise<{ content: string }> =>
+      llm.chat(messages) as Promise<{ content: string }>
+  }
+}))
+
+vi.mock('../../../src/main/llm/deepseek-http-adapter', () => ({
+  createDeepSeekHttpAdapter: vi.fn(() => ({}))
+}))
+
+import {
+  shouldAnalyze,
+  formatAssessment,
+  analyzeTeaching,
+  type TeachingCoachAssessment
+} from '../../../src/main/prompt/teaching-coach'
 
 function sampleAssessment(): TeachingCoachAssessment {
   return {
@@ -108,5 +128,132 @@ describe('formatAssessment', () => {
     expect(out).not.toContain('可分离变量法')
     expect(out).not.toContain('dy/dx')
     expect(out).not.toContain('连续 3 轮')
+  })
+
+  it('adds a warning for each non-looping problem behavior', () => {
+    const drifting = sampleAssessment()
+    drifting.companionBehavior = 'drifting'
+    expect(formatAssessment(drifting, 1)).toContain('伙伴正在飘离')
+
+    const criticizing = sampleAssessment()
+    criticizing.companionBehavior = 'criticizing_author'
+    expect(formatAssessment(criticizing, 1)).toContain('批评教材作者')
+
+    const vague = sampleAssessment()
+    vague.companionBehavior = 'vague_answers'
+    expect(formatAssessment(vague, 1)).toContain('回答模糊')
+  })
+})
+
+describe('analyzeTeaching', () => {
+  const companion = { name: '朗道', identity: '理论物理学家' } as never
+  const history = [
+    { role: 'user', content: '熵是什么？' },
+    { role: 'assistant', content: '先说说你的理解。' }
+  ] as never
+  const CONFIG = { apiKey: 'sk-test', baseUrl: 'https://api.example.com/', model: 'deepseek-v4-flash' }
+
+  beforeEach(() => {
+    llm.chat.mockReset()
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  async function run(): Promise<TeachingCoachAssessment | null> {
+    const promise = analyzeTeaching(
+      history,
+      companion,
+      '热力学讲义',
+      CONFIG as { apiKey: string; baseUrl: string; model: string }
+    )
+    await vi.advanceTimersByTimeAsync(600)
+    return promise
+  }
+
+  it('parses a valid assessment on the first attempt', async () => {
+    llm.chat.mockResolvedValue({
+      content: JSON.stringify({
+        companionBehavior: 'looping',
+        learnerEngagement: 'curious',
+        teachingGoalAlignment: 'aligned',
+        recommendedAction: 'continue',
+        responsePlaybook: {}
+      })
+    })
+
+    const result = await run()
+
+    expect(result?.companionBehavior).toBe('looping')
+    expect(llm.chat).toHaveBeenCalledTimes(1)
+    const messages = llm.chat.mock.calls[0][0] as Array<{ role: string; content: string }>
+    expect(messages[1].content).toContain('教材：热力学讲义')
+    expect(messages[1].content).toContain('学习者: 熵是什么？')
+    expect(messages[1].content).toContain('AI伙伴：朗道（理论物理学家）')
+  })
+
+  it('extracts JSON from surrounding prose', async () => {
+    llm.chat.mockResolvedValue({
+      content: '分析如下：\n{"companionBehavior":"drifting","learnerEngagement":"neutral",' +
+        '"teachingGoalAlignment":"off","recommendedAction":"refocus","responsePlaybook":{}}\n以上。'
+    })
+
+    const result = await run()
+
+    expect(result?.companionBehavior).toBe('drifting')
+    expect(llm.chat).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries after a parse failure and succeeds', async () => {
+    llm.chat
+      .mockResolvedValueOnce({ content: '完全不是 JSON' })
+      .mockResolvedValueOnce({
+        content: JSON.stringify({
+          companionBehavior: 'vague_answers',
+          learnerEngagement: 'curious',
+          teachingGoalAlignment: 'aligned',
+          recommendedAction: 'deepen',
+          responsePlaybook: {}
+        })
+      })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const result = await run()
+
+      expect(result?.companionBehavior).toBe('vague_answers')
+      expect(llm.chat).toHaveBeenCalledTimes(2)
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('First parse failed, retrying'),
+        expect.any(String)
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('returns null when both attempts fail to parse', async () => {
+    llm.chat.mockResolvedValue({ content: '{"broken": ' })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const result = await run()
+
+      expect(result).toBeNull()
+      expect(llm.chat).toHaveBeenCalledTimes(2)
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Retry also failed, skipping analysis')
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('returns null for non-object JSON payloads', async () => {
+    llm.chat.mockResolvedValue({ content: 'null' })
+
+    const result = await run()
+
+    expect(result).toBeNull()
   })
 })
