@@ -21,7 +21,9 @@ const h = vi.hoisted(() => {
     userData: '',
     onHeadersReceived: null as ((details: unknown, cb: (arg: unknown) => void) => void) | null,
     sentToRenderer: [] as Array<{ id: number; channel: string; payload: unknown }>,
-    webContentsFromId: 42
+    webContentsFromId: 42,
+    emptyIcon: false,
+    throwOnNextWindow: false
   }
 
   class FakeTray {
@@ -55,6 +57,10 @@ const h = vi.hoisted(() => {
     destroyed = false
     minimized = false
     handlers: Record<string, (...args: unknown[]) => void> = {}
+    handlerLists: Record<string, Array<(...args: unknown[]) => void>> = {}
+    emitAll(event: string, ...args: unknown[]): void {
+      for (const cb of this.handlerLists[event] ?? []) cb(...args)
+    }
     loadURL = vi.fn(async () => {})
     loadFile = vi.fn(async () => {})
     show = vi.fn(() => {
@@ -89,12 +95,17 @@ const h = vi.hoisted(() => {
     }
 
     constructor(options?: Record<string, unknown>) {
+      if (state.throwOnNextWindow) {
+        state.throwOnNextWindow = false
+        throw new Error('no display available')
+      }
       this.options = options ?? {}
       FakeBrowserWindow.instances.push(this)
     }
 
     on(event: string, cb: (...args: unknown[]) => void): this {
       this.handlers[event] = cb
+      ;(this.handlerLists[event] ??= []).push(cb)
       return this
     }
   }
@@ -138,7 +149,7 @@ vi.mock('electron', () => ({
   Tray: h.FakeTray,
   Menu: { buildFromTemplate: (template: unknown) => ({ template }) },
   nativeImage: {
-    createFromDataURL: () => ({ isEmpty: () => false, resize: () => ({ sized: true }) }),
+    createFromDataURL: () => ({ isEmpty: () => h.state.emptyIcon, resize: () => ({ sized: true }) }),
     createFromBuffer: () => ({ sized: false })
   },
   session: {
@@ -484,5 +495,60 @@ describe('main bootstrap — tray and lifecycle', () => {
     const raw = await readFile(join(h.state.userData, 'window-state.json'), 'utf-8')
     const saved = JSON.parse(raw) as { x: number; width: number; height: number }
     expect(saved).toMatchObject({ x: 5, y: 6, width: 999, height: 777 })
+  })
+})
+
+describe('main bootstrap — environment branches', () => {
+  it('falls back to a drawn tray icon when the packaged icon is empty', async () => {
+    h.state.emptyIcon = true
+    try {
+      const before = h.FakeTray.instances.length
+      h.FakeBrowserWindow.instances.forEach((w) => (w.destroyed = true))
+      h.state.appEvents.get('activate')?.()
+
+      await vi.waitFor(() => expect(h.FakeTray.instances.length).toBe(before + 1))
+      expect(h.FakeTray.instances[before].setToolTip).toHaveBeenCalledWith('Sophia')
+    } finally {
+      h.state.emptyIcon = false
+    }
+  })
+
+  it('recovers from a corrupt window-state file and logs window creation failures', async () => {
+    await writeFile(join(h.state.userData, 'window-state.json'), '{ not json', 'utf-8')
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const before = h.FakeBrowserWindow.instances.length
+      h.FakeBrowserWindow.instances.forEach((w) => (w.destroyed = true))
+      h.state.appEvents.get('activate')?.()
+      await vi.waitFor(() => expect(h.FakeBrowserWindow.instances.length).toBe(before + 1))
+      expect(h.FakeBrowserWindow.instances[before].options.width).toBe(1200)
+
+      // The next creation fails outright → logged, not thrown.
+      h.state.throwOnNextWindow = true
+      h.FakeBrowserWindow.instances.forEach((w) => (w.destroyed = true))
+      h.state.appEvents.get('activate')?.()
+      await vi.waitFor(() =>
+        expect(error).toHaveBeenCalledWith(
+          'Failed to create main window:',
+          expect.any(Error)
+        )
+      )
+    } finally {
+      error.mockRestore()
+    }
+  })
+
+  it('saves the window state on close after the quit flag flips', async () => {
+    const win = h.FakeBrowserWindow.instances[0]
+    win.bounds = { x: 11, y: 22, width: 640, height: 480 }
+    h.state.appEvents.get('before-quit')?.()
+
+    win.emitAll('close', { preventDefault: vi.fn() })
+    win.emitAll('closed')
+
+    const saved = JSON.parse(
+      await readFile(join(h.state.userData, 'window-state.json'), 'utf-8')
+    ) as { x: number; width: number }
+    expect(saved).toMatchObject({ x: 11, y: 22, width: 640, height: 480 })
   })
 })
