@@ -678,7 +678,9 @@ describe('artifact pipeline end-to-end', () => {
     })
     expect(end).toMatchObject({ success: true, pending: true })
 
-    // The background queue persists every regular artifact type.
+    // The background queue persists every regular artifact type. Generous
+    // timeout: the mock is fast but 15 artifact writes + parallel test files
+    // can be slow on a loaded machine.
     await vi.waitFor(
       async () => {
         const list = await invoke<Array<{ type: string }>>('artifact:list', {
@@ -686,7 +688,7 @@ describe('artifact pipeline end-to-end', () => {
         })
         expect(list.length).toBeGreaterThanOrEqual(10)
       },
-      { timeout: 5000 }
+      { timeout: 20_000, interval: 50 }
     )
     const types = (
       await invoke<Array<{ type: string }>>('artifact:list', { conversationId: conv.id })

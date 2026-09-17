@@ -1,102 +1,218 @@
 // @vitest-environment jsdom
 /**
- * SettingsProvidersSection — extracted model-provider settings.
+ * SettingsProvidersSection — provider list, add/edit modal, model fetching,
+ * connection tests, activation and deletion.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
-
 import { SettingsProvidersSection } from '../../../src/renderer/src/components/SettingsProvidersSection'
 
-const existingProvider = {
-  id: 'prov_1',
-  name: 'DeepSeek 官方',
-  type: 'deepseek',
-  baseUrl: 'https://api.deepseek.com/v1',
-  models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
-  selectedModel: 'deepseek-v4-pro',
-  isActive: true,
-  createdAt: '2026-07-06T09:00:00Z',
-  updatedAt: '2026-07-06T09:00:00Z'
-}
-
-const providersApi = {
+const providers = {
   list: vi.fn(),
-  get: vi.fn(),
-  getActive: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
   setActive: vi.fn(),
   setApiKey: vi.fn(),
-  hasApiKey: vi.fn(),
-  fetchModels: vi.fn(),
   testConnection: vi.fn()
 }
 
+const PROVIDER = {
+  id: 'prov_1',
+  name: 'DeepSeek 主号',
+  type: 'deepseek',
+  baseUrl: 'https://api.deepseek.com/v1',
+  models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+  selectedModel: 'deepseek-v4-flash',
+  isActive: true,
+  createdAt: '2026-09-16T10:00:00Z',
+  updatedAt: '2026-09-16T10:00:00Z'
+}
+
 beforeEach(() => {
-  for (const fn of Object.values(providersApi)) fn.mockClear()
-  providersApi.list.mockResolvedValue([existingProvider])
-  providersApi.testConnection.mockResolvedValue({ success: true, models: [], message: 'ok' })
-  providersApi.create.mockResolvedValue(existingProvider)
+  for (const fn of Object.values(providers)) fn.mockClear()
+  providers.list.mockResolvedValue([PROVIDER])
+  providers.create.mockResolvedValue({ id: 'prov_new' })
+  providers.update.mockResolvedValue({ id: 'prov_1' })
+  providers.delete.mockResolvedValue(true)
+  providers.setActive.mockResolvedValue({ id: 'prov_1' })
+  providers.setApiKey.mockResolvedValue(undefined)
+  providers.testConnection.mockResolvedValue({ success: true, message: 'Connection successful', models: [] })
 
   Object.defineProperty(window, 'sophia', {
     configurable: true,
-    value: { providers: providersApi }
+    value: { providers }
   })
 })
 
-afterEach(() => {
-  cleanup()
-})
+afterEach(cleanup)
 
-describe('SettingsProvidersSection', () => {
-  it('lists configured providers with their base URL and active badge', async () => {
+function openAddModal(): void {
+  fireEvent.click(screen.getByText('+ 添加模型服务'))
+}
+
+function fillRequired(name = '新服务', baseUrl = 'https://api.example.com/v1'): void {
+  fireEvent.change(screen.getByPlaceholderText('我的服务'), { target: { value: name } })
+  fireEvent.change(screen.getByPlaceholderText('https://api.deepseek.com/v1'), {
+    target: { value: baseUrl }
+  })
+}
+
+describe('SettingsProvidersSection — list', () => {
+  it('renders providers with active badge and model count', async () => {
     render(<SettingsProvidersSection />)
 
-    expect(await screen.findByText('DeepSeek 官方')).toBeTruthy()
-    expect(screen.getByText('https://api.deepseek.com/v1')).toBeTruthy()
+    expect(await screen.findByText('DeepSeek 主号')).toBeTruthy()
     expect(screen.getByText('当前')).toBeTruthy()
-    // Badge in the section title reflects the provider count.
-    expect(screen.getByText('1 个服务')).toBeTruthy()
+    expect(screen.getByText('deepseek')).toBeTruthy()
+    expect(screen.getByText('https://api.deepseek.com/v1')).toBeTruthy()
+    expect(screen.getByText(/2 个可用/)).toBeTruthy()
+    // The active provider hides the "set default" action.
+    expect(screen.queryByText('设为默认')).toBeNull()
   })
 
-  it('shows the empty state when no provider is configured', async () => {
-    providersApi.list.mockResolvedValueOnce([])
+  it('shows the empty state without providers', async () => {
+    providers.list.mockResolvedValue([])
     render(<SettingsProvidersSection />)
 
-    expect(await screen.findByText('尚未配置模型服务')).toBeTruthy()
-    expect(screen.getByText('+ 添加模型服务')).toBeTruthy()
+    expect(await screen.findByText(/添加一个模型服务即可开始使用/)).toBeTruthy()
   })
 
-  it('opens the create modal with save disabled until required fields are filled', async () => {
-    providersApi.list.mockResolvedValueOnce([])
+  it('activates and deletes providers', async () => {
+    providers.list.mockResolvedValue([{ ...PROVIDER, isActive: false }])
     render(<SettingsProvidersSection />)
-    await screen.findByText('尚未配置模型服务')
+    await screen.findByText('DeepSeek 主号')
 
-    fireEvent.click(screen.getByText('+ 添加模型服务'))
-    expect(await screen.findByText('添加模型服务', { selector: 'h3' })).toBeTruthy()
+    fireEvent.click(screen.getByText('设为默认'))
+    await waitFor(() => expect(providers.setActive).toHaveBeenCalledWith('prov_1'))
+    expect(providers.list).toHaveBeenCalledTimes(2)
 
-    const createButton = screen.getByText('创建') as HTMLButtonElement
-    expect(createButton.disabled).toBe(true)
-
-    fireEvent.change(screen.getByPlaceholderText('我的服务'), { target: { value: '我的服务' } })
-    // Base URL defaults to the DeepSeek preset when adding.
-    await waitFor(() => expect(createButton.disabled).toBe(false))
-
-    fireEvent.click(createButton)
-    await waitFor(() => expect(providersApi.create).toHaveBeenCalledTimes(1))
-    expect(providersApi.create.mock.calls[0][0]).toMatchObject({ name: '我的服务' })
-  })
-
-  it('deletes a provider after inline confirmation', async () => {
-    providersApi.delete.mockResolvedValue(true)
-    providersApi.list.mockResolvedValue([existingProvider])
-    render(<SettingsProvidersSection />)
-    await screen.findByText('DeepSeek 官方')
+    fireEvent.click(screen.getByText('删除'))
+    fireEvent.click(screen.getByText('取消'))
+    expect(providers.delete).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByText('删除'))
     fireEvent.click(screen.getByText('确认删除'))
+    await waitFor(() => expect(providers.delete).toHaveBeenCalledWith('prov_1'))
+  })
+})
 
-    await waitFor(() => expect(providersApi.delete).toHaveBeenCalledWith('prov_1'))
+describe('SettingsProvidersSection — add/edit modal', () => {
+  it('creates a provider from the modal', async () => {
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    const createButton = screen.getByText('创建') as HTMLButtonElement
+    expect(createButton.disabled).toBe(true)
+
+    fillRequired()
+    fireEvent.change(screen.getByPlaceholderText('sk-...'), { target: { value: 'sk-new' } })
+    expect(createButton.disabled).toBe(false)
+    fireEvent.click(createButton)
+
+    await waitFor(() =>
+      expect(providers.create).toHaveBeenCalledWith({
+        name: '新服务',
+        type: 'custom',
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-new',
+        models: [],
+        selectedModel: ''
+      })
+    )
+    await waitFor(() => expect(screen.queryByText('创建')).toBeNull())
+  })
+
+  it('updates a provider and rotates the key when one is typed', async () => {
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    fireEvent.click(screen.getByText('编辑'))
+    const nameInput = (await screen.findByPlaceholderText('我的服务')) as HTMLInputElement
+    expect(nameInput.value).toBe('DeepSeek 主号')
+
+    fireEvent.change(nameInput, { target: { value: '改名后的服务' } })
+    fireEvent.change(screen.getByPlaceholderText('sk-...'), { target: { value: 'sk-rotated' } })
+    fireEvent.click(screen.getByText('更新'))
+
+    await waitFor(() =>
+      expect(providers.update).toHaveBeenCalledWith('prov_1', {
+        name: '改名后的服务',
+        type: 'deepseek',
+        baseUrl: 'https://api.deepseek.com/v1',
+        models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+        selectedModel: 'deepseek-v4-flash'
+      })
+    )
+    expect(providers.setApiKey).toHaveBeenCalledWith('prov_1', 'sk-rotated')
+    await waitFor(() => expect(providers.list).toHaveBeenCalledTimes(2))
+  })
+
+  it('surfaces save failures in the section banner', async () => {
+    providers.create.mockRejectedValue(new Error('磁盘已满'))
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fillRequired()
+    fireEvent.click(screen.getByText('创建'))
+
+    expect(await screen.findByText('磁盘已满')).toBeTruthy()
+  })
+})
+
+describe('SettingsProvidersSection — model discovery and tests', () => {
+  it('fetches models and selects the first one', async () => {
+    providers.testConnection.mockResolvedValue({
+      success: true,
+      models: ['m-one', 'm-two'],
+      message: 'Found 2 models'
+    })
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fillRequired()
+    fireEvent.click(screen.getByText('获取模型'))
+
+    expect(await screen.findByText(/成功：Found 2 models/)).toBeTruthy()
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    await waitFor(() => expect(select.value).toBe('m-one'))
+    expect(providers.testConnection).toHaveBeenCalledWith('https://api.example.com/v1', '__skip__')
+  })
+
+  it('reports model-fetch failures and thrown errors', async () => {
+    providers.testConnection.mockResolvedValueOnce({ success: false, error: '401 Unauthorized' })
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fillRequired()
+    fireEvent.click(screen.getByText('获取模型'))
+    expect(await screen.findByText(/错误：401 Unauthorized/)).toBeTruthy()
+    expect(screen.queryByRole('combobox')).toBeNull()
+
+    providers.testConnection.mockRejectedValueOnce(new Error('network down'))
+    fireEvent.click(screen.getByText('获取模型'))
+    expect(await screen.findByText(/错误：network down/)).toBeTruthy()
+  })
+
+  it('tests the connection and can switch the provider type preset', async () => {
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fireEvent.click(screen.getByText('deepseek'))
+    expect((screen.getByPlaceholderText('https://api.deepseek.com/v1') as HTMLInputElement).value).toBe(
+      'https://api.deepseek.com/v1'
+    )
+
+    fireEvent.click(screen.getByText('测试连接'))
+    expect(await screen.findByText(/成功：Connection successful/)).toBeTruthy()
+
+    providers.testConnection.mockResolvedValueOnce({ success: false, error: 'Connection failed' })
+    fireEvent.click(screen.getByText('测试连接'))
+    expect(await screen.findByText(/错误：Connection failed/)).toBeTruthy()
   })
 })
