@@ -281,10 +281,18 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅监听伙伴 id 变化；chatStream 每次渲染都是新对象，不应作为依赖
   }, [companion?.id])
 
-  // Focus input on mount/companion change
+  // Focus input on mount/companion change — but never while the header title
+  // is being edited: the deferred focus would blur that input, and its
+  // onBlur saves immediately, closing the rename box before the user types.
+  const editingTitleRef = useRef(editingTitle)
+  useEffect(() => {
+    editingTitleRef.current = editingTitle
+  }, [editingTitle])
   useEffect(() => {
     if (companion) {
-      requestAnimationFrame(() => inputRef.current?.focus())
+      requestAnimationFrame(() => {
+        if (!editingTitleRef.current) inputRef.current?.focus()
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- companion 对象每次渲染可能变化，仅按 id 聚焦一次
   }, [companion?.id, activeIdx])
@@ -396,7 +404,9 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [search])
+    // Both members are stable — rebinding on every match navigation (the
+    // `search` object changes with matchIndex) is unnecessary.
+  }, [search.setSearchOpen, search.searchInputRef])
 
   // Quick text templates: Alt+1..9 inserts a saved snippet at the caret
   // (1.0.7). Works while typing, unlike the Ctrl-based shortcuts above.
@@ -641,10 +651,13 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     })
   }, [search, searchMatches.length])
 
-  // Reset the current match when the query changes
+  // Reset the current match when the query changes. Depend on the stable
+  // setter (not the whole `search` object): its identity changes with
+  // matchIndex, which would re-run this effect and snap navigation back to
+  // the first match.
   useEffect(() => {
     search.setMatchIndex(0)
-  }, [search, searchQuery])
+  }, [search.setMatchIndex, searchQuery])
 
   // ---- Virtualized message rows ----
   const rows = useMemo<MessageRow[]>(() => {

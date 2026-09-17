@@ -19,9 +19,11 @@ const sync = {
   pull: vi.fn(),
   listTrash: vi.fn(),
   emptyTrash: vi.fn(),
-  onProgress: vi.fn(() => () => {})
+  onProgress: vi.fn(
+    (_cb: (p: { current: number; total: number; file: string }) => void) => () => {}
+  )
 }
-const confirmDialog = vi.fn(async () => true)
+const confirmDialog = vi.fn(async (_options: { message: string; confirmLabel?: string }) => true)
 
 let progressCb: ((p: { current: number; total: number; file: string }) => void) | null = null
 
@@ -30,7 +32,7 @@ beforeEach(() => {
   for (const fn of Object.values(sync)) fn.mockClear()
   confirmDialog.mockReset().mockResolvedValue(true)
   progressCb = null
-  sync.onProgress.mockImplementation((cb: typeof progressCb) => {
+  sync.onProgress.mockImplementation((cb) => {
     progressCb = cb
     return () => {
       progressCb = null
