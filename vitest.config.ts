@@ -5,6 +5,10 @@ export default defineConfig({
     // .tsx test files opt into jsdom per-file via @vitest-environment.
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     globals: false,
+    // Vitest 5 defaults to clearMocks: true; several suites (preload bridge,
+    // app bootstrap) assert on calls recorded at module-load time, so keep the
+    // pre-Vitest-5 behavior of explicit per-file mock clearing.
+    clearMocks: false,
     coverage: {
       provider: 'v8',
       // `include` counts every source file, not just the ones a test happened
