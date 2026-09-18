@@ -11,7 +11,14 @@ npm run test:coverage  # 覆盖率及门槛（CI 用这个）
 
 - `npm test` = `typecheck && lint && test:unit && test:security`（见 package.json）。
 - **lint 必须 0 错误且 0 警告**（`--max-warnings 0` 语义已按此执行）。
-- 打包相关：`npm run build:win`（会附带 `test:fuses`）。发布走 `release.yml`（附带 `latest.yml`，`--publish never`）。
+- 打包相关：`npm run build:win`（会附带 `test:fuses`）；`npm run build:dir` 只出 `release/win-unpacked`，`npm run smoke` 启动它（独立 `--user-data-dir`，校验存活 12s + LocalData 布局落盘）。CI 跑 `build:dir` + `smoke` 拦截「能打包但启动即崩」。
+- 发布走 `release.yml`（附带 `latest.yml`，`--publish never`）；依赖更新由 `.github/dependabot.yml` 每周开 PR（minor/patch 聚合、major 单独）。
+
+## 数据版本与迁移（LocalData）
+
+- `src/main/storage/data-version.ts` 是数据布局的版本闸门：`initDataDir` 启动时调 `migrateDataRoot`，把 `LocalData/data-version.json` 升到 `DATA_VERSION`。
+- **改数据布局（重命名/废弃文件、改 JSON 形状）时必须**：`DATA_VERSION + 1`，并在 `MIGRATIONS` 加 `n: async (root) => { ... }`（n→n+1，幂等）；无结构变化只加空步即可。
+- 新版本数据被旧版本 App 打开时只警告、不落盘覆盖；`data-version.json` 是每设备标记，已在 `file-walker.ts` 中排除同步。
 
 ## 覆盖率门槛（只升不降）
 

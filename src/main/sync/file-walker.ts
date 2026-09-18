@@ -8,6 +8,10 @@ const EXCLUDE_PATTERNS = [
   /(^|[/\\])config[/\\][^/\\]+\.enc$/,
   // Local sync bookkeeping is per-device and must not sync.
   /(^|[/\\])sync-state\.json$/,
+  // Data-schema marker is per-device: each install migrates its own data root
+  // on startup, and a marker synced from a newer app would look like a
+  // downgrade to an older one.
+  /(^|[/\\])data-version\.json$/,
   // Local sync cache (pre-sync backups, etc.) is per-device.
   /(^|[/\\])\.sync-cache[/\\]/,
   // Remote trash (deleted files parked on the server before removal) is

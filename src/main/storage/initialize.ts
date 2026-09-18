@@ -8,6 +8,7 @@ import {
   diaryDir
 } from './app-data'
 import { loadReferenceCompanions } from '../companions/reference-loader'
+import { migrateDataRoot, type DataVersionState } from './data-version'
 
 export interface InitOptions {
   /** Root directory for all local app data */
@@ -18,6 +19,8 @@ export interface InitOptions {
 
 export interface InitResult {
   companionCount: number
+  /** Result of the on-disk data version check/migration. */
+  dataVersion: DataVersionState
 }
 
 const LEARNER_TEMPLATE = `# 学习者档案
@@ -59,6 +62,9 @@ export async function initDataDir(options: InitOptions): Promise<InitResult> {
   await mkdir(textbooksDir(dataRoot), { recursive: true })
   await mkdir(diaryDir(dataRoot), { recursive: true })
 
+  // --- Bring the data layout up to the current schema generation ---
+  const dataVersion = await migrateDataRoot(dataRoot)
+
   // --- Write learner.md template (only if not exists) ---
   const lnPath = learnerPath(dataRoot)
   try {
@@ -74,6 +80,7 @@ export async function initDataDir(options: InitOptions): Promise<InitResult> {
   })
 
   return {
-    companionCount: result.count
+    companionCount: result.count,
+    dataVersion
   }
 }

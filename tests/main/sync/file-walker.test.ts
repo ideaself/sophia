@@ -78,6 +78,14 @@ describe('collectSyncableFiles', () => {
     expect(files).toEqual(['profiles/prof_default/worlds/world_default/story.md'])
   })
 
+  it('excludes the per-device data-version marker', async () => {
+    await touch('data-version.json')
+    await touch('learner.md')
+
+    const files = await collected()
+    expect(files).toEqual(['learner.md'])
+  })
+
   it('excludes pull conflict copies from the sync set', async () => {
     await touch('conversations/c_1/messages.json')
     await touch('conversations/c_1/messages.conflict-1722600000000.json')

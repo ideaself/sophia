@@ -87,7 +87,10 @@ vi.mock('electron', () => ({
 vi.mock('../../src/main/storage/initialize', () => ({
   initDataDir: async () => {
     if (cfg.initRejects) throw new Error('disk full')
-    return { companionCount: 0 }
+    return {
+      companionCount: 0,
+      dataVersion: { version: 1, migratedFrom: null, downgraded: false }
+    }
   }
 }))
 
