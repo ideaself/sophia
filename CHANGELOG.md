@@ -4,6 +4,26 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-09-18
+
+### 变更
+
+- **运行时升级**：Electron 43 → 44、electron-vite 3 → 5、Vitest 4 → 5（内置 Chromium/Node
+  安全补丁与性能改进）；同版本批次依赖一并刷新（DOMPurify、@napi-rs/canvas 等），`npm audit` 归零。
+- **平台不变**：仍为 Windows x64 未签名安装包；升级链路已实测（0.1.2 → 0.1.3，含退出时安装）。
+
+### 修复
+
+- **窗口状态落盘改为原子写入**：避免极端情况下留下空/半截的 `window-state.json`
+  （此前偶发被读到空文件）。
+- **打包稳定性**：图标改为构建脚本直接产出 `build/icon.ico`（PNG-in-ICO），规避
+  electron-builder 的 PNG→ICO 工具在内存紧张机器/CI 上 OOM。
+
+### 工程化
+
+- 测试 1591 → 1610；分支覆盖率 89.35% → 89.7%（新增 `scripts/branch-gaps.mjs` 定位缺口）。
+- 死守卫精修：8 处覆盖率忽略改为真实测试，`local-context` 移除不可达分支。
+
 ## [0.1.3] - 2026-09-18
 
 ### 修复
