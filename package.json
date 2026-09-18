@@ -33,7 +33,7 @@
     ],
     "afterPack": "build/after-pack.cjs",
     "win": {
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -92,7 +92,7 @@
     "@vitejs/plugin-react": "^4.4.1",
     "@vitest/coverage-v8": "^4.1.11",
     "dompurify": "^3.4.12",
-    "electron": "^43.0.0",
+    "electron": "^44.4.2",
     "electron-builder": "^26.15.3",
     "electron-vite": "^3.1.0",
     "eslint": "^10.8.0",

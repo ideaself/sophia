@@ -67,3 +67,22 @@ ctx2.drawImage(canvas, 0, 0, 256, 256)
 fs.writeFileSync('build/icon-256.png', c2.toBuffer('image/png'))
 
 console.log('Icon generated: build/icon.png (512x512), build/icon-256.png (256x256)')
+
+// Pack the 256px PNG into an ICO container (PNG-in-ICO, Vista+).
+// Avoids electron-builder's WASM png-to-ico tool, which can OOM on
+// memory-constrained machines and CI images.
+const png256 = c2.toBuffer('image/png')
+const dir = Buffer.alloc(6 + 16)
+dir.writeUInt16LE(0, 0) // reserved
+dir.writeUInt16LE(1, 2) // type: icon
+dir.writeUInt16LE(1, 4) // one image
+dir.writeUInt8(0, 6) // width 0 = 256
+dir.writeUInt8(0, 7) // height 0 = 256
+dir.writeUInt8(0, 8) // palette
+dir.writeUInt8(0, 9) // reserved
+dir.writeUInt16LE(1, 10) // color planes
+dir.writeUInt16LE(32, 12) // bits per pixel
+dir.writeUInt32LE(png256.length, 14)
+dir.writeUInt32LE(22, 18) // image offset
+fs.writeFileSync('build/icon.ico', Buffer.concat([dir, png256]))
+console.log('Icon generated: build/icon.ico (256x256 PNG-in-ICO)')
