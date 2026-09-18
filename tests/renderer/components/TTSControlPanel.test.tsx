@@ -52,6 +52,14 @@ describe('TTSControlPanel', () => {
     expect(screen.getByText('0%')).toBeTruthy()
   })
 
+  it('pauses through the pause control', () => {
+    const { tts, spies } = makeTts()
+    render(<TTSControlPanel tts={tts} />)
+
+    fireEvent.click(screen.getByLabelText('暂停朗读'))
+    expect(spies.pause).toHaveBeenCalledTimes(1)
+  })
+
   it('resumes when paused and stops the speech', () => {
     const { tts, spies } = makeTts({ paused: true })
     render(<TTSControlPanel tts={tts} />)

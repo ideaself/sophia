@@ -48,8 +48,8 @@ describe('font scale', () => {
 
 describe('grounding', () => {
   it('rejects empty citations and empty textbook text', () => {
-    expect(citationMatchesTextbook({ quoted: '', chapter: '', source: '' }, '教材内容')).toBe(false)
-    expect(citationMatchesTextbook({ quoted: '很长的引用内容片段', chapter: '', source: '' }, '')).toBe(false)
+    expect(citationMatchesTextbook({ marker: '', quoted: '' }, '教材内容')).toBe(false)
+    expect(citationMatchesTextbook({ marker: '', quoted: '很长的引用内容片段' }, '')).toBe(false)
     expect(hasTextbookCitation('没有任何出处')).toBe(false)
   })
 })

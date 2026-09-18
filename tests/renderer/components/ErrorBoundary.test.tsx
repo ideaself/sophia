@@ -62,4 +62,25 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('正常运行')).toBeTruthy()
     expect(screen.queryByText('应用遇到错误')).toBeNull()
   })
+
+  it('reloads the page from the error card', () => {
+    shouldThrow = true
+    const reload = vi.fn()
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, reload }
+    })
+    try {
+      render(
+        <ErrorBoundary>
+          <Bomb />
+        </ErrorBoundary>
+      )
+
+      fireEvent.click(screen.getByText('刷新页面'))
+      expect(reload).toHaveBeenCalledTimes(1)
+    } finally {
+      shouldThrow = false
+    }
+  })
 })

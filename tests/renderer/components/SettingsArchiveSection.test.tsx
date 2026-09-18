@@ -83,3 +83,23 @@ describe('SettingsArchiveSection', () => {
     expect(await screen.findByText('已永久删除')).toBeTruthy()
   })
 })
+
+describe('SettingsArchiveSection — failure branches', () => {
+  it('shows the empty state when the archive listing fails', async () => {
+    archiveApi.list.mockRejectedValueOnce(new Error('db closed'))
+    renderExpanded()
+
+    expect(await screen.findByText('暂无归档内容')).toBeTruthy()
+  })
+
+  it('cancels the inline purge confirmation', async () => {
+    renderExpanded()
+    await screen.findByText('07-06 朗道')
+
+    fireEvent.click(screen.getByText('永久删除'))
+    fireEvent.click(screen.getByText('取消'))
+
+    await waitFor(() => expect(screen.queryByText('确认删除')).toBeNull())
+    expect(archiveApi.purge).not.toHaveBeenCalled()
+  })
+})

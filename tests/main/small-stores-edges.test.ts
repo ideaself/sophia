@@ -2,7 +2,7 @@
  * Main-process small stores/utils — remaining edge branches.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -109,6 +109,7 @@ describe('stats overview', () => {
     } as never)
 
     expect(overview.totalMessages).toBe(2)
-    expect(Number.isFinite(Object.values(overview.weeklyMs ?? {}).length)).toBe(true)
+    // The non-finite timestamp is skipped for time-based aggregations.
+    expect(overview.week.messages).toBe(1)
   })
 })

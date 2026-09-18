@@ -402,3 +402,36 @@ describe('WebDavSyncView — remaining error branches', () => {
     expect(await screen.findByText(/trash exploded/)).toBeTruthy()
   })
 })
+
+describe('WebDavSyncView — trash guards', () => {
+  it('skips the trash fetch without a URL', async () => {
+    setupMocks()
+    render(<WebDavSyncView />)
+    await screen.findByText('WebDAV Sync')
+
+    // No URL yet → refresh is a no-op.
+    fireEvent.click(screen.getByText('刷新'))
+    expect(sync.listTrash).not.toHaveBeenCalled()
+  })
+
+  it('keeps the trash when the clear confirmation is declined', async () => {
+    setupMocks({
+      hasWebdavPassword: vi.fn(async () => true),
+      listTrash: vi.fn(async () => ({
+        batches: [{ name: 'b1', fileCount: 2, totalSize: 100 }],
+        fileCount: 2,
+        totalSize: 100
+      }))
+    })
+    render(<WebDavSyncView />)
+    await screen.findByText('WebDAV Sync')
+    fillUrl()
+    fireEvent.click(screen.getByText('刷新'))
+    await waitFor(() => expect(sync.listTrash).toHaveBeenCalled())
+
+    confirmDialog.mockResolvedValue(false)
+    fireEvent.click(await screen.findByText('清空回收站'))
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalled())
+    expect(sync.emptyTrash).not.toHaveBeenCalled()
+  })
+})

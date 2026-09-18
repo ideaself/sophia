@@ -96,6 +96,19 @@ describe('useConversationStore.fetchActive', () => {
     expect(data.getTextbook).not.toHaveBeenCalled()
   })
 
+  it('keeps the textbook title null when the lookup rejects', async () => {
+    data.listConversations.mockResolvedValue([conv({ id: 'c1', textbookId: 'tb_x' })])
+    companions.get.mockResolvedValue({ id: 'comp_a', name: '朗道' })
+    data.getTextbook.mockRejectedValue(new Error('db closed'))
+
+    await useConversationStore.getState().fetchActive()
+
+    expect(useConversationStore.getState().activeConversations[0]).toMatchObject({
+      textbookId: 'tb_x',
+      textbookTitle: null
+    })
+  })
+
   it('clears the list when the conversation lookup fails', async () => {
     data.listConversations.mockRejectedValue(new Error('db closed'))
 

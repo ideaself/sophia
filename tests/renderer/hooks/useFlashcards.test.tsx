@@ -222,4 +222,36 @@ describe('useDueFlashcardCount', () => {
       vi.useRealTimers()
     }
   })
+
+  it('coalesces rapid focus events and clears a pending timer on unmount', async () => {
+    vi.useFakeTimers()
+    try {
+      data.dueFlashcardCount.mockResolvedValue({ due: 2, total: 5 })
+      const hook = renderHook(() => useDueFlashcardCount())
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      // Two focus events within the debounce window reset the timer once.
+      data.dueFlashcardCount.mockResolvedValue({ due: 3, total: 5 })
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+        await vi.advanceTimersByTimeAsync(400)
+        window.dispatchEvent(new Event('focus'))
+        await vi.advanceTimersByTimeAsync(900)
+      })
+      expect(hook.result.current).toBe(3)
+
+      // A pending timer at unmount is cleared by the cleanup.
+      window.dispatchEvent(new Event('focus'))
+      hook.unmount()
+      data.dueFlashcardCount.mockClear()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+      expect(data.dueFlashcardCount).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
