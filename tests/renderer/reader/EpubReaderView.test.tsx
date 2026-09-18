@@ -539,3 +539,28 @@ describe('EpubReaderView — selection edge cases and notes', () => {
     expect(screen.getByText('第一章 温度 - 1/3')).toBeTruthy()
   })
 })
+
+describe('EpubReaderView — progress restore and TOC dismissal edges', () => {
+  it('ignores a corrupt stored progress entry', async () => {
+    localStorage.setItem('epub-progress-tb_1', '{not json')
+    renderReader()
+
+    // Falls back to the first chapter.
+    expect(await screen.findByText('温度是分子平均动能的度量。')).toBeTruthy()
+  })
+
+  it('closes the TOC when clicking outside of it', async () => {
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    fireEvent.click(screen.getByText('目录'))
+    expect(await screen.findByText(/3\. 第三章 热机/)).toBeTruthy()
+
+    fireEvent.mouseDown(document.body)
+
+    await waitFor(() => expect(screen.queryByText(/3\. 第三章 热机/)).toBeNull())
+    // The reader content is untouched.
+    expect(screen.getByText('温度是分子平均动能的度量。')).toBeTruthy()
+  })
+})
+

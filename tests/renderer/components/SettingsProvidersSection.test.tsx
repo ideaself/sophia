@@ -216,3 +216,61 @@ describe('SettingsProvidersSection — model discovery and tests', () => {
     expect(await screen.findByText(/错误：Connection failed/)).toBeTruthy()
   })
 })
+
+describe('SettingsProvidersSection — modal interactions', () => {
+  it('closes the modal from the header and the footer buttons', async () => {
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fireEvent.click(screen.getByText('x'))
+    await waitFor(() => expect(screen.queryByPlaceholderText('我的服务')).toBeNull())
+
+    openAddModal()
+    fireEvent.click(screen.getByText('取消'))
+    await waitFor(() => expect(screen.queryByPlaceholderText('我的服务')).toBeNull())
+  })
+
+  it('applies the other type presets and edits a discovered model', async () => {
+    providers.testConnection.mockResolvedValue({
+      success: true,
+      models: ['m-one', 'm-two'],
+      message: 'ok'
+    })
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    // Switch to the MiMo preset, then to custom.
+    fireEvent.click(screen.getByText('MiMo'))
+    fireEvent.click(screen.getByText('自定义'))
+
+    fillRequired()
+    fireEvent.click(screen.getByText('获取模型'))
+    const select = await screen.findByRole('combobox')
+    fireEvent.change(select, { target: { value: 'm-two' } })
+    expect((select as HTMLSelectElement).value).toBe('m-two')
+  })
+
+  it('reports a non-Error test failure with the fallback message', async () => {
+    providers.testConnection.mockRejectedValueOnce('plain failure')
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fireEvent.click(screen.getByText('测试连接'))
+
+    expect(await screen.findByText(/错误：Failed/)).toBeTruthy()
+  })
+
+  it('accepts a manually typed model name', async () => {
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fillRequired()
+    const customModelInput = screen.getByPlaceholderText('例如 deepseek-v4-pro')
+    fireEvent.change(customModelInput, { target: { value: 'my-model' } })
+    expect((customModelInput as HTMLInputElement).value).toBe('my-model')
+  })
+})

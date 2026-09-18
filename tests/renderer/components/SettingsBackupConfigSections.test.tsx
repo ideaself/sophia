@@ -198,3 +198,54 @@ describe('SettingsConfigSection — import branches', () => {
     }
   })
 })
+
+describe('SettingsBackupSection — failure and cancel branches', () => {
+  it('skips the export when the save dialog is cancelled', async () => {
+    api.saveFile.mockResolvedValueOnce({ canceled: true, filePath: '' })
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('导出全部数据备份'))
+
+    await waitFor(() => expect(api.saveFile).toHaveBeenCalled())
+    expect(api.exportBackup).not.toHaveBeenCalled()
+  })
+
+  it('reports a backup failure', async () => {
+    api.exportBackup.mockRejectedValueOnce(new Error('disk full'))
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('导出全部数据备份'))
+
+    expect(await screen.findByText(/disk full/)).toBeTruthy()
+  })
+
+  it('skips the restore when the file dialog is cancelled', async () => {
+    api.openFile.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('从备份恢复'))
+
+    await waitFor(() => expect(api.openFile).toHaveBeenCalled())
+    expect(api.restoreBackup).not.toHaveBeenCalled()
+  })
+
+  it('reports restore failures from the handler and from thrown errors', async () => {
+    api.restoreBackup.mockResolvedValueOnce({ success: false, error: '压缩包损坏' })
+    render(<SettingsBackupSection />)
+    fireEvent.click(screen.getByText('从备份恢复'))
+    expect(await screen.findByText(/压缩包损坏/)).toBeTruthy()
+
+    api.restoreBackup.mockRejectedValueOnce(new Error('io exploded'))
+    fireEvent.click(screen.getByText('从备份恢复'))
+    expect(await screen.findByText(/io exploded/)).toBeTruthy()
+  })
+
+  it('reports when the data directory cannot be opened', async () => {
+    api.openDataDir.mockResolvedValueOnce({ success: false, error: '没有权限' })
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('打开数据目录'))
+
+    expect(await screen.findByText(/没有权限/)).toBeTruthy()
+  })
+})

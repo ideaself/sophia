@@ -7,10 +7,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 
 vi.mock('../../../src/renderer/src/reader/PdfReaderView', () => ({
-  PdfReaderView: ({ title }: { title: string }) => <div data-testid="pdf-reader">{title}</div>
+  PdfReaderView: ({ title, onClose }: { title: string; onClose: () => void }) => (
+    <div data-testid="pdf-reader">
+      {title}
+      <button onClick={onClose}>关闭阅读器</button>
+    </div>
+  )
 }))
 vi.mock('../../../src/renderer/src/reader/EpubReaderView', () => ({
-  EpubReaderView: ({ title }: { title: string }) => <div data-testid="epub-reader">{title}</div>
+  EpubReaderView: ({ title, onClose }: { title: string; onClose: () => void }) => (
+    <div data-testid="epub-reader">
+      {title}
+      <button onClick={onClose}>关闭阅读器</button>
+    </div>
+  )
 }))
 vi.mock('../../../src/renderer/src/lib/MarkdownRenderer', () => ({
   default: ({ children }: { children?: React.ReactNode }) => (
@@ -203,7 +213,7 @@ describe('TextbooksView — list actions', () => {
     })
     const { unmount } = render(<TextbooksView />)
     fireEvent.click(screen.getByText('阅读原件'))
-    expect(screen.getByTestId('pdf-reader').textContent).toBe('热力学讲义')
+    expect(screen.getByTestId('pdf-reader').textContent).toContain('热力学讲义')
     unmount()
 
     useTextbookStore.setState({
@@ -211,7 +221,7 @@ describe('TextbooksView — list actions', () => {
     })
     render(<TextbooksView />)
     fireEvent.click(screen.getByText('阅读原件'))
-    expect(screen.getByTestId('epub-reader').textContent).toBe('热力学讲义')
+    expect(screen.getByTestId('epub-reader').textContent).toContain('热力学讲义')
   })
 })
 
@@ -352,6 +362,9 @@ describe('TextbooksView — readers', () => {
     const view = render(<TextbooksView />)
     fireEvent.click(screen.getByText('阅读原件'))
     expect(await screen.findByTestId('pdf-reader')).toBeTruthy()
+    // Closing from inside the reader clears the reading state.
+    fireEvent.click(screen.getByText('关闭阅读器'))
+    await waitFor(() => expect(screen.queryByTestId('pdf-reader')).toBeNull())
     view.unmount()
 
     useTextbookStore.setState({
@@ -362,6 +375,8 @@ describe('TextbooksView — readers', () => {
     const second = render(<TextbooksView />)
     fireEvent.click(screen.getByText('阅读原件'))
     expect(await screen.findByTestId('epub-reader')).toBeTruthy()
+    fireEvent.click(screen.getByText('关闭阅读器'))
+    await waitFor(() => expect(screen.queryByTestId('epub-reader')).toBeNull())
     second.unmount()
   })
 })

@@ -14,6 +14,7 @@ vi.mock('../../../src/renderer/src/lib/MarkdownRenderer', () => ({
 
 import { ReviewView } from '../../../src/renderer/src/components/ReviewView'
 import { useAppStore } from '../../../src/renderer/src/stores/useAppStore'
+import { useTextbookStore } from '../../../src/renderer/src/stores/useTextbookStore'
 
 const ARTIFACTS = [
   {
@@ -302,5 +303,51 @@ describe('ReviewView — fallbacks and media panels', () => {
     fireEvent.click(await screen.findByText('返回全部卡片'))
 
     expect(await screen.findByText(/什么是熵/)).toBeTruthy()
+  })
+})
+
+describe('ReviewView — continue-learning failures and empty FAQ', () => {
+  it('keeps going when the companion and textbook lookups fail', async () => {
+    dataMocks.getConversation.mockResolvedValue({
+      id: 'c1',
+      title: '第一课',
+      companionId: 'comp_a',
+      textbookId: 'tb_1'
+    })
+    companionsGet.mockRejectedValue(new Error('boom'))
+    dataMocks.getTextbook.mockRejectedValue(new Error('boom'))
+
+    render(<ReviewView />)
+    await screen.findByText('返回历史')
+
+    fireEvent.click(screen.getByText('继续学习'))
+
+    await waitFor(() => expect(useAppStore.getState().view).toBe('classroom'))
+    expect(useAppStore.getState().reviewScope).toBeNull()
+  })
+
+  it('clears the selected textbook when the class has none', async () => {
+    dataMocks.getConversation.mockResolvedValue({ id: 'c1', title: '第一课', companionId: null })
+    useTextbookStore.setState({ selectedTextbook: { id: 'tb_old' } as never })
+
+    render(<ReviewView />)
+    await screen.findByText('返回历史')
+
+    fireEvent.click(screen.getByText('继续学习'))
+
+    await waitFor(() => expect(useTextbookStore.getState().selectedTextbook).toBeNull())
+  })
+
+  it('shows the raw FAQ text when nothing parses', async () => {
+    dataMocks.listArtifacts.mockResolvedValue([
+      ...ARTIFACTS,
+      { id: 'a5', type: 'lesson_faq', content: '没有解析出问答', createdAt: '2026-07-06T10:05:00Z' }
+    ])
+
+    render(<ReviewView />)
+    await screen.findByText('❓ 课堂 FAQ')
+    fireEvent.click(screen.getByText('❓ 课堂 FAQ'))
+
+    expect(screen.getByText('没有解析出问答')).toBeTruthy()
   })
 })
