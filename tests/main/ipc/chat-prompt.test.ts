@@ -378,6 +378,264 @@ describe('chat:get-prompt-messages — compression and coaching', () => {
     expect(second[0].content).toContain('当前焦点：熵')
   })
 
+  it('skips learner profile, textbook content and relation extras when they are absent', async () => {
+    // No learner.md, empty textbook content and a whitespace-only relation
+    // file: every optional segment must degrade to "absent", not to junk.
+    const empty = await textbooks.create({
+      title: '空教材',
+      author: '',
+      description: '',
+      format: 'markdown',
+      content: ''
+    })
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: empty.id,
+      title: '空'
+    })
+    await writeFile(relationPath(dataRoot, 'comp_landau'), '   \n', 'utf-8')
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      {
+        conversationId: conv.id,
+        companionId: 'comp_landau',
+        textbookId: empty.id,
+        userMessage: '开始'
+      }
+    )
+
+    expect(messages.length).toBeGreaterThan(0)
+    expect(messages.every((m) => !m.content.includes('   \n'))).toBe(true)
+  })
+
+  it('skips compression when no provider is active', async () => {
+    // A provider exists but is not selected: the long history must pass through
+    // uncompressed and no model call may happen.
+    await providerStore.create({
+      name: 'DeepSeek',
+      type: 'deepseek',
+      baseUrl: 'https://api.example.com',
+      apiKey: 'sk-live',
+      models: ['deepseek-v4-flash'],
+      selectedModel: 'deepseek-v4-flash'
+    })
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '未激活'
+    })
+    await conversations.addMessage(conv.id, 'user', '开场问题')
+    await conversations.addMessage(conv.id, 'assistant', '长回答'.repeat(10_000))
+
+    await invoke('chat:get-prompt-messages', {
+      conversationId: conv.id,
+      companionId: 'comp_landau',
+      userMessage: '继续'
+    })
+
+    expect(llm.chat).not.toHaveBeenCalled()
+  })
+
+  it('skips compression when the active provider has no API key', async () => {
+    const provider = await providerStore.create({
+      name: 'DeepSeek',
+      type: 'deepseek',
+      baseUrl: 'https://api.example.com',
+      apiKey: '',
+      models: [],
+      selectedModel: ''
+    })
+    await providerStore.update(provider.id, { isActive: true })
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '无密钥'
+    })
+    await conversations.addMessage(conv.id, 'user', '开场问题')
+    await conversations.addMessage(conv.id, 'assistant', '长回答'.repeat(10_000))
+
+    await invoke('chat:get-prompt-messages', {
+      conversationId: conv.id,
+      companionId: 'comp_landau',
+      userMessage: '继续'
+    })
+
+    expect(llm.chat).not.toHaveBeenCalled()
+  })
+
+  it('keeps the raw history when the model returns no usable summary', async () => {
+    await withProvider()
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '空摘要'
+    })
+    await conversations.addMessage(conv.id, 'user', '开场问题')
+    await conversations.addMessage(conv.id, 'assistant', '长回答'.repeat(10_000))
+
+    // Default mock answers { content: '' } → compression yields no summary.
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: conv.id, companionId: 'comp_landau', userMessage: '继续' }
+    )
+
+    expect(messages.some((m) => m.content.includes('【早期对话摘要】'))).toBe(false)
+    expect(messages.some((m) => m.content.includes('长回答'))).toBe(true)
+  })
+
+  it('skips coaching analysis when no provider is active or no key is stored', async () => {
+    // Round 4 triggers analysis; with an inactive provider (and then no key)
+    // the background task must bail out quietly.
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '无教练'
+    })
+    for (let i = 0; i < 3; i++) {
+      await conversations.addMessage(conv.id, 'user', `问题 ${i + 1}`)
+      await conversations.addMessage(conv.id, 'assistant', `回答 ${i + 1}`)
+    }
+
+    await invoke('chat:get-prompt-messages', {
+      conversationId: conv.id,
+      companionId: 'comp_landau',
+      userMessage: '第四个问题'
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    // Same round in a second conversation, this time with an active provider
+    // that has no stored API key.
+    const provider = await providerStore.create({
+      name: 'DeepSeek',
+      type: 'deepseek',
+      baseUrl: 'https://api.example.com',
+      apiKey: '',
+      models: [],
+      selectedModel: ''
+    })
+    await providerStore.update(provider.id, { isActive: true })
+    const conv2 = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '无密钥教练'
+    })
+    for (let i = 0; i < 3; i++) {
+      await conversations.addMessage(conv2.id, 'user', `问题 ${i + 1}`)
+      await conversations.addMessage(conv2.id, 'assistant', `回答 ${i + 1}`)
+    }
+
+    await invoke('chat:get-prompt-messages', {
+      conversationId: conv2.id,
+      companionId: 'comp_landau',
+      userMessage: '第四个问题'
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(llm.chat).not.toHaveBeenCalled()
+  })
+
+  it('ignores an unusable coaching assessment and falls back to default endpoint/model', async () => {
+    // Empty baseUrl/selectedModel + invalid model output: the fallbacks are
+    // used for the request and a null assessment is never injected.
+    const provider = await providerStore.create({
+      name: 'DeepSeek',
+      type: 'deepseek',
+      baseUrl: '',
+      apiKey: 'sk-live',
+      models: [],
+      selectedModel: ''
+    })
+    await providerStore.update(provider.id, { isActive: true })
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '坏评估'
+    })
+    for (let i = 0; i < 3; i++) {
+      await conversations.addMessage(conv.id, 'user', `问题 ${i + 1}`)
+      await conversations.addMessage(conv.id, 'assistant', `回答 ${i + 1}`)
+    }
+
+    await invoke('chat:get-prompt-messages', {
+      conversationId: conv.id,
+      companionId: 'comp_landau',
+      userMessage: '第四个问题'
+    })
+    await vi.waitFor(() => expect(llm.chat).toHaveBeenCalled(), { timeout: 10_000 })
+
+    const next = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: conv.id, companionId: 'comp_landau', userMessage: '第五个问题' }
+    )
+    expect(next[0].content).not.toContain('教学教练分析')
+  })
+
+  it('logs a non-Error coaching failure instead of crashing the turn', async () => {
+    await withProvider()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '分析炸了'
+    })
+    for (let i = 0; i < 3; i++) {
+      await conversations.addMessage(conv.id, 'user', `问题 ${i + 1}`)
+      await conversations.addMessage(conv.id, 'assistant', `回答 ${i + 1}`)
+    }
+
+    llm.chat.mockRejectedValueOnce('boom')
+    await invoke('chat:get-prompt-messages', {
+      conversationId: conv.id,
+      companionId: 'comp_landau',
+      userMessage: '第四个问题'
+    })
+
+    await vi.waitFor(
+      () =>
+        expect(warn).toHaveBeenCalledWith(
+          '[teaching-coach] Analysis failed (non-fatal):',
+          'boom'
+        ),
+      { timeout: 10_000 }
+    )
+  })
+
+  it('rejects compose-answer when no provider store is registered', async () => {
+    registerChatPromptIpc(dataRoot)
+    await expect(invoke('ai:compose-answer', { question: '为什么？' })).rejects.toThrow(
+      '未配置模型服务'
+    )
+  })
+
+  it('compose-answer falls back to the default endpoint and model', async () => {
+    const provider = await providerStore.create({
+      name: 'DeepSeek',
+      type: 'deepseek',
+      baseUrl: '',
+      apiKey: 'sk-live',
+      models: [],
+      selectedModel: ''
+    })
+    await providerStore.update(provider.id, { isActive: true })
+    llm.chat.mockResolvedValueOnce({ content: '因为熵增。' })
+
+    const answer = await invoke<{ content: string }>('ai:compose-answer', {
+      question: '为什么时间不可逆？',
+      history: '学习者: 热力学第二定律是什么？'
+    })
+
+    expect(answer.content).toBe('因为熵增。')
+  })
+
   it('retrieves related textbook passages from the recent conversation', async () => {
     const tb = await textbooks.create({
       title: '热力学讲义',

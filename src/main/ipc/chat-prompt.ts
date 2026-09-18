@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { Companion } from '../../shared/schemas/companion'
 import { CompanionSchema } from '../../shared/schemas/companion'
 import type { DeepSeekChatMessage } from '../llm/types'
+import type { Conversation } from '../../shared/schemas/conversation'
 import { buildMessages, type HandoffMetaInfo } from '../prompt/prompt-builder'
 import { readLocalContext } from '../storage/local-context'
 import { TextbookStore } from '../storage/textbook-store'
@@ -447,13 +448,14 @@ export async function loadHandoffTail(
   try {
     const conversations = await conversationStore.list()
     const ended = conversations
-      .filter((c) =>
-        c.endedAt &&
-        c.companionId === companionId &&
-        c.id !== excludeConversationId &&
-        (c.textbookId ?? null) === textbookId
+      .filter(
+        (c): c is Conversation & { endedAt: string } =>
+          Boolean(c.endedAt) &&
+          c.companionId === companionId &&
+          c.id !== excludeConversationId &&
+          (c.textbookId ?? null) === textbookId
       )
-      .sort((a, b) => (b.endedAt ?? '').localeCompare(a.endedAt ?? ''))
+      .sort((a, b) => b.endedAt.localeCompare(a.endedAt))
 
     for (const conv of ended) {
       const artifacts = await artifactStore.list(conv.id)
@@ -461,7 +463,7 @@ export async function loadHandoffTail(
       if (handoff?.content) {
         return {
           tail: handoff.content,
-          meta: conv.endedAt ? { savedAt: conv.endedAt, endingPage: null } : undefined
+          meta: { savedAt: conv.endedAt, endingPage: null }
         }
       }
     }
