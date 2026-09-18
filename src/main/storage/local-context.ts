@@ -23,7 +23,10 @@ export async function readLocalContext(
 
     return { learnerProfile }
   } catch (err) {
+    // Defensive: the only I/O above already tolerates every failure.
+    /* v8 ignore next -- @preserve */
     if (!isNotFoundError(err)) warnReadFailure('local context', err)
+    /* v8 ignore next -- @preserve */
     return null
   }
 }

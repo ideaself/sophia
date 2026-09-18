@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { Readable } from 'node:stream'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -246,6 +246,60 @@ describe('SyncWebDavClient', () => {
     await c.moveFile('/sophia/a.md', '/trash/a.md')
     expect(webdavMock.client.moveFile).toHaveBeenCalledWith('/sophia/a.md', '/trash/a.md', {
       overwrite: true
+    })
+  })
+})
+
+describe('pipeToFileWithIdleTimeout — stream failures', () => {
+  it('rejects and closes the writer when the source stream errors', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sophia-stream-'))
+    try {
+      const target = join(dir, 'out.bin')
+      const failing = new Readable({
+        read() {
+          this.push(Buffer.from('partial'))
+          this.destroy(new Error('read exploded'))
+        }
+      })
+
+      await expect(
+        pipeToFileWithIdleTimeout(failing, target, 5000, 'GET /x.pdf')
+      ).rejects.toThrow('read exploded')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects and closes the reader when the writer errors', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sophia-stream-'))
+    try {
+      // A directory as the target makes createWriteStream fail to open.
+      const target = join(dir, 'as-dir')
+      await mkdir(target, { recursive: true })
+
+      await expect(
+        pipeToFileWithIdleTimeout(Readable.from([Buffer.from('x')]), target, 5000, 'GET /y.pdf')
+      ).rejects.toThrow()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('SyncWebDavClient — walk error propagation', () => {
+  it('rethrows non-404 errors while walking recursively', async () => {
+    const client = new SyncWebDavClient({
+      url: 'https://dav.example/dav',
+      username: 'u',
+      password: 'p'
+    })
+
+    webdavMock.client.getDirectoryContents.mockRejectedValueOnce({ status: 500 })
+    await expect(client.listAllFiles('/sophia')).rejects.toMatchObject({ status: 500 })
+
+    webdavMock.client.getDirectoryContents.mockRejectedValueOnce({ status: 500 })
+    await expect(client.listAllFilesDetailed('/sophia')).rejects.toMatchObject({
+      status: 500
     })
   })
 })
