@@ -149,6 +149,34 @@ describe('FlashcardReviewView — review flow', () => {
 
     expect(saveSrsSpy).not.toHaveBeenCalled()
   })
+
+  it('ignores flipped-card keys that map to no rating', async () => {
+    await renderView()
+
+    fireEvent.keyDown(window, { key: ' ' })
+    expect(screen.getByText('一种积分运算')).toBeTruthy()
+
+    fireEvent.keyDown(window, { key: '9' })
+    expect(saveSrsSpy).not.toHaveBeenCalled()
+    expect(screen.getByText('一种积分运算')).toBeTruthy()
+  })
+
+  it('rates the last card without advancing past the deck', async () => {
+    data.listArtifacts.mockResolvedValue([
+      flashcardsArtifact('art_1', 'c1', '- 问题：唯一的问题？\n- 答案：唯一的答案')
+    ])
+
+    render(<FlashcardReviewView />)
+    await screen.findByText('唯一的问题？')
+
+    fireEvent.click(screen.getByText('唯一的问题？'))
+    fireEvent.click(screen.getByText('良好'))
+
+    await waitFor(() => expect(saveSrsSpy).toHaveBeenCalledTimes(1))
+    // No next card: the rated card stays visible with its answer.
+    expect(screen.getByText('唯一的答案')).toBeTruthy()
+    expect(screen.getByText(/1\/1/)).toBeTruthy()
+  })
 })
 
 describe('FlashcardReviewView — deck, tabs and empty states', () => {
@@ -185,6 +213,20 @@ describe('FlashcardReviewView — deck, tabs and empty states', () => {
 
     // The due (second) card is shown first.
     expect(await screen.findByText('傅里叶变换的作用？')).toBeTruthy()
+  })
+
+  it('labels scheduled cards with 明天 and N 天后', async () => {
+    const soon = Date.now() + 24 * 60 * 60 * 1000
+    data.getFlashcardSrsState.mockResolvedValue({
+      art_1_0: { nextReview: soon, interval: 1, reps: 1, ease: 2.5, lastReview: Date.now() },
+      art_1_1: { nextReview: soon + 1, interval: 5, reps: 3, ease: 2.5, lastReview: Date.now() }
+    })
+
+    render(<FlashcardReviewView />)
+
+    expect(await screen.findByText(/下次：明天/)).toBeTruthy()
+    fireEvent.click(screen.getByText('跳过'))
+    expect(await screen.findByText(/下次：5 天后/)).toBeTruthy()
   })
 
   it('shuffles within the favorites tab and keeps favorites first', async () => {

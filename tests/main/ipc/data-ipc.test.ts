@@ -62,10 +62,17 @@ vi.mock('electron', () => ({
 /** Scripted EPUB chapter payloads (the epub parser itself has its own tests). */
 const epub = vi.hoisted(() => ({ chapters: [] as unknown[], calls: [] as string[] }))
 
+/** Lets a single extractText call throw a raw (non-Error) value on demand. */
+const parsers = vi.hoisted(() => ({ extractTextThrow: null as unknown }))
+
 vi.mock('../../../src/main/parsers', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/main/parsers')>()
   return {
     ...actual,
+    extractText: async (path: string) => {
+      if (parsers.extractTextThrow !== null) throw parsers.extractTextThrow
+      return actual.extractText(path)
+    },
     getEpubChapters: async (path: string) => {
       epub.calls.push(path)
       return epub.chapters
@@ -74,7 +81,7 @@ vi.mock('../../../src/main/parsers', async (importOriginal) => {
 })
 
 /** Lets a single atomic write fail on demand (writeback error paths). */
-const atomicFail = vi.hoisted(() => ({ paths: [] as string[] }))
+const atomicFail = vi.hoisted(() => ({ paths: [] as string[], rawPaths: [] as string[] }))
 
 vi.mock('../../../src/main/storage/atomic-write', async (importOriginal) => {
   const actual =
@@ -82,10 +89,32 @@ vi.mock('../../../src/main/storage/atomic-write', async (importOriginal) => {
   return {
     ...actual,
     atomicWriteFile: async (path: string, data: string | Buffer, enc?: BufferEncoding) => {
+      if (atomicFail.rawPaths.some((fragment) => path.includes(fragment))) {
+        throw 'disk full (raw)'
+      }
       if (atomicFail.paths.some((fragment) => path.includes(fragment))) {
         throw new Error('disk full')
       }
       return actual.atomicWriteFile(path, data, enc)
+    }
+  }
+})
+
+/** Lets a single rm() call fail on demand (delete-failure paths live in stores). */
+const fsFail = vi.hoisted(() => ({ rmPaths: [] as string[] }))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    rm: async (
+      path: Parameters<typeof actual.rm>[0],
+      options?: Parameters<typeof actual.rm>[1]
+    ) => {
+      if (fsFail.rmPaths.some((fragment) => String(path).includes(fragment))) {
+        throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' })
+      }
+      return actual.rm(path, options)
     }
   }
 })
@@ -116,6 +145,7 @@ import {
   companionDir,
   configDir,
   learnerPath,
+  palMomentsPath,
   palMomentsPathForTextbook,
   relationPath,
   handoffMetaPath,
@@ -216,6 +246,10 @@ beforeEach(async () => {
   mocks.FakeBrowserWindow.focused = null
   llm.chat.mockReset().mockResolvedValue({ content: '通用内容' })
   llm.clients.length = 0
+  parsers.extractTextThrow = null
+  atomicFail.paths.length = 0
+  atomicFail.rawPaths.length = 0
+  fsFail.rmPaths.length = 0
 
   const providerStore = new ProviderStore(dataRoot, fakeSafeStorage)
   registerConversationIpc(dataRoot, providerStore)
@@ -715,7 +749,7 @@ describe('reading note + artifact handlers', () => {
 // ---------------------------------------------------------------
 
 describe('artifact pipeline end-to-end', () => {
-  it('generates artifacts and writes back learner/diary/handoff state', async () => {
+  it('generates artifacts and writes back learner/diary/handoff state', { timeout: 45_000 }, async () => {
     await withProvider()
     await loadReferenceCompanions({ candidatesDir, companionDir: companionDir(dataRoot) })
     llmByPrompt()
@@ -809,7 +843,7 @@ describe('artifact pipeline end-to-end', () => {
     )
   })
 
-  it('reports background pipeline crashes to the renderer without wedging the queue', async () => {
+  it('reports background pipeline crashes to the renderer without wedging the queue', { timeout: 30_000 }, async () => {
     await withProvider()
     llmByPrompt()
     const win = new mocks.FakeBrowserWindow()
@@ -1072,7 +1106,7 @@ describe('artifact failure paths', () => {
 })
 
 describe('concept updates after assistant messages', () => {
-  it('stores extracted concepts and broadcasts the update', async () => {
+  it('stores extracted concepts and broadcasts the update', { timeout: 30_000 }, async () => {
     await withProvider()
     llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
       if ((messages[0]?.content ?? '').includes('学习分析助手')) {
@@ -1148,7 +1182,7 @@ describe('concept updates after assistant messages', () => {
     expect(llm.chat).not.toHaveBeenCalled()
   })
 
-  it('keeps the class running when the concept store fails', async () => {
+  it('keeps the class running when the concept store fails', { timeout: 30_000 }, async () => {
     await withProvider()
     llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
       if ((messages[0]?.content ?? '').includes('学习分析助手')) {
@@ -1580,7 +1614,7 @@ describe('data IPC — optional branches', () => {
     await expect(invoke('dialog:confirm', { message: '继续？' })).resolves.toBe(true)
   })
 
-  it('falls back to the default model when the active provider has none', async () => {
+  it('falls back to the default model when the active provider has none', { timeout: 30_000 }, async () => {
     const providerStore = new ProviderStore(dataRoot, fakeSafeStorage)
     const provider = await providerStore.create({
       name: 'NoModel',
@@ -1633,5 +1667,256 @@ describe('data IPC — optional branches', () => {
     await invoke('conversation:end', { conversationId: conv.id })
 
     await expect(invoke('stats:due-flashcards')).resolves.toMatchObject({ due: 0, total: 0 })
+  })
+})
+
+describe('deep branch coverage', () => {
+  it('reports a failed delete and survives raw non-Error failures', async () => {
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '删除失败'
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      fsFail.rmPaths.push(conv.id)
+      await expect(invoke('conversation:delete', { conversationId: conv.id })).resolves.toBe(false)
+    } finally {
+      fsFail.rmPaths.length = 0
+      warn.mockRestore()
+    }
+  })
+
+  it('logs a raw non-Error when the artifact queue notification itself throws', { timeout: 30_000 }, async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const allWindows = vi
+      .spyOn(mocks.FakeBrowserWindow, 'getAllWindows')
+      .mockImplementation(() => {
+        throw 'window registry gone'
+      })
+    try {
+      const conv = await invoke<{ id: string }>('conversation:create', {
+        companionId: 'comp_landau',
+        title: '窗口崩溃'
+      })
+      await invoke('conversation:end', { conversationId: conv.id })
+
+      await vi.waitFor(
+        () =>
+          expect(error).toHaveBeenCalledWith(
+            '[artifacts] queue error (non-fatal):',
+            'window registry gone'
+          ),
+        { timeout: 10_000, interval: 50 }
+      )
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining('Background artifact generation error'),
+        'window registry gone'
+      )
+    } finally {
+      allWindows.mockRestore()
+      error.mockRestore()
+    }
+  })
+
+  it('logs a raw non-Error when the concept store write fails', { timeout: 30_000 }, async () => {
+    await withProvider()
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if ((messages[0]?.content ?? '').includes('学习分析助手')) {
+        return { content: JSON.stringify([{ name: '熵', performance: 'correct' }]) }
+      }
+      return { content: '通用内容' }
+    })
+    atomicFail.rawPaths.push('concepts.json')
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const conv = await invoke<{ id: string }>('conversation:create', {
+        companionId: 'comp_landau',
+        title: '原始错误'
+      })
+      await invoke('message:send', { conversationId: conv.id, content: '问' })
+      await invoke('message:send', { conversationId: conv.id, content: '答', role: 'assistant' })
+
+      await vi.waitFor(
+        () =>
+          expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('概念更新失败'),
+            'disk full (raw)'
+          ),
+        { timeout: 10_000, interval: 50 }
+      )
+    } finally {
+      atomicFail.rawPaths.length = 0
+      warn.mockRestore()
+    }
+  })
+
+  it('degrades gracefully when no provider store is registered', async () => {
+    mocks.handlers.clear()
+    registerConversationIpc(dataRoot)
+
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '无服务',
+      format: 'markdown',
+      content: '# 第一章 熵\n\n熵是状态函数。'
+    })
+    await expect(
+      invoke('textbook:translate-excerpt', { textbookId: tb.id, chapter: '熵' })
+    ).resolves.toBeNull()
+
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '无服务课堂'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '熵是什么？' })
+    await invoke('message:send', { conversationId: conv.id, content: '状态函数。', role: 'assistant' })
+    await flush()
+
+    const end = await invoke<{ success: boolean }>('conversation:end', {
+      conversationId: conv.id
+    })
+    expect(end.success).toBe(true)
+    await flush()
+    await expect(
+      invoke<unknown[]>('artifact:list', { conversationId: conv.id })
+    ).resolves.toEqual([])
+  })
+
+  it('skips provider-powered flows when the active key file is gone', async () => {
+    await withProvider()
+    const providerStore = new ProviderStore(dataRoot, fakeSafeStorage)
+    const active = await providerStore.getActive()
+    await rm(join(configDir(dataRoot), `${active!.id}.key.enc`), { force: true })
+
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '无钥匙',
+      format: 'markdown',
+      content: '# 第一章 熵\n\n熵是状态函数。'
+    })
+    await expect(
+      invoke('textbook:translate-excerpt', { textbookId: tb.id, chapter: '熵' })
+    ).resolves.toBeNull()
+
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '无钥匙补做'
+    })
+    const result = await invoke<{ success: boolean; artifacts: number }>(
+      'conversation:redo-artifacts',
+      { conversationId: conv.id, types: ['lesson_summary'] }
+    )
+    expect(result).toMatchObject({ success: true, artifacts: 0 })
+    expect(llm.chat).not.toHaveBeenCalled()
+  })
+
+  it('uses default endpoint and model when the active provider fields are empty', { timeout: 30_000 }, async () => {
+    const providerStore = new ProviderStore(dataRoot, fakeSafeStorage)
+    const provider = await providerStore.create({
+      name: 'Empty',
+      type: 'deepseek',
+      baseUrl: '',
+      apiKey: 'sk-empty',
+      models: [],
+      selectedModel: ''
+    })
+    await providerStore.update(provider.id, { isActive: true })
+    llmByPrompt()
+
+    const tb = await invoke<{ id: string }>('textbook:create', {
+      title: '默认端点',
+      format: 'markdown',
+      content: '# 第一章 熵\n\n熵是状态函数。'
+    })
+    const translated = await invoke<{ translation: string }>('textbook:translate-excerpt', {
+      textbookId: tb.id,
+      chapter: '熵'
+    })
+    expect(translated.translation).toBe('熵是状态函数。')
+
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '默认模型'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '熵是什么？' })
+    await invoke('message:send', { conversationId: conv.id, content: '状态函数。', role: 'assistant' })
+
+    const result = await invoke<{ success: boolean; artifacts: number }>(
+      'conversation:redo-artifacts',
+      { conversationId: conv.id, types: ['lesson_summary'] }
+    )
+    expect(result).toMatchObject({ success: true, artifacts: 1 })
+
+    // The debounced concept update also ran with the default endpoint/model.
+    await vi.waitFor(
+      () =>
+        expect(
+          llm.chat.mock.calls.some((call) =>
+            String(call[0]?.[0]?.content ?? '').includes('学习分析助手')
+          )
+        ).toBe(true),
+      { timeout: 10_000, interval: 50 }
+    )
+  })
+
+  it('writes global pal moments and handoff metadata for a class without a textbook', async () => {
+    await withProvider()
+    llmByPrompt()
+    await loadReferenceCompanions({ candidatesDir, companionDir: companionDir(dataRoot) })
+    await writeFile(palMomentsPath(dataRoot), '更早的互动备忘。', 'utf-8')
+
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_missing',
+      title: '无教材'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '熵是什么？' })
+    await invoke('message:send', { conversationId: conv.id, content: '状态函数。', role: 'assistant' })
+
+    const result = await invoke<{ success: boolean }>('conversation:redo-artifacts', {
+      conversationId: conv.id,
+      types: ['pal_moments', 'handoff_tail', 'diary']
+    })
+    expect(result.success).toBe(true)
+
+    const palMoments = await readFile(palMomentsPath(dataRoot), 'utf-8')
+    expect(palMoments).toContain('更早的互动备忘')
+    expect(palMoments).toContain('---')
+
+    const meta = JSON.parse(await readFile(handoffMetaPath(dataRoot), 'utf-8')) as Record<
+      string,
+      { endingPage: number | null; textbookId: string | null; companionName: string }
+    >
+    expect(meta.comp_missing).toMatchObject({
+      endingPage: null,
+      textbookId: null,
+      companionName: 'comp_missing'
+    })
+  })
+
+  it('parents confirmations to the focused window when one exists', async () => {
+    const win = new mocks.FakeBrowserWindow()
+    mocks.FakeBrowserWindow.focused = win
+    mocks.showMessageBox.mockResolvedValueOnce({ response: 0 })
+
+    await expect(invoke('dialog:confirm', { message: '真的下课？' })).resolves.toBe(true)
+    expect(mocks.showMessageBox).toHaveBeenCalledWith(
+      win,
+      expect.objectContaining({ message: '真的下课？' })
+    )
+  })
+
+  it('wraps a non-Error parse failure with the format name', async () => {
+    const rawPath = join(dataRoot, 'raw.pdf')
+    await writeFile(rawPath, 'not a pdf')
+    mocks.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [rawPath] })
+    await invoke('dialog:openFile', {})
+
+    parsers.extractTextThrow = 'raw parser exploded'
+    try {
+      await expect(
+        invoke('textbook:create', { title: '原始解析错误', format: 'pdf', sourceFile: rawPath })
+      ).rejects.toThrow('Failed to parse PDF file: raw parser exploded')
+    } finally {
+      parsers.extractTextThrow = null
+    }
   })
 })

@@ -72,6 +72,24 @@ describe('extractEpubText — chapter loading fallbacks', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('raw-read fallback also failed: gone'))
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('raw-read fallback also failed: string-fail'))
   })
+
+  it('handles missing metadata and chapters whose text is empty', async () => {
+    mocks.config = {
+      metadata: {},
+      flow: [
+        { id: 'c1', href: 'text/empty.xhtml' },
+        { id: 'c2', href: 'text/body.xhtml' }
+      ],
+      getChapter: vi.fn(async (id: string) =>
+        id === 'c1' ? '<body><p>   </p></body>' : '<body><p>正文</p></body>'
+      )
+    }
+
+    const result = await extractEpubText('no-metadata.epub')
+
+    expect(result.content).toBe('正文\n')
+    expect(result.totalPages).toBe(2)
+  })
 })
 
 describe('getEpubChapters — spine and manifest fallback', () => {
@@ -147,6 +165,46 @@ describe('getEpubChapters — spine and manifest fallback', () => {
     }
 
     const result = await getEpubChapters('empty.epub')
+
+    expect(result.chapters).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no readable chapters'))
+  })
+
+  it('skips chapters that fail to load and chapters without an href', async () => {
+    mocks.config = {
+      metadata: {},
+      flow: [{ id: 'bad' }, { id: 'nohref' }, { id: 'good', href: 'text/good.xhtml' }],
+      getChapter: vi.fn(async (id: string) => {
+        if (id === 'bad') throw new Error('media-type rejected')
+        if (id === 'nohref') return '<body><p>无链接章节</p></body>'
+        return '<body><p>有链接章节</p></body>'
+      }),
+      readFile: vi.fn(async () => {
+        throw new Error('raw read unavailable')
+      }),
+      imageroot: '/images/'
+      // manifest intentionally omitted — inlining must degrade to {}
+    }
+
+    const result = await getEpubChapters('partial.epub')
+
+    expect(result.chapters.map((c) => [c.id, c.html])).toEqual([
+      ['nohref', '<p>无链接章节</p>'],
+      ['good', '<p>有链接章节</p>']
+    ])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no href to fall back to'))
+  })
+
+  it('warns without crashing when the manifest is missing entirely', async () => {
+    mocks.config = {
+      metadata: {},
+      flow: [],
+      getChapter: vi.fn(),
+      readFile: vi.fn()
+      // manifest intentionally omitted so the fallback scan uses {}
+    }
+
+    const result = await getEpubChapters('no-manifest.epub')
 
     expect(result.chapters).toEqual([])
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('no readable chapters'))
@@ -266,6 +324,48 @@ describe('getEpubChapters — image inlining', () => {
 
     expect(result.chapters[0].html).toBe('<img src="https://x/y.png">')
     expect(mocks.config.readFile).not.toHaveBeenCalled()
+  })
+
+  it('falls back to basename matching and survives unresolvable images', async () => {
+    const chapterHtml = [
+      '<body>',
+      '<img src=".">',
+      '<img src="../Images/plain.png">',
+      '<img src="../Images/broken.png">',
+      '<img src="../Images/strerr.png">',
+      '</body>'
+    ].join('')
+
+    mocks.config = {
+      metadata: {},
+      flow: [{ id: 'c1', href: 'ch1.xhtml' }],
+      manifest: {
+        // No media-type -> mime must be inferred from the extension.
+        plain: { id: 'plain', href: 'assets/Images/plain.png' },
+        // Direct path and manifest href both fail -> unresolved.
+        broken: { id: 'broken', href: 'assets/Images/broken.png', 'media-type': 'image/png' },
+        // readFile throws a non-Error value.
+        strerr: { id: 'strerr', href: 'assets/Images/strerr.png', 'media-type': 'image/png' }
+      },
+      imageroot: '/images/',
+      getChapter: vi.fn(async () => chapterHtml),
+      readFile: vi.fn(async (name: string) => {
+        if (name === 'assets/Images/plain.png') return Buffer.from('PLAIN')
+        if (name === 'assets/Images/strerr.png') throw 'raw-string-fail'
+        throw new Error(`ENOENT: ${name}`)
+      })
+    }
+
+    const result = await getEpubChapters('image-edge.epub')
+    const html = result.chapters[0].html
+
+    expect(html).toContain('data:image/png;base64,' + b64('PLAIN'))
+    expect(html).toContain('src="."')
+    expect(html).toContain('src="../Images/broken.png"')
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to inline image assets/Images/strerr.png'),
+      'raw-string-fail'
+    )
   })
 })
 

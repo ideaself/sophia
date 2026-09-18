@@ -57,6 +57,12 @@ describe('ClassroomTabBar', () => {
     expect(onSelect).toHaveBeenCalledTimes(3)
   })
 
+  it('ignores other keys on a tab', () => {
+    const { onSelect } = renderBar()
+    fireEvent.keyDown(screen.getByText('07-06 朗道'), { key: 'Escape' })
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
   it('closes a tab without also selecting it', () => {
     const { onClose, onSelect } = renderBar()
     fireEvent.click(screen.getByLabelText('关闭标签 07-05 祖冲之'))

@@ -33,6 +33,8 @@ function setup(options: HarnessOptions = {}): {
   tab: () => TabState
   tabs: () => TabState[]
   setSendError: ReturnType<typeof vi.fn>
+  /** Empty the store backing setTabs without touching tabsRef (stale-ref race). */
+  shrinkStore: () => void
   chatStream: {
     state: { isStreaming: boolean; assistantContent: string; reasoningContent: string }
     send: ReturnType<typeof vi.fn>
@@ -70,6 +72,9 @@ function setup(options: HarnessOptions = {}): {
     currentTabs = currentTabs.map((t, i) => (i === idx ? { ...t, ...patch } : t))
     tabsRef.current = currentTabs
   })
+  const shrinkStore = (): void => {
+    currentTabs = []
+  }
 
   const chatStream = {
     state: {
@@ -77,7 +82,7 @@ function setup(options: HarnessOptions = {}): {
       assistantContent: '',
       reasoningContent: ''
     },
-    send: vi.fn(async () => {}),
+    send: vi.fn(),
     cancel: vi.fn(async () => {}),
     streamEnd: options.streamEnd ?? null
   }
@@ -107,6 +112,7 @@ function setup(options: HarnessOptions = {}): {
     tab: () => tabsRef.current[activeIdx],
     tabs: () => tabsRef.current,
     setSendError,
+    shrinkStore,
     chatStream,
     focusInput,
     setStickToBottom,
@@ -347,5 +353,179 @@ describe('useClassroomSend — resend and regenerate', () => {
     expect(data.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ content: '快速提问', role: 'user' })
     )
+  })
+})
+
+describe('useClassroomSend — branch closure', () => {
+  it('skips the owner confirmation when the stream has no recorded owner', async () => {
+    const h = setup({ input: '抢发', activeIdx: 1, conversationId: 'conv_b', streamOwnerIdx: 0 })
+    h.streamOwnerIdxRef.current = null
+
+    await h.result.current.handleSend()
+
+    expect(dialog.confirm).not.toHaveBeenCalled()
+    expect(h.chatStream.cancel).toHaveBeenCalled()
+    expect(data.sendMessage).toHaveBeenCalled()
+  })
+
+  it('skips the owner confirmation when the stream belongs to this tab', async () => {
+    const h = setup({ input: '自我抢发', activeIdx: 0, conversationId: 'conv_a', streamOwnerIdx: 0 })
+
+    await h.result.current.handleSend()
+
+    expect(dialog.confirm).not.toHaveBeenCalled()
+    expect(h.chatStream.cancel).toHaveBeenCalled()
+    expect(data.sendMessage).toHaveBeenCalled()
+  })
+
+  it('names a vanished owner tab in the interruption prompt', async () => {
+    const h = setup({ input: '抢发', activeIdx: 1, conversationId: 'conv_b', streamOwnerIdx: 5 })
+    dialog.confirm.mockResolvedValueOnce(false)
+
+    await h.result.current.handleSend()
+
+    expect(dialog.confirm).toHaveBeenCalledTimes(1)
+    expect((dialog.confirm.mock.calls[0][0] as { message: string }).message).toContain('其他标签')
+  })
+
+  it('passes undefined companion versions to the conversation store', async () => {
+    const h = setup({ input: '无版本', companion: { id: 'comp_no_version', name: '无版本伙伴' } })
+
+    await h.result.current.handleSend()
+
+    expect(
+      (data.createConversation.mock.calls[0][0] as { companionVersion?: number }).companionVersion
+    ).toBeUndefined()
+  })
+
+  it('passes undefined companion versions when recreating after a failed persist', async () => {
+    data.sendMessage.mockRejectedValueOnce(new Error('gone'))
+    const h = setup({
+      input: '恢复',
+      conversationId: 'conv_1',
+      companion: { id: 'comp_no_version', name: '无版本伙伴' }
+    })
+
+    await h.result.current.handleSend()
+
+    expect(data.createConversation).toHaveBeenCalledTimes(1)
+    expect(
+      (data.createConversation.mock.calls[0][0] as { companionVersion?: number }).companionVersion
+    ).toBeUndefined()
+  })
+
+  it('drops the user bubble when its tab disappears during persistence', async () => {
+    const h = setup({ input: '并发清空', conversationId: 'conv_1' })
+    data.sendMessage.mockImplementationOnce(async () => {
+      h.tabs().length = 0
+      return { id: 'msg_1' }
+    })
+
+    await h.result.current.handleSend()
+
+    expect(h.tabs()).toHaveLength(0)
+    expect(h.chatStream.send).toHaveBeenCalled()
+  })
+
+  it('uses the active tab when the stream owner was cleared mid-send', async () => {
+    const streamEnd = Promise.resolve({ content: '归属回答', finishReason: 'stop' })
+    const h = setup({ input: '归属', conversationId: 'conv_1', streamEnd })
+    h.chatStream.send.mockImplementationOnce(() => {
+      h.streamOwnerIdxRef.current = null
+    })
+
+    await h.result.current.handleSend()
+
+    expect(h.tab().messages.map((m) => m.content)).toContain('归属回答')
+  })
+
+  it('skips persistence and the bubble for an empty final reply', async () => {
+    const streamEnd = Promise.resolve({ content: '', finishReason: 'stop' })
+    const h = setup({ input: '空回复', conversationId: 'conv_1', streamEnd })
+
+    await h.result.current.handleSend()
+
+    expect(data.sendMessage).toHaveBeenCalledTimes(1)
+    expect(h.tab().messages).toHaveLength(1)
+    expect(h.tab().messages[0].content).toBe('空回复')
+    expect(h.tab().retryMessage).toBeNull()
+  })
+
+  it('skips the assistant bubble when the tab disappears before the reply lands', async () => {
+    const streamEnd = Promise.resolve({ content: '迟到回答', finishReason: 'stop' })
+    const h = setup({ input: '标签没了', conversationId: 'conv_1', streamEnd })
+    h.chatStream.send.mockImplementationOnce(() => {
+      h.tabs().length = 0
+    })
+
+    await h.result.current.handleSend()
+
+    expect(data.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'assistant', content: '迟到回答' })
+    )
+    expect(h.tabs()).toHaveLength(0)
+  })
+
+  it('skips the retry flag when the tab disappears before a partial reply', async () => {
+    const streamEnd = Promise.resolve({ content: '半截', finishReason: 'error:timeout' })
+    const h = setup({ input: '部分', conversationId: 'conv_1', streamEnd })
+    h.chatStream.send.mockImplementationOnce(() => {
+      h.tabs().length = 0
+    })
+
+    await h.result.current.handleSend()
+
+    expect(h.setSendError).toHaveBeenCalledWith(expect.stringContaining('回复被中断'))
+    expect(h.tabs()).toHaveLength(0)
+  })
+
+  it('skips the retry flag when the tab disappears before a rejection', async () => {
+    const streamEnd = Promise.reject(new Error('died'))
+    const h = setup({ input: '失败', conversationId: 'conv_1', streamEnd })
+    h.chatStream.send.mockImplementationOnce(() => {
+      h.tabs().length = 0
+    })
+
+    await h.result.current.handleSend()
+
+    expect(h.focusInput).toHaveBeenCalled()
+    expect(h.tabs()).toHaveLength(0)
+  })
+
+  it('tolerates regenerate without any tab', async () => {
+    const h = setup({ conversationId: 'conv_1' })
+    h.tabs().length = 0
+
+    await h.result.current.handleRegenerate('missing')
+
+    expect(data.truncateConversation).not.toHaveBeenCalled()
+    expect(h.chatStream.send).not.toHaveBeenCalled()
+  })
+
+  it('regenerates without truncating when the tab has no conversation', async () => {
+    const h = setup({ conversationId: null })
+    h.tabs()[0].messages = [
+      { id: 'm1', role: 'user', content: '原问题' },
+      { id: 'm2', role: 'assistant', content: '旧回答' }
+    ]
+
+    await h.result.current.handleRegenerate('m2')
+
+    expect(data.truncateConversation).not.toHaveBeenCalled()
+    expect(h.setSendError).toHaveBeenCalledWith('对话状态异常，请重新开始课堂')
+  })
+
+  it('drops the regenerated list when the tab store shrank first', async () => {
+    const h = setup({ conversationId: 'conv_1' })
+    h.tabs()[0].messages = [
+      { id: 'm1', role: 'user', content: '原问题' },
+      { id: 'm2', role: 'assistant', content: '旧回答' }
+    ]
+    h.shrinkStore()
+
+    await h.result.current.handleRegenerate('m2')
+
+    expect(data.truncateConversation).toHaveBeenCalledWith('conv_1', 'm1')
+    expect(h.chatStream.send).not.toHaveBeenCalled()
   })
 })

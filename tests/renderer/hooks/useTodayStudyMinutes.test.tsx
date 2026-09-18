@@ -7,9 +7,17 @@
  * resetModules() to keep the cases independent.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, act, cleanup } from '@testing-library/react'
+import { renderHook, act, cleanup, waitFor } from '@testing-library/react'
 
 const data = { todayStudyMinutes: vi.fn() }
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
 
 beforeEach(() => {
   vi.resetModules()
@@ -108,6 +116,61 @@ describe('useTodayStudyMinutes', () => {
       await vi.advanceTimersByTimeAsync(5 * 60_000)
     })
     expect(data.todayStudyMinutes).not.toHaveBeenCalled()
+  })
+})
+
+describe('useTodayStudyMinutes — cache and single-flight', () => {
+  it('serves the cached value for a refresh within the TTL', async () => {
+    vi.useFakeTimers()
+    data.todayStudyMinutes.mockResolvedValue(12)
+    const result = await setup()
+    expect(result.current).toBe(12)
+
+    // Focus shortly after the mount load: the debounced refresh happens well
+    // within the 60s TTL, so the cached value is reused.
+    data.todayStudyMinutes.mockClear()
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect(data.todayStudyMinutes).not.toHaveBeenCalled()
+    expect(result.current).toBe(12)
+  })
+
+  it('shares one in-flight request between concurrent consumers', async () => {
+    const gate = deferred<number>()
+    data.todayStudyMinutes.mockReturnValue(gate.promise)
+    const { useTodayStudyMinutes } = await import(
+      '../../../src/renderer/src/hooks/useTodayStudyMinutes'
+    )
+
+    const first = renderHook(() => useTodayStudyMinutes())
+    const second = renderHook(() => useTodayStudyMinutes())
+    expect(data.todayStudyMinutes).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      gate.resolve(42)
+      await gate.promise
+    })
+    await waitFor(() => expect(first.result.current).toBe(42))
+    expect(second.result.current).toBe(42)
+  })
+
+  it('drops a response that lands after unmount', async () => {
+    const gate = deferred<number>()
+    data.todayStudyMinutes.mockReturnValue(gate.promise)
+    const { useTodayStudyMinutes } = await import(
+      '../../../src/renderer/src/hooks/useTodayStudyMinutes'
+    )
+
+    const hook = renderHook(() => useTodayStudyMinutes())
+    hook.unmount()
+
+    await act(async () => {
+      gate.resolve(9)
+      await gate.promise
+    })
+    expect(hook.result.current).toBe(0)
   })
 })
 

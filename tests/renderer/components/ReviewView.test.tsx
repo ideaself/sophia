@@ -351,3 +351,66 @@ describe('ReviewView — continue-learning failures and empty FAQ', () => {
     expect(screen.getByText('没有解析出问答')).toBeTruthy()
   })
 })
+
+describe('ReviewView — remaining tabs and concept-refresh failures', () => {
+  it('renders the self-test, progress, knowledge, audio and feynman tabs', async () => {
+    dataMocks.listArtifacts.mockResolvedValue([
+      ...ARTIFACTS,
+      { id: 'a4', type: 'progress', content: '进展：已掌握熵。', createdAt: '2026-07-06T10:03:00Z' },
+      { id: 'a5', type: 'knowledge_graph', content: '图谱：熵 -> 焓', createdAt: '2026-07-06T10:04:00Z' },
+      { id: 'a6', type: 'lesson_audio', content: '【导师】熵是什么？', createdAt: '2026-07-06T10:05:00Z' },
+      { id: 'a7', type: 'feynman_note', content: '费曼：熵像房间的乱度。', createdAt: '2026-07-06T10:06:00Z' }
+    ])
+
+    render(<ReviewView />)
+    await screen.findByText('课堂总结')
+
+    fireEvent.click(screen.getByText('自测题 (1)'))
+    expect(await screen.findByText(/先自己作答/)).toBeTruthy()
+
+    fireEvent.click(screen.getByText('学习进展'))
+    expect(await screen.findByText('进展：已掌握熵。')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('🧠 知识点图谱'))
+    expect(await screen.findByText('图谱：熵 -> 焓')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('🎧 音频回顾'))
+    // jsdom has no speech synthesis, so the player falls back to the notice.
+    expect(await screen.findByText(/当前环境不支持语音合成/)).toBeTruthy()
+
+    fireEvent.click(screen.getByText('费曼知识蛋'))
+    expect(await screen.findByText('费曼：熵像房间的乱度。')).toBeTruthy()
+  })
+
+  it('renders artifact-backed tabs even when the conversation vanished', async () => {
+    dataMocks.getConversation.mockResolvedValue(null)
+
+    render(<ReviewView />)
+    await screen.findByText('课堂总结')
+
+    expect(screen.getByText('记忆卡片')).toBeTruthy()
+    expect(companionsGet).not.toHaveBeenCalled()
+  })
+
+  it('keeps the concept list when a live refresh fails', async () => {
+    let cb: ((event: { conversationId: string }) => void) | null = null
+    dataMocks.onConceptsUpdated.mockImplementation(
+      (fn?: (event: { conversationId: string }) => void) => {
+        if (fn) cb = fn
+        return () => {}
+      }
+    )
+
+    render(<ReviewView />)
+    await screen.findByText('📊 概念掌握')
+    fireEvent.click(screen.getByText('📊 概念掌握'))
+    expect(screen.getByText('熵')).toBeTruthy()
+
+    dataMocks.listConcepts.mockRejectedValueOnce(new Error('refresh down'))
+    act(() => cb?.({ conversationId: 'c1' }))
+    await waitFor(() => expect(dataMocks.listConcepts).toHaveBeenCalledWith('c1'))
+
+    // The rejected refresh is swallowed; the previously loaded list stays.
+    expect(screen.getByText('熵')).toBeTruthy()
+  })
+})

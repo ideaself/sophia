@@ -152,7 +152,7 @@ export function registerChatPromptIpc(dataRoot: string, providerStore?: Provider
 
     // 2. Load learner profile (learner.md)
     const localCtx = await readLocalContext(dataRoot)
-    const learnerInfo = localCtx?.learnerProfile ?? undefined
+    const learnerInfo = localCtx?.learnerProfile
 
     // 3. Load textbook content
     let textbookContent: string | undefined

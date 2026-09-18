@@ -143,6 +143,43 @@ describe('formatAssessment', () => {
     vague.companionBehavior = 'vague_answers'
     expect(formatAssessment(vague, 1)).toContain('回答模糊')
   })
+
+  it('adds no behavior warning for normal or unknown behaviors', () => {
+    const normal = sampleAssessment()
+    normal.companionBehavior = 'normal'
+    expect(formatAssessment(normal, 1)).not.toContain('⚠️ 伙伴')
+
+    const unknown = sampleAssessment()
+    unknown.companionBehavior = 'mystery'
+    const out = formatAssessment(unknown, 1)
+    expect(out).toContain('伙伴行为：mystery')
+    expect(out).not.toContain('⚠️ 伙伴')
+  })
+
+  it('falls back to raw labels for unknown enum values', () => {
+    const a = sampleAssessment()
+    a.learnerEngagement = 'weird'
+    a.teachingGoalAlignment = 'oddish'
+    a.recommendedAction = 'ponder'
+    const out = formatAssessment(a, 3)
+
+    expect(out).toContain('学习者投入：weird')
+    expect(out).toContain('目标对齐度：oddish')
+    expect(out).toContain('本轮建议：ponder')
+  })
+
+  it('renders fallback dashes for empty action reason and playbook entries', () => {
+    const a = sampleAssessment()
+    a.actionReason = ''
+    a.responsePlaybook = { ifShortAck: '', ifQuestion: '', ifSubstantive: '', ifConfused: '' }
+    const out = formatAssessment(a, 1)
+
+    expect(out).toContain('本轮建议：加深当前话题 - \n')
+    expect(out).toMatch(/如果简短回应：—/)
+    expect(out).toMatch(/如果学习者提问：—/)
+    expect(out).toMatch(/如果实质性回答：—/)
+    expect(out).toMatch(/如果表示困惑：—/)
+  })
 })
 
 describe('analyzeTeaching', () => {
@@ -255,5 +292,49 @@ describe('analyzeTeaching', () => {
     const result = await run()
 
     expect(result).toBeNull()
+  })
+
+  it('defaults a missing textbook title and tolerates a response without content', async () => {
+    llm.chat.mockResolvedValue({})
+
+    const promise = analyzeTeaching(
+      history,
+      companion,
+      undefined,
+      CONFIG as { apiKey: string; baseUrl: string; model: string }
+    )
+    await vi.advanceTimersByTimeAsync(600)
+    const result = await promise
+
+    expect(result).toBeNull()
+    expect(llm.chat).toHaveBeenCalledTimes(2)
+    const messages = llm.chat.mock.calls[0][0] as Array<{ role: string; content: string }>
+    expect(messages[1].content).toContain('教材：未指定')
+  })
+
+  it('normalizes a sparse assessment payload and keeps array quality flags', async () => {
+    llm.chat.mockResolvedValue({
+      content: JSON.stringify({
+        isTangent: true,
+        qualityFlags: ['过长', '未以提问结尾']
+      })
+    })
+
+    const result = await run()
+
+    expect(result).toMatchObject({
+      companionBehavior: 'normal',
+      learnerEngagement: 'following',
+      teachingGoalAlignment: 'aligned',
+      recommendedAction: 'advance',
+      isTangent: true,
+      qualityFlags: ['过长', '未以提问结尾']
+    })
+    expect(result?.responsePlaybook).toEqual({
+      ifShortAck: '',
+      ifQuestion: '',
+      ifSubstantive: '',
+      ifConfused: ''
+    })
   })
 })

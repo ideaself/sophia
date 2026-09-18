@@ -121,4 +121,21 @@ describe('setupAutoUpdate', () => {
     expect(checkForUpdatesAndNotify).toHaveBeenCalledTimes(1)
     expect(warn).toHaveBeenCalled()
   })
+
+  it('logs non-Error background failures verbatim', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    checkForUpdatesAndNotify.mockRejectedValue('offline')
+    setupAutoUpdate()
+
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(warn).toHaveBeenCalledWith('[updater] update check failed:', 'offline')
+  })
+
+  it('skips unref when the timer has no unref function', () => {
+    vi.spyOn(globalThis, 'setTimeout').mockReturnValue(123 as unknown as ReturnType<typeof setTimeout>)
+
+    expect(() => setupAutoUpdate()).not.toThrow()
+    expect(autoUpdaterOn).toHaveBeenCalledWith('error', expect.any(Function))
+  })
 })

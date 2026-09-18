@@ -753,4 +753,36 @@ describe('buildSystemPrompt — handoff timeline labels', () => {
     expect(prompt).toContain('上次课堂结束于上次')
     expect(prompt).not.toContain('当时读到教材第')
   })
+
+  it('falls back to 上次 when no timestamp is present at all', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('朗道'),
+      handoffMeta: { endingPage: null }
+    })
+
+    expect(prompt).toContain('上次课堂结束于上次')
+    expect(prompt).not.toContain('当时读到教材第')
+  })
+})
+
+describe('buildSystemPrompt — optional injected segments', () => {
+  it('injects concept mastery, handoff tail, pal moments, relation state and coach assessment', () => {
+    const prompt = buildSystemPrompt({
+      companion: find('朗道'),
+      conceptMastery: '## 概念掌握度\n\n- 熵：薄弱',
+      handoffTail: '上次讲到熵增原理。',
+      palMoments: '学生喜欢用类比理解概念。',
+      relationState: '师生关系融洽。',
+      teachingCoachAssessment: '[== 教学教练分析 ==]'
+    })
+
+    expect(prompt).toContain('## 概念掌握度')
+    expect(prompt).toContain('## 上次课堂接力')
+    expect(prompt).toContain('上次讲到熵增原理')
+    expect(prompt).toContain('## 教学互动备忘')
+    expect(prompt).toContain('学生喜欢用类比理解概念')
+    expect(prompt).toContain('## 与学习者的关系')
+    expect(prompt).toContain('师生关系融洽')
+    expect(prompt).toContain('[== 教学教练分析 ==]')
+  })
 })

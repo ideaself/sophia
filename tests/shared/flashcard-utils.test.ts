@@ -72,6 +72,13 @@ describe('Anki export', () => {
     expect(toAnkiText('a\tb\nc')).toBe('a b<br>c')
   })
 
+  it('tags cards without createdAt with the current month', () => {
+    const out = buildAnkiImport([
+      { question: 'Q', answer: 'A', conversationTitle: '牌组' }
+    ])
+    expect(out).toContain(`sophia ${new Date().toISOString().slice(0, 7)}`)
+  })
+
   it('sanitizes deck names', () => {
     expect(sanitizeDeck('a/b\\c:d*e?f"g<h>i|j')).toBe('a_b_c_d_e_f_g_h_i_j')
   })

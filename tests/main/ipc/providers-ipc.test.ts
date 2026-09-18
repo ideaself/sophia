@@ -170,6 +170,20 @@ describe('providers IPC — models endpoint', () => {
     ).resolves.toEqual({ success: false, error: 'network down' })
   })
 
+  it('treats a payload without a data array as zero models', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) })
+    await expect(
+      invoke('providers:test-connection', { baseUrl: 'https://api.example.com', apiKey: 'k' })
+    ).resolves.toEqual({ success: true, models: [], message: 'Found 0 models' })
+  })
+
+  it('reports non-Error connection failures as an unknown error', async () => {
+    fetchMock.mockRejectedValue('raw transport failure')
+    await expect(
+      invoke('providers:test-connection', { baseUrl: 'https://api.example.com', apiKey: 'k' })
+    ).resolves.toEqual({ success: false, error: 'Unknown error' })
+  })
+
   it('returns validation errors instead of throwing for bad input', async () => {
     await expect(invoke('providers:test-connection', { baseUrl: '', apiKey: '' })).resolves.toEqual(
       expect.objectContaining({ success: false })

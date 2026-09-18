@@ -82,6 +82,15 @@ describe('CompanionEditModal', () => {
     expect(onClose).toHaveBeenCalledTimes(2)
   })
 
+  it('ignores key presses other than Escape', () => {
+    const { onClose } = renderModal()
+
+    fireEvent.keyDown(window, { key: 'Enter' })
+    fireEvent.keyDown(window, { key: 'a' })
+
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('does not close when clicking inside the dialog panel', () => {
     const { onClose } = renderModal()
     fireEvent.click(screen.getByRole('dialog'))

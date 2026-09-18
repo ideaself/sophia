@@ -13,6 +13,8 @@ const pdfState = vi.hoisted(() => ({
   getDocument: vi.fn(),
   /** When set, TextLayer.render waits on it (mid-render unmount tests). */
   renderGate: null as Promise<void> | null,
+  /** Whether the fake OutputScale reports a scaled (HiDPI) display. */
+  outputScaleScaled: true,
   textLayers: [] as Array<{ render: ReturnType<typeof vi.fn>; cancel: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> }>
 }))
 
@@ -21,7 +23,7 @@ vi.mock('pdfjs-dist', () => {
     sx = 2
     sy = 2
     get scaled(): boolean {
-      return true
+      return pdfState.outputScaleScaled
     }
   }
   class TextLayer {
@@ -72,11 +74,7 @@ const data = {
 
 const PAGE_TEXTS = ['第一章 温度 内容', '第二章 熵 内容 熵 内容', '第三章 热机 内容']
 
-function makeDoc(pageTexts = PAGE_TEXTS): {
-  numPages: number
-  getPage: ReturnType<typeof vi.fn>
-  destroy: ReturnType<typeof vi.fn>
-} {
+function makeDoc(pageTexts = PAGE_TEXTS) {
   const pages = pageTexts.map((text) => ({
     getViewport: ({ scale }: { scale: number }) => ({
       width: 600 * scale,
@@ -84,7 +82,10 @@ function makeDoc(pageTexts = PAGE_TEXTS): {
       scale,
       transform: [scale, 0, 0, -scale, 0, 800 * scale]
     }),
-    render: vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn() })),
+    render: vi.fn((_options: { transform?: number[] }) => ({
+      promise: Promise.resolve(),
+      cancel: vi.fn()
+    })),
     streamTextContent: vi.fn(() => ({})),
     getTextContent: vi.fn(async () => ({
       items: [{ str: text, transform: [1, 0, 0, 10, 100, 740], width: text.length * 10, height: 10 }],
@@ -93,8 +94,9 @@ function makeDoc(pageTexts = PAGE_TEXTS): {
   }))
   return {
     numPages: pageTexts.length,
-    getPage: vi.fn(async (n: number) => pages[n - 1]),
-    destroy: vi.fn(async () => {})
+    getPage: vi.fn<(n: number) => Promise<unknown>>(async (n: number) => pages[n - 1]),
+    destroy: vi.fn(async () => {}),
+    pages
   }
 }
 
@@ -103,6 +105,7 @@ beforeEach(() => {
   for (const fn of Object.values(data)) fn.mockClear()
   pdfState.getDocument.mockReset()
   pdfState.renderGate = null
+  pdfState.outputScaleScaled = true
   pdfState.textLayers.length = 0
 
   data.readTextbookOriginal.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), fileName: 'thermo.pdf' })
@@ -189,6 +192,30 @@ describe('PdfReaderView — loading', () => {
 
     expect(await screen.findByText('损坏的 PDF')).toBeTruthy()
   })
+
+  it('falls back to the generic message for non-Error load failures', async () => {
+    pdfState.getDocument.mockImplementationOnce(() => ({
+      promise: Promise.reject('corrupt'),
+      destroy: vi.fn(async () => {})
+    }))
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+
+    expect(await screen.findByText('加载失败')).toBeTruthy()
+  })
+
+  it('renders without a transform on a non-scaled display', async () => {
+    pdfState.outputScaleScaled = false
+    const doc = makeDoc()
+    pdfState.getDocument.mockImplementationOnce(() => ({
+      promise: Promise.resolve(doc),
+      destroy: vi.fn(async () => {})
+    }))
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+
+    await waitFor(() => expect(doc.pages[0].render).toHaveBeenCalled())
+    const options = doc.pages[0].render.mock.calls[0][0] as { transform?: number[] }
+    expect(options.transform).toBeUndefined()
+  })
 })
 
 describe('PdfReaderView — navigation and zoom', () => {
@@ -210,6 +237,51 @@ describe('PdfReaderView — navigation and zoom', () => {
     fireEvent.change(pageInput, { target: { value: '99' } })
     fireEvent.keyDown(pageInput, { key: 'Enter' })
     await waitFor(() => expect((pageInput as HTMLInputElement).value).toBe('3'))
+  })
+
+  it('leaves a focused page input alone while pages change', async () => {
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+    await waitFor(() => expect(pdfState.textLayers.length).toBeGreaterThan(0))
+
+    const pageInput = screen.getByTitle('输入页码后回车跳转') as HTMLInputElement
+    pageInput.focus()
+    fireEvent.change(pageInput, { target: { value: '7' } })
+
+    fireEvent.click(screen.getByTitle('下一页 (→)'))
+    await waitFor(() => expect(pageInput.value).toBe('7'))
+  })
+
+  it('navigates with PageDown and ignores unrelated keys', async () => {
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+    await waitFor(() => expect(pdfState.textLayers.length).toBeGreaterThan(0))
+
+    fireEvent.keyDown(window, { key: 'PageDown' })
+    await waitFor(() =>
+      expect((screen.getByTitle('输入页码后回车跳转') as HTMLInputElement).value).toBe('2')
+    )
+
+    fireEvent.keyDown(window, { key: 'a' })
+    expect((screen.getByTitle('输入页码后回车跳转') as HTMLInputElement).value).toBe('2')
+  })
+
+  it('clamps key navigation before the page count is known', async () => {
+    let resolveDoc!: (value: ReturnType<typeof makeDoc>) => void
+    const docGate = new Promise<ReturnType<typeof makeDoc>>((resolve) => {
+      resolveDoc = resolve
+    })
+    pdfState.getDocument.mockImplementationOnce(() => ({
+      promise: docGate,
+      destroy: vi.fn(async () => {})
+    }))
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+
+    // pageCount is still 0 → the pager is absent and the fallback keeps page 1.
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+
+    resolveDoc(makeDoc())
+    await waitFor(() => expect(pdfState.textLayers.length).toBeGreaterThan(0))
+    expect((screen.getByTitle('输入页码后回车跳转') as HTMLInputElement).value).toBe('1')
   })
 
   it('zooms with the −/+ buttons and fits the width', async () => {
@@ -234,6 +306,15 @@ describe('PdfReaderView — navigation and zoom', () => {
     fireEvent.click(screen.getByText('关闭'))
     expect(onClose).toHaveBeenCalled()
   })
+
+  it('renders inline when embedded', async () => {
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} embedded />)
+    await waitFor(() => expect(pdfState.textLayers.length).toBeGreaterThan(0))
+
+    const root = document.querySelector('.bg-bg-deep') as HTMLElement
+    expect(root.className).toContain('relative flex h-full')
+    expect(root.className).not.toContain('fixed inset-0')
+  })
 })
 
 describe('PdfReaderView — search', () => {
@@ -257,6 +338,41 @@ describe('PdfReaderView — search', () => {
     fireEvent.change(input, { target: { value: '不存在的词' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(await screen.findByText('未找到匹配')).toBeTruthy()
+  })
+
+  it('marks the current hit page and the other hits', async () => {
+    const doc = makeDoc(['共享词 第一页', '共享词 第二页', '共享词 第三页'])
+    pdfState.getDocument.mockImplementationOnce(() => ({
+      promise: Promise.resolve(doc),
+      destroy: vi.fn(async () => {})
+    }))
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+    await waitFor(() => expect(pdfState.textLayers.length).toBeGreaterThan(0))
+
+    fireEvent.click(screen.getByTitle('在 PDF 中搜索 (Ctrl+F)'))
+    const input = await screen.findByPlaceholderText('输入关键词，回车搜索...')
+    fireEvent.change(input, { target: { value: '共享词' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    const first = await screen.findByText('第 1 页 · 1 处')
+    const second = screen.getByText('第 2 页 · 1 处')
+    expect(first.className).toContain('text-accent')
+    expect(second.className).toContain('text-text-secondary')
+  })
+
+  it('ignores unrelated keys and IME composition in the search box', async () => {
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+    await waitFor(() => expect(pdfState.textLayers.length).toBeGreaterThan(0))
+
+    fireEvent.click(screen.getByTitle('在 PDF 中搜索 (Ctrl+F)'))
+    const input = await screen.findByPlaceholderText('输入关键词，回车搜索...')
+    fireEvent.change(input, { target: { value: '熵' } })
+
+    fireEvent.keyDown(input, { key: 'a' })
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.queryByText('第 2 页 · 2 处')).toBeNull()
   })
 
   it('closes the search popover with Escape', async () => {
@@ -355,6 +471,86 @@ describe('PdfReaderView — notes and selection', () => {
     fireEvent.click(screen.getByText('删除'))
     await waitFor(() => expect(data.deleteReadingNote).toHaveBeenCalledWith('n1', 'tb_1'))
   })
+
+  it('renders underline and highlight badges in the notes panel', async () => {
+    const base = {
+      textbookId: 'tb_1',
+      position: '2',
+      chapter: '第 2 页',
+      color: '',
+      readerNote: '',
+      createdAt: '2026-09-16T10:00:00Z',
+      updatedAt: '2026-09-16T10:00:00Z'
+    }
+    data.listReadingNotes.mockResolvedValue([
+      { ...base, id: 'n-u', content: '熵', type: 'underline' },
+      { ...base, id: 'n-h', content: '温度', type: 'highlight' }
+    ])
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+    await waitFor(() => expect(pdfState.textLayers.length).toBeGreaterThan(0))
+
+    fireEvent.click(screen.getByTitle('阅读批注（选中文本后可用高亮 / 笔记）'))
+
+    expect(await screen.findByText(/〰️ 下划线 · 第 2 页/)).toBeTruthy()
+    expect(screen.getByText(/🖍️ 高亮 · 第 2 页/)).toBeTruthy()
+  })
+
+  it('ignores invalid or zero note positions on jump', async () => {
+    data.listReadingNotes.mockResolvedValue([
+      {
+        id: 'n-bad',
+        textbookId: 'tb_1',
+        content: '熵',
+        position: 'abc',
+        chapter: '第 2 页',
+        type: 'note',
+        color: '',
+        readerNote: '',
+        createdAt: '2026-09-16T10:00:00Z',
+        updatedAt: '2026-09-16T10:00:00Z'
+      },
+      {
+        id: 'n-zero',
+        textbookId: 'tb_1',
+        content: '熵',
+        position: '0',
+        chapter: '第 2 页',
+        type: 'note',
+        color: '',
+        readerNote: '',
+        createdAt: '2026-09-16T10:00:00Z',
+        updatedAt: '2026-09-16T10:00:00Z'
+      }
+    ])
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+    await waitFor(() => expect(pdfState.textLayers.length).toBeGreaterThan(0))
+
+    fireEvent.click(screen.getByTitle('阅读批注（选中文本后可用高亮 / 笔记）'))
+    const jumps = await screen.findAllByText('跳转')
+    for (const jump of jumps) fireEvent.click(jump)
+
+    expect((screen.getByTitle('输入页码后回车跳转') as HTMLInputElement).value).toBe('1')
+  })
+
+  it('truncates the note placeholder for long selections', async () => {
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+    await waitFor(() => expect(pdfState.textLayers.length).toBeGreaterThan(0))
+
+    const host = document.createElement('div')
+    host.textContent = '长长的中文选中内容'.repeat(4)
+    document.body.appendChild(host)
+    const range = document.createRange()
+    range.selectNodeContents(host)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+
+    const container = document.querySelector('.textLayer')!.parentElement!
+    fireEvent.mouseUp(container)
+    fireEvent.click(await screen.findByTitle('为这段文字写一条笔记'))
+
+    expect(await screen.findByPlaceholderText(/…/)).toBeTruthy()
+    host.remove()
+  })
 })
 
 describe('PdfReaderView — progress', () => {
@@ -388,6 +584,14 @@ describe('PdfReaderView — progress', () => {
       expect((screen.getByTitle('输入页码后回车跳转') as HTMLInputElement).value).toBe('3')
     )
   })
+
+  it('stays on page 1 when neither the store nor localStorage has a page', async () => {
+    data.getTextbook.mockRejectedValue(new Error('db closed'))
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+
+    await waitFor(() => expect(pdfState.textLayers.length).toBeGreaterThan(0))
+    expect((screen.getByTitle('输入页码后回车跳转') as HTMLInputElement).value).toBe('1')
+  })
 })
 
 describe('PdfReaderView — edge paths', () => {
@@ -396,12 +600,18 @@ describe('PdfReaderView — edge paths', () => {
     render: unknown
   }
 
-  function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  function deferred<T>(): {
+    promise: Promise<T>
+    resolve: (value: T) => void
+    reject: (reason?: unknown) => void
+  } {
     let resolve!: (value: T) => void
-    const promise = new Promise<T>((res) => {
+    let reject!: (reason?: unknown) => void
+    const promise = new Promise<T>((res, rej) => {
       resolve = res
+      reject = rej
     })
-    return { promise, resolve }
+    return { promise, resolve, reject }
   }
 
   const NOTE = {
@@ -439,6 +649,10 @@ describe('PdfReaderView — edge paths', () => {
     const pageInput = screen.getByTitle('输入页码后回车跳转')
     fireEvent.change(pageInput, { target: { value: 'abc' } })
     fireEvent.keyDown(pageInput, { key: 'Enter' })
+    await waitFor(() => expect((pageInput as HTMLInputElement).value).toBe('1'))
+
+    // Non-Enter keys in the page input do nothing.
+    fireEvent.keyDown(pageInput, { key: 'a' })
     await waitFor(() => expect((pageInput as HTMLInputElement).value).toBe('1'))
   })
 
@@ -579,6 +793,48 @@ describe('PdfReaderView — edge paths', () => {
     })
   })
 
+  it('skips notes without page matches and falls back for unknown note types', async () => {
+    data.listReadingNotes.mockResolvedValue([
+      { ...NOTE, id: 'n-miss', content: '不在本页的内容', position: '1', type: 'highlight' },
+      { ...NOTE, id: 'n-weird', content: '温度', position: '1', type: 'weird' }
+    ])
+    const doc = makeDoc()
+    pdfState.getDocument.mockImplementationOnce(() => ({
+      promise: Promise.resolve(doc),
+      destroy: vi.fn(async () => {})
+    }))
+    render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+    await waitFor(() => expect(doc.pages[0].getTextContent).toHaveBeenCalled())
+
+    // Only the matching note produces a highlight; the unknown type falls back
+    // to the default highlight class.
+    await waitFor(() =>
+      expect(
+        document.querySelectorAll('.pointer-events-none.absolute.bg-yellow-300\\/50').length
+      ).toBe(1)
+    )
+  })
+
+  it('stays quiet when a page render fails with a cancellation error', async () => {
+    const doc = makeDoc()
+    const cancelled = new Error('cancelled')
+    cancelled.name = 'RenderingCancelledException'
+    doc.getPage.mockRejectedValueOnce(cancelled)
+    pdfState.getDocument.mockImplementationOnce(() => ({
+      promise: Promise.resolve(doc),
+      destroy: vi.fn(async () => {})
+    }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+      await waitFor(() => expect(doc.getPage).toHaveBeenCalled())
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('ignores empty, missing and oversized selections', async () => {
     render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
     await waitFor(() => expect(pdfState.textLayers.length).toBeGreaterThan(0))
@@ -650,15 +906,35 @@ describe('PdfReaderView — edge paths', () => {
 
     // 2) Unmount after the loading task exists but before its promise settles.
     const docGate = deferred<ReturnType<typeof makeDoc>>()
-    const task = { promise: docGate.promise, destroy: vi.fn(async () => {}) }
+    const task = {
+      promise: docGate.promise,
+      destroy: vi.fn(async () => {
+        throw new Error('destroy failed')
+      })
+    }
     pdfState.getDocument.mockImplementationOnce(() => task)
 
     const second = render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
-    await waitFor(() => expect(pdfState.getDocument).toHaveBeenCalled())
+    await waitFor(() => expect(pdfState.getDocument).toHaveBeenCalledTimes(1))
     second.unmount()
 
     docGate.resolve(makeDoc())
-    await waitFor(() => expect(task.destroy).toHaveBeenCalled())
+    // destroy() rejects in both teardown paths; the rejections are swallowed.
+    await waitFor(() => expect(task.destroy).toHaveBeenCalledTimes(2))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(document.querySelector('canvas')).toBeNull()
+
+    // 3) Unmount before the document promise rejects.
+    const failGate = deferred<ReturnType<typeof makeDoc>>()
+    pdfState.getDocument.mockImplementationOnce(() => ({
+      promise: failGate.promise,
+      destroy: vi.fn(async () => {})
+    }))
+    const third = render(<PdfReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} />)
+    await waitFor(() => expect(pdfState.getDocument).toHaveBeenCalledTimes(2))
+    third.unmount()
+    failGate.reject(new Error('late failure'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(document.querySelector('canvas')).toBeNull()
   })
 

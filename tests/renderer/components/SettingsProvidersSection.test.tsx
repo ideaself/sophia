@@ -263,6 +263,105 @@ describe('SettingsProvidersSection — modal interactions', () => {
     expect(await screen.findByText(/错误：Failed/)).toBeTruthy()
   })
 
+  it('reports model-fetch failures with the message and with the generic fallback', async () => {
+    providers.testConnection.mockResolvedValueOnce({ success: false, message: '暂无模型' })
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fillRequired()
+    fireEvent.click(screen.getByText('获取模型'))
+    expect(await screen.findByText(/错误：暂无模型/)).toBeTruthy()
+
+    providers.testConnection.mockResolvedValueOnce({ success: false })
+    fireEvent.click(screen.getByText('获取模型'))
+    expect(await screen.findByText(/错误：No models found/)).toBeTruthy()
+  })
+
+  it('reports a non-Error model-fetch rejection', async () => {
+    providers.testConnection.mockRejectedValueOnce('plain failure')
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fillRequired()
+    fireEvent.click(screen.getByText('获取模型'))
+    expect(await screen.findByText(/错误：Failed/)).toBeTruthy()
+  })
+
+  it('fills discovered models from a passing connection test', async () => {
+    providers.testConnection.mockResolvedValueOnce({
+      success: true,
+      models: ['m-one', 'm-two']
+    })
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fillRequired()
+    fireEvent.click(screen.getByText('测试连接'))
+
+    expect(await screen.findByText(/成功：Connection successful/)).toBeTruthy()
+    const select = await screen.findByRole('combobox')
+    expect((select as HTMLSelectElement).value).toBe('m-one')
+  })
+
+  it('falls back to Connection failed without an error string', async () => {
+    providers.testConnection.mockResolvedValueOnce({ success: false })
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fillRequired()
+    fireEvent.click(screen.getByText('测试连接'))
+    expect(await screen.findByText(/错误：Connection failed/)).toBeTruthy()
+  })
+
+  it('reports an Error thrown by the connection test', async () => {
+    providers.testConnection.mockRejectedValueOnce(new Error('socket closed'))
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fillRequired()
+    fireEvent.click(screen.getByText('测试连接'))
+    expect(await screen.findByText(/错误：socket closed/)).toBeTruthy()
+  })
+
+  it('updates a provider without rotating the key when it is left blank', async () => {
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    fireEvent.click(screen.getByText('编辑'))
+    await screen.findByPlaceholderText('我的服务')
+    fireEvent.click(screen.getByText('更新'))
+
+    await waitFor(() =>
+      expect(providers.update).toHaveBeenCalledWith('prov_1', expect.objectContaining({ name: 'DeepSeek 主号' }))
+    )
+    expect(providers.setApiKey).not.toHaveBeenCalled()
+  })
+
+  it('falls back to Save failed for a non-Error save rejection', async () => {
+    providers.create.mockRejectedValueOnce('plain failure')
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    openAddModal()
+    fillRequired()
+    fireEvent.click(screen.getByText('创建'))
+
+    expect(await screen.findByText('Save failed')).toBeTruthy()
+  })
+
+  it('shows the unselected-model placeholder', async () => {
+    providers.list.mockResolvedValue([{ ...PROVIDER, isActive: false, selectedModel: '' }])
+    render(<SettingsProvidersSection />)
+    await screen.findByText('DeepSeek 主号')
+
+    expect(screen.getByText('未选择')).toBeTruthy()
+  })
+
   it('accepts a manually typed model name', async () => {
     render(<SettingsProvidersSection />)
     await screen.findByText('DeepSeek 主号')

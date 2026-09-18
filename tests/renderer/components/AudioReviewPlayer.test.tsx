@@ -174,4 +174,19 @@ describe('AudioReviewPlayer — playback', () => {
     unmount()
     expect(synth.cancel).toHaveBeenCalled()
   })
+
+  it('ignores the end of a stale utterance after a manual jump', async () => {
+    render(<AudioReviewPlayer content={SCRIPT} />)
+    fireEvent.click(screen.getByText('▶️ 播放'))
+    await waitFor(() => expect(synth.speak).toHaveBeenCalledTimes(1))
+
+    // Jump to the next line while the first one is still speaking.
+    fireEvent.click(screen.getByText('下一段 ⏭️'))
+    await waitFor(() => expect(synth.speak).toHaveBeenCalledTimes(2))
+
+    // Finishing the stale first utterance must not restart or double-advance.
+    spoken[0].onend?.()
+    expect(synth.speak).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('第 2/2 段')).toBeTruthy()
+  })
 })

@@ -96,4 +96,35 @@ describe('buildStatsOverview', () => {
     expect(result.dailyMinutes).toEqual({})
     expect(result.week).toMatchObject({ ms: 0, messages: 0, artifacts: 0 })
   })
+
+  it('defaults missing per-conversation maps to empty lists', () => {
+    const result = buildStatsOverview({
+      conversations: [{ id: 'c9', companionId: 'comp_x', textbookId: null }],
+      messagesByConversation: {},
+      artifactsByConversation: {},
+      now: NOW
+    })
+    expect(result.messageCounts).toEqual({ c9: 0 })
+    expect(result.artifactCounts).toEqual({ c9: 0 })
+    expect(result.totalMessages).toBe(0)
+    expect(result.totalArtifacts).toBe(0)
+  })
+
+  it('skips messages and artifacts with unparseable timestamps', () => {
+    const result = buildStatsOverview(
+      baseInput({
+        conversations: [{ id: 'c1', companionId: 'comp_a', textbookId: null }],
+        messagesByConversation: {
+          c1: [{ createdAt: 'not-a-date' }, { createdAt: atLocal(TODAY, 9, 0) }]
+        },
+        artifactsByConversation: {
+          c1: [{ createdAt: 'garbage' }, { createdAt: atLocal(TODAY, 9, 45) }]
+        }
+      })
+    )
+    expect(result.totalMessages).toBe(2)
+    expect(result.week.messages).toBe(1)
+    expect(result.totalArtifacts).toBe(2)
+    expect(result.week.artifacts).toBe(1)
+  })
 })

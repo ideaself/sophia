@@ -204,7 +204,7 @@ function buildArtifactPrompt(type: ArtifactType, cardTarget?: string): string {
 用中文回答，控制在 450 字以内。`
 
     case ArtifactType.Flashcards:
-      return `你是一位教育助手。请根据以下苏格拉底式课堂对话，生成 ${cardTarget ?? '3-5 张'} 记忆卡片（flashcards）。
+      return `你是一位教育助手。请根据以下苏格拉底式课堂对话，生成 ${cardTarget} 记忆卡片（flashcards）。
 每张卡片格式：
 - 问题：(一个关键概念问题)
 - 答案：(简洁的答案)
@@ -374,6 +374,7 @@ function buildArtifactPrompt(type: ArtifactType, cardTarget?: string): string {
 - 问题用学习者视角提问
 - 铁律：仅输出问答行，不要标题、不要解释。`
 
+    /* v8 ignore next -- @preserve */
     default: {
       /* v8 ignore next -- @preserve */
       const _exhaustive: never = type

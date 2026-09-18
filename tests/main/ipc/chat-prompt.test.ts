@@ -328,7 +328,7 @@ describe('chat:get-prompt-messages — compression and coaching', () => {
     expect(compressCallsAfter).toBe(1)
   })
 
-  it('injects the teaching-coach assessment on the next turn', async () => {
+  it('injects the teaching-coach assessment on the next turn', { timeout: 30_000 }, async () => {
     await withProvider()
     const conv = await conversations.create({
       companionId: 'comp_landau',
@@ -541,7 +541,7 @@ describe('chat:get-prompt-messages — compression and coaching', () => {
     expect(llm.chat).not.toHaveBeenCalled()
   })
 
-  it('ignores an unusable coaching assessment and falls back to default endpoint/model', async () => {
+  it('ignores an unusable coaching assessment and falls back to default endpoint/model', { timeout: 30_000 }, async () => {
     // Empty baseUrl/selectedModel + invalid model output: the fallbacks are
     // used for the request and a null assessment is never injected.
     const provider = await providerStore.create({
@@ -564,21 +564,36 @@ describe('chat:get-prompt-messages — compression and coaching', () => {
       await conversations.addMessage(conv.id, 'assistant', `回答 ${i + 1}`)
     }
 
-    await invoke('chat:get-prompt-messages', {
-      conversationId: conv.id,
-      companionId: 'comp_landau',
-      userMessage: '第四个问题'
-    })
-    await vi.waitFor(() => expect(llm.chat).toHaveBeenCalled(), { timeout: 10_000 })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await invoke('chat:get-prompt-messages', {
+        conversationId: conv.id,
+        companionId: 'comp_landau',
+        userMessage: '第四个问题'
+      })
+      await vi.waitFor(() => expect(llm.chat).toHaveBeenCalled(), { timeout: 10_000 })
 
-    const next = await invoke<Array<{ role: string; content: string }>>(
-      'chat:get-prompt-messages',
-      { conversationId: conv.id, companionId: 'comp_landau', userMessage: '第五个问题' }
-    )
-    expect(next[0].content).not.toContain('教学教练分析')
+      // analyzeTeaching retries once after 500ms; wait for the skip warning so
+      // the null-assessment branch has definitely executed before the test ends.
+      await vi.waitFor(
+        () =>
+          expect(warn).toHaveBeenCalledWith(
+            '[teaching-coach] Retry also failed, skipping analysis this turn'
+          ),
+        { timeout: 10_000 }
+      )
+
+      const next = await invoke<Array<{ role: string; content: string }>>(
+        'chat:get-prompt-messages',
+        { conversationId: conv.id, companionId: 'comp_landau', userMessage: '第五个问题' }
+      )
+      expect(next[0].content).not.toContain('教学教练分析')
+    } finally {
+      warn.mockRestore()
+    }
   })
 
-  it('logs a non-Error coaching failure instead of crashing the turn', async () => {
+  it('logs a non-Error coaching failure instead of crashing the turn', { timeout: 30_000 }, async () => {
     await withProvider()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const conv = await conversations.create({
@@ -939,6 +954,122 @@ describe('chat-prompt — concepts, failures and cache invalidation', () => {
     })
     expect(countCompressCalls()).toBe(2)
   })
+
+  it('caps the compression cache and still serves cached entries when full', async () => {
+    await withProvider()
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '缓存上限'
+    })
+    const user = await conversations.addMessage(conv.id, 'user', '开场问题')
+    await conversations.addMessage(conv.id, 'assistant', '长回答'.repeat(10_000))
+
+    let summaryCount = 0
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if (messages[0].content.includes('压缩')) {
+        summaryCount += 1
+        return { content: `摘要-${summaryCount}` }
+      }
+      return { content: '' }
+    })
+
+    // 60 distinct windows blow past the 50-entry cap (the oldest entries are
+    // evicted); the 61st request reuses the last key while the map is full.
+    for (let i = 0; i < 60; i++) {
+      await conversations.updateMessage(conv.id, user.id, `开场问题-${i}`)
+      await invoke('chat:get-prompt-messages', {
+        conversationId: conv.id,
+        companionId: 'comp_landau',
+        userMessage: '继续'
+      })
+    }
+    const callsAfterFill = summaryCount
+    expect(callsAfterFill).toBeGreaterThanOrEqual(60)
+
+    await invoke('chat:get-prompt-messages', {
+      conversationId: conv.id,
+      companionId: 'comp_landau',
+      userMessage: '再继续'
+    })
+    expect(summaryCount).toBe(callsAfterFill)
+  })
+
+  it('compresses history with default endpoint and model when the provider has none', async () => {
+    const provider = await providerStore.create({
+      name: 'Empty',
+      type: 'deepseek',
+      baseUrl: '',
+      apiKey: 'sk-live',
+      models: [],
+      selectedModel: ''
+    })
+    await providerStore.update(provider.id, { isActive: true })
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '默认压缩'
+    })
+    await conversations.addMessage(conv.id, 'user', '开场问题')
+    await conversations.addMessage(conv.id, 'assistant', '长回答'.repeat(10_000))
+
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if (messages[0].content.includes('压缩')) {
+        return { content: '【压缩摘要】早前讨论了熵。' }
+      }
+      return { content: '' }
+    })
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: conv.id, companionId: 'comp_landau', userMessage: '继续' }
+    )
+
+    expect(messages.some((m) => m.content.includes('早前讨论了熵'))).toBe(true)
+    expect(llm.clients.at(-1)).toMatchObject({ model: 'deepseek-v4-flash' })
+  })
+
+  it('falls through to the legacy handoff search when the meta textbook does not match', async () => {
+    const previous = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '上一课'
+    })
+    await conversations.endConversation(previous.id)
+    await artifacts.create(previous.id, 'handoff_tail', '旧版尾巴：停在卡诺循环。')
+
+    await mkdir(join(dataRoot, 'learned'), { recursive: true })
+    await writeFile(
+      handoffMetaPath(dataRoot),
+      JSON.stringify({
+        comp_landau: {
+          savedAt: new Date().toISOString(),
+          prevConvId: previous.id,
+          companionName: '朗道',
+          companionSlot: null,
+          endingPage: 3,
+          textbookId: 'tb_other'
+        }
+      }),
+      'utf-8'
+    )
+
+    const current = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '新一课'
+    })
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: current.id, companionId: 'comp_landau', userMessage: '继续' }
+    )
+    expect(messages[0].content).toContain('旧版尾巴')
+  })
 })
 
 describe('ai:compose-answer — provider-powered path', () => {
@@ -1073,5 +1204,23 @@ describe('chat-prompt — fallback branches', () => {
     )
 
     expect(messages[0].content).not.toContain('接力')
+  })
+
+  it('treats a whitespace-only pal moments file as absent', async () => {
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '空备忘'
+    })
+    await writeFile(palMomentsPath(dataRoot), '   \n', 'utf-8')
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: conv.id, companionId: 'comp_landau', userMessage: '继续' }
+    )
+
+    expect(messages.length).toBeGreaterThan(0)
+    expect(messages[0].content).not.toContain('   \n')
   })
 })

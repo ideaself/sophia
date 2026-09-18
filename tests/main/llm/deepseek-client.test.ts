@@ -335,6 +335,47 @@ describe('Error mapping', () => {
       /思考/
     )
   })
+
+  it('reports a malformed response when content is empty without reasoning', async () => {
+    const adapter = createMockAdapter({
+      ok: true,
+      data: {
+        choices: [{ message: { role: 'assistant', content: '' } }]
+      }
+    })
+
+    await expect(new DeepSeekClient(testApiKey, adapter).chat(testMessages)).rejects.toThrowError(
+      /empty or malformed/
+    )
+  })
+
+  it('defaults missing model, finish_reason and usage fields', async () => {
+    const adapter = createMockAdapter({
+      ok: true,
+      data: {
+        choices: [{ message: { role: 'assistant', content: 'hi' } }]
+      }
+    })
+
+    const response = await new DeepSeekClient(testApiKey, adapter).chat(testMessages)
+
+    expect(response.model).toBe('unknown')
+    expect(response.finishReason).toBeNull()
+    expect(response.usage).toEqual({ promptTokens: 0, completionTokens: 0, totalTokens: 0 })
+  })
+
+  it('falls back to the status message when the error body has no string message', async () => {
+    const adapter = createMockAdapter({
+      ok: false,
+      status: 418,
+      body: { error: { message: 42 } }
+    })
+
+    await expect(new DeepSeekClient(testApiKey, adapter).chat(testMessages)).rejects.toMatchObject({
+      code: 'UNKNOWN_ERROR',
+      message: 'DeepSeek API error (HTTP 418)'
+    })
+  })
 })
 
 // ---------------------------------------------------------------

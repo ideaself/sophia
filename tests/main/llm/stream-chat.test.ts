@@ -270,6 +270,24 @@ describe('StreamChatSession — normal stream', () => {
     expect(events).toHaveLength(1)
     expect(events[0].type).toBe('end')
   })
+
+  it('emits thinking events for reasoning deltas, never as answer tokens', async () => {
+    const adapter = mockStreamAdapter([
+      { choices: [{ delta: { reasoning_content: '先想一下' } }] },
+      tokenChunk('答案'),
+      finishChunk('stop')
+    ])
+
+    const { events, start } = createSession(adapter)
+    await start()
+
+    const thinking = events.filter((e) => e.type === 'thinking')
+    expect(thinking).toHaveLength(1)
+    expect((thinking[0] as { text: string }).text).toBe('先想一下')
+    expect(
+      events.filter((e) => e.type === 'token').map((e) => (e as { token: string }).token)
+    ).toEqual(['答案'])
+  })
 })
 
 // ---------------------------------------------------------------
@@ -494,6 +512,62 @@ describe('StreamChatSession — listener hygiene and iterator cleanup', () => {
 
     expect(events.some((e) => e.type === 'end')).toBe(true)
     expect(events.some((e) => e.type === 'error')).toBe(false)
+  })
+
+  it('ignores a rejecting iterator.return during cleanup', async () => {
+    let returnCalled = false
+    const adapter = {
+      streamChat: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: async () => ({ done: true, value: undefined as never }),
+          return: async (): Promise<IteratorResult<DeepSeekStreamChunk>> => {
+            returnCalled = true
+            throw new Error('return boom')
+          }
+        })
+      })
+    } as unknown as DeepSeekStreamAdapter
+
+    const { events, start } = createSession(adapter)
+    await start()
+
+    await vi.waitFor(() => expect(returnCalled).toBe(true))
+    expect(events.some((e) => e.type === 'end')).toBe(true)
+  })
+
+  it('skips the end event when cancel happens after the last chunk already settled', async () => {
+    let calls = 0
+    const adapter = {
+      streamChat: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () =>
+            Promise.resolve(
+              calls++ === 0
+                ? { done: false, value: tokenChunk('only') }
+                : { done: true, value: undefined as never }
+            ),
+          return: async (): Promise<IteratorResult<DeepSeekStreamChunk>> => ({
+            done: true,
+            value: undefined as never
+          })
+        })
+      })
+    } as unknown as DeepSeekStreamAdapter
+
+    const events: StreamEvent[] = []
+    const session = new StreamChatSession(
+      'abort-after-last-chunk',
+      { messages: testMessages, model: 'deepseek-v4-pro', apiKey: testApiKey },
+      adapter,
+      (event: StreamEvent) => {
+        events.push(event)
+        if (event.type === 'token') session.cancel()
+      }
+    )
+
+    await session.start()
+
+    expect(events.map((e) => e.type)).toEqual(['token'])
   })
 })
 

@@ -94,6 +94,15 @@ describe('ProviderStore — providers', () => {
     await expect(store.delete(created.id)).resolves.toBe(false)
   })
 
+  it('deactivates a provider without touching the others', async () => {
+    const created = await store.create({ name: 'A', type: 'deepseek', baseUrl: 'u', apiKey: 'k' })
+    await store.update(created.id, { isActive: true })
+
+    const off = await store.update(created.id, { isActive: false })
+    expect(off?.isActive).toBe(false)
+    await expect(store.getActive()).resolves.toBeNull()
+  })
+
   it('returns [] for a corrupted providers.json instead of throwing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await mkdir(configDir(dataRoot), { recursive: true })

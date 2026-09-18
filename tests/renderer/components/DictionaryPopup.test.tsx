@@ -135,6 +135,23 @@ describe('DictionaryPopup — zoom', () => {
     for (let i = 0; i < 15; i++) fireEvent.click(screen.getByTitle('缩小'))
     expect(screen.getByText('50%')).toBeTruthy()
   })
+
+  it('keeps a user-adjusted zoom when the page becomes ready again', async () => {
+    render(<DictionaryPopup word="entropy" onClose={vi.fn()} />)
+    const executeJavaScript = vi.fn(async () => {})
+    webviewEl().executeJavaScript = executeJavaScript
+    fireWebview('dom-ready')
+    await waitFor(() => expect(screen.getByText('85%')).toBeTruthy())
+
+    fireEvent.click(screen.getByTitle('放大'))
+    expect(executeJavaScript).toHaveBeenCalledWith('document.documentElement.style.zoom = 1.00')
+    executeJavaScript.mockClear()
+
+    // A second dom-ready (e.g. an internal navigation) must not reset the zoom.
+    fireWebview('dom-ready')
+    await waitFor(() => expect(screen.getByText('100%')).toBeTruthy())
+    expect(executeJavaScript).not.toHaveBeenCalled()
+  })
 })
 
 describe('DictionaryPopup — resize', () => {
@@ -188,5 +205,14 @@ describe('DictionaryPopup — closing', () => {
       'https://dict.youdao.com/result?word=entropy&lang=en'
     )
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('ignores other keys while open', () => {
+    const onClose = vi.fn()
+    render(<DictionaryPopup word="entropy" onClose={onClose} />)
+
+    fireEvent.keyDown(window, { key: 'a' })
+
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

@@ -99,6 +99,16 @@ describe('ClassroomComposer', () => {
     expect(props.onRequestSend).not.toHaveBeenCalled()
   })
 
+  it('does not send when the trigger phrase leaves only whitespace', () => {
+    const props = renderComposer()
+    const textarea = screen.getByPlaceholderText(/输入你的问题/)
+
+    fireEvent.change(textarea, { target: { value: '   发送' } })
+
+    expect(props.onInputChange).toHaveBeenCalledWith('')
+    expect(props.onRequestSend).not.toHaveBeenCalled()
+  })
+
   it('disables send for empty input and while sending', () => {
     const props = renderComposer()
     expect((screen.getByText('发送') as HTMLButtonElement).disabled).toBe(true)

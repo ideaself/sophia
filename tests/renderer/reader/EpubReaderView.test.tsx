@@ -211,6 +211,10 @@ describe('EpubReaderView — chapters and navigation', () => {
     // Already at the first chapter — stays put.
     fireEvent.click(screen.getByTitle('上一章 (←)'))
     expect(screen.getByText('第一章 温度 - 1/3')).toBeTruthy()
+
+    // Unrelated keys are ignored.
+    fireEvent.keyDown(window, { key: 'a' })
+    expect(screen.getByText('第一章 温度 - 1/3')).toBeTruthy()
   })
 
   it('scales the font with A+/A- and closes via the toolbar button', async () => {
@@ -589,5 +593,210 @@ describe('EpubReaderView — dictionary popup dismissal', () => {
 
     fireEvent.click(screen.getByText('关闭词典'))
     await waitFor(() => expect(screen.queryByTestId('dict-popup')).toBeNull())
+  })
+})
+
+describe('EpubReaderView — saved progress parsing', () => {
+  it('fills defaults for a progress entry without numeric fields', async () => {
+    localStorage.setItem(
+      'epub-progress-tb_1',
+      JSON.stringify({ chapterIndex: 'x', fontSize: null, scrollY: 'y' })
+    )
+    data.getTextbook.mockResolvedValue(null)
+    renderReader()
+
+    expect(await screen.findByText('温度是分子平均动能的度量。')).toBeTruthy()
+    expect(contentEl().style.fontSize).toBe('16px')
+    expect(screen.getByText('第一章 温度 - 1/3')).toBeTruthy()
+  })
+
+  it('ignores out-of-range or non-numeric synced positions', async () => {
+    const withPosition = (position: unknown) => ({
+      id: 'tb_1',
+      title: '热力学讲义',
+      progress: {
+        currentPage: 1,
+        totalPages: 3,
+        readingPercentage: 0,
+        lastPosition: JSON.stringify(position)
+      }
+    })
+
+    // Negative index, non-numeric font size.
+    data.getTextbook.mockResolvedValueOnce(withPosition({ chapterIndex: -1, fontSize: '大' }))
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+    expect(contentEl().style.fontSize).toBe('16px')
+    cleanup()
+
+    // Index beyond the chapter list.
+    data.getTextbook.mockResolvedValueOnce(withPosition({ chapterIndex: 99 }))
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+    cleanup()
+
+    // Non-numeric index.
+    data.getTextbook.mockResolvedValueOnce(withPosition({ chapterIndex: '1' }))
+    renderReader()
+    expect(await screen.findByText('温度是分子平均动能的度量。')).toBeTruthy()
+    expect(screen.getByText('第一章 温度 - 1/3')).toBeTruthy()
+  })
+
+  it('falls back to the generic load error and ignores a rejection after unmount', async () => {
+    data.readEpubChapters.mockRejectedValueOnce('not an error')
+    renderReader()
+    expect(await screen.findByText('加载失败')).toBeTruthy()
+    cleanup()
+
+    let reject!: (reason?: unknown) => void
+    data.readEpubChapters.mockReturnValueOnce(
+      new Promise((_resolve, r) => {
+        reject = r
+      })
+    )
+    renderReader()
+    cleanup()
+    reject(new Error('late'))
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+})
+
+describe('EpubReaderView — search edge cases', () => {
+  it('keeps the current chapter when it already has hits and reuses cached text', async () => {
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    const input = await screen.findByPlaceholderText('输入关键词，回车跳转...')
+    fireEvent.change(input, { target: { value: '温度' } })
+
+    // The current chapter already contains a hit → no auto-jump.
+    expect(await screen.findByText(/本页 1\/1 · 全书共 1 处/)).toBeTruthy()
+    expect(screen.getByText('第一章 温度 - 1/3')).toBeTruthy()
+
+    // A later query reuses the cached per-chapter plain text; a term with no
+    // hits anywhere keeps the current chapter instead of bouncing.
+    fireEvent.change(input, { target: { value: '不存在' } })
+    expect(await screen.findByText(/全书共 0 处/)).toBeTruthy()
+    expect(screen.getByText('第一章 温度 - 1/3')).toBeTruthy()
+  })
+
+  it('ignores match navigation when no marks exist', async () => {
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    fireEvent.click(screen.getByText('🔍 搜索'))
+    const next = await screen.findByTitle('下一个 (Enter)')
+    fireEvent.click(next)
+    fireEvent.click(screen.getByTitle('上一个 (Shift+Enter)'))
+
+    expect(screen.getByText('第一章 温度 - 1/3')).toBeTruthy()
+  })
+
+  it('does not navigate for unrelated keys or IME composition', async () => {
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    const input = await screen.findByPlaceholderText('输入关键词，回车跳转...')
+    fireEvent.change(input, { target: { value: '温度' } })
+    await screen.findByText(/本页 1\/1 · 全书共 1 处/)
+    await waitFor(() => expect(document.querySelectorAll('mark').length).toBeGreaterThan(0))
+
+    fireEvent.keyDown(input, { key: 'a' })
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    expect(screen.getByText('第一章 温度 - 1/3')).toBeTruthy()
+  })
+})
+
+describe('EpubReaderView — notes panel variants', () => {
+  it('renders underline and note badges and skips an empty reader note', async () => {
+    data.listReadingNotes.mockResolvedValue([
+      { ...NOTE, id: 'n-u', type: 'underline', readerNote: '' },
+      { ...NOTE, id: 'n-n', type: 'note', readerNote: '想法' }
+    ])
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    fireEvent.click(screen.getByText(/📌 笔记 \(2\)/))
+
+    expect(await screen.findByText(/〰️ 下划线 · 第二章 熵/)).toBeTruthy()
+    expect(screen.getByText(/📝 笔记 · 第二章 熵/)).toBeTruthy()
+    expect(screen.getByText('想法')).toBeTruthy()
+  })
+
+  it('ignores invalid, out-of-range and current-chapter note positions', async () => {
+    data.listReadingNotes.mockResolvedValue([
+      { ...NOTE, id: 'n-bad', position: 'abc', content: '坏位置' },
+      { ...NOTE, id: 'n-neg', position: '-1', content: '负位置' },
+      { ...NOTE, id: 'n-out', position: '99', content: '越界位置' },
+      { ...NOTE, id: 'n-cur', position: '0', content: '同章位置' }
+    ])
+    renderReader()
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    fireEvent.click(screen.getByText(/📌 笔记 \(4\)/))
+    const jumps = await screen.findAllByTitle('跳转到文中位置')
+    for (const jump of jumps) fireEvent.click(jump)
+
+    await waitFor(() => expect(screen.getByText('第一章 温度 - 1/3')).toBeTruthy())
+  })
+})
+
+describe('EpubReaderView — missing chapter titles and embedded mode', () => {
+  const UNTITLED = [
+    { id: 'u1', title: undefined as unknown as string, html: '<p>无题正文</p>' },
+    { id: 'u2', title: '', html: '<p>次章正文</p>' }
+  ]
+
+  it('falls back to positional labels for missing titles', async () => {
+    data.readEpubChapters.mockResolvedValueOnce({ chapters: UNTITLED, title: 'x', author: '' })
+    renderReader()
+    expect(await screen.findByText('无题正文')).toBeTruthy()
+
+    // Toolbar and pager labels.
+    expect(screen.getByText('第 1 章 - 1/2')).toBeTruthy()
+    const pager = screen.getByText(/第 1 \/ 2 章 · 第 1 章/)
+    expect(pager.getAttribute('title')).toBe('')
+
+    // TOC entries.
+    fireEvent.click(screen.getByText('目录'))
+    expect(await screen.findByText(/1\. 第 1 章/)).toBeTruthy()
+    expect(screen.getByText(/2\. 第 2 章/)).toBeTruthy()
+    fireEvent.mouseDown(document.body)
+
+    // Highlight creation uses the positional chapter label.
+    selectText('无题正文')
+    fireEvent.click(await screen.findByLabelText('高亮选中文字'))
+    await waitFor(() =>
+      expect(data.createReadingNote).toHaveBeenCalledWith(
+        expect.objectContaining({ chapter: '第 1 章' })
+      )
+    )
+  })
+
+  it('labels search hits for untitled chapters and marks the current one', async () => {
+    data.readEpubChapters.mockResolvedValueOnce({ chapters: UNTITLED, title: 'x', author: '' })
+    renderReader()
+    await screen.findByText('无题正文')
+
+    fireEvent.click(screen.getByText('🔍 搜索'))
+    const input = await screen.findByPlaceholderText('输入关键词，回车跳转...')
+    fireEvent.change(input, { target: { value: '文' } })
+
+    await screen.findByText(/第 1 章 · 1 处/)
+    const second = screen.getByText(/第 2 章 · 1 处/)
+    expect(screen.getByText(/第 1 章 · 1 处/).className).toContain('text-accent')
+    expect(second.className).toContain('text-text-secondary')
+  })
+
+  it('renders inline when embedded', async () => {
+    render(<EpubReaderView textbookId="tb_1" title="热力学讲义" onClose={vi.fn()} embedded />)
+    await screen.findByText('温度是分子平均动能的度量。')
+
+    const root = document.querySelector('.bg-bg-deep') as HTMLElement
+    expect(root.className).toContain('relative flex h-full')
+    expect(root.className).not.toContain('fixed inset-0')
   })
 })

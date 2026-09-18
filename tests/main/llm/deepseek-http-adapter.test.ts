@@ -350,6 +350,26 @@ describe('createDeepSeekHttpAdapter', () => {
       const init = fetchMock.mock.calls[0][1] as RequestInit
       expect(init.signal).toBeInstanceOf(AbortSignal)
     })
+
+    it('combines a caller-owned signal with the timeout signal', async () => {
+      const response = mockResponse(200, stubCompletion)
+      const fetchMock = vi.fn().mockResolvedValue(response)
+      const adapter = createDeepSeekHttpAdapter({
+        fetchImpl: fetchMock as unknown as typeof fetch
+      })
+      const controller = new AbortController()
+
+      await adapter.chatCompletion({
+        model: 'deepseek-v4-pro',
+        messages: testMessages,
+        apiKey: testApiKey,
+        signal: controller.signal
+      })
+
+      const init = fetchMock.mock.calls[0][1] as RequestInit
+      expect(init.signal).toBeInstanceOf(AbortSignal)
+      expect(init.signal?.aborted).toBe(false)
+    })
   })
 
   // -----------------------------------------------------------

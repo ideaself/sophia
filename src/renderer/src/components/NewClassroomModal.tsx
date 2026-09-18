@@ -44,7 +44,7 @@ export function NewClassroomModal({ initialCompanion, onConfirm, onCancel }: New
           <h3 id="new-classroom-title" className="text-sm font-semibold text-text-primary">
             {step === 'companion'
               ? '新建课堂 · 选择学习伙伴'
-              : `新建课堂 · 选择教材（${picked?.name ?? ''}）`}
+              : `新建课堂 · 选择教材（${picked!.name}）`}
           </h3>
           <button
             onClick={onCancel}

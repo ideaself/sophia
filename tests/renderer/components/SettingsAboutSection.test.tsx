@@ -81,6 +81,16 @@ describe('SettingsAboutSection', () => {
     expect(await screen.findByText('检查失败：channel closed')).toBeTruthy()
   })
 
+  it('ignores a failing version lookup and reports non-Error check failures', async () => {
+    getVersion.mockRejectedValue(new Error('no bridge'))
+    checkForUpdates.mockRejectedValueOnce('plain failure')
+    render(<SettingsAboutSection />)
+
+    fireEvent.click(checkButton())
+    expect(await screen.findByText('检查失败：未知错误')).toBeTruthy()
+    expect(screen.getByText('Sophia v…')).toBeTruthy()
+  })
+
   it('disables the button and shows progress while checking', async () => {
     let resolveCheck!: (result: UpdaterCheckResult) => void
     checkForUpdates.mockReturnValue(

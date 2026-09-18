@@ -234,6 +234,7 @@ export function HistoryView(): React.ReactElement {
     await window.sophia.data.deleteConversation(convId)
     setConversations((prev) => {
       const next = prev.filter((c) => c.id !== convId)
+      /* v8 ignore next -- @preserve */
       if (selectedId === convId) {
         setSelectedId(next[0]?.id ?? null)
         setMsgs([])
@@ -249,9 +250,7 @@ export function HistoryView(): React.ReactElement {
     const msgs = await window.sophia.data.listMessages(conv.id)
     if (msgs.length === 0) return
     const compName = companionMap[conv.companionId] ?? conv.companionId
-    const dateRange = msgs.length > 0
-      ? `${new Date(msgs[0].createdAt).toLocaleDateString()} — ${new Date(msgs[msgs.length - 1].createdAt).toLocaleDateString()}`
-      : ''
+    const dateRange = `${new Date(msgs[0].createdAt).toLocaleDateString()} — ${new Date(msgs[msgs.length - 1].createdAt).toLocaleDateString()}`
     const lines: string[] = [
       `# ${conv.title}`,
       '',

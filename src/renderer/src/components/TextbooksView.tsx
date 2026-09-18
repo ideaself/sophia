@@ -96,7 +96,9 @@ export function TextbooksView(): React.ReactElement {
       }
 
       const filePath = result.filePaths[0]
+      /* v8 ignore next -- @preserve */
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+      /* v8 ignore next -- @preserve */
       const fileName = filePath.split(/[/\\]/).pop() ?? filePath
       const autoTitle = fileName.replace(/\.[^.]+$/, '')
 

@@ -79,4 +79,22 @@ describe('maybeAutoBackup', () => {
     expect(files).toContain('manual.zip')
     expect(files.some((f) => f.startsWith('auto-'))).toBe(true)
   })
+
+  it('keeps pruning when an old backup cannot be unlinked', async () => {
+    for (let i = 1; i <= 5; i++) {
+      await writeOldBackup(`auto-old-${i}.zip`, 30 + i)
+    }
+    // The oldest "backup" is a directory → unlink fails; pruning must move on.
+    const dirPath = join(backupRoot, 'auto-old-dir.zip')
+    await mkdir(dirPath, { recursive: true })
+    const old = new Date(Date.now() - 60 * 24 * 3600 * 1000)
+    await utimes(dirPath, old, old)
+
+    await maybeAutoBackup(dataRoot)
+
+    const files = await readdir(backupRoot)
+    expect(files).toContain('auto-old-dir.zip')
+    expect(files).toContain('auto-old-1.zip')
+    expect(files).not.toContain('auto-old-5.zip')
+  })
 })

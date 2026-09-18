@@ -7,7 +7,7 @@
  * needs the same ResizeObserver + offset stubs the ClassroomView suite uses.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import {
   useMessageListScroll,
   type ScrollRow
@@ -199,6 +199,37 @@ describe('useMessageListScroll', () => {
     const geo = stubGeometry(screen.getByTestId('list'), 1000, 100, 950)
 
     expect(geo.writes).toEqual([])
+    expect(screen.getByTestId('stick').textContent).toBe('pinned')
+  })
+
+  it('ignores scroll events before the container is mounted', () => {
+    let handle: (() => void) | null = null
+    function NoList(): React.ReactElement {
+      const { handleScroll } = useMessageListScroll({
+        rows: [],
+        messages: [],
+        streamContent: '',
+        streaming: false,
+        activeIdx: 0,
+        searchOpen: false,
+        searchMatches: EMPTY_MATCHES,
+        matchIndex: 0
+      })
+      handle = handleScroll
+      return <div data-testid="stick">pinned</div>
+    }
+
+    render(<NoList />)
+    act(() => handle?.())
+
+    expect(screen.getByTestId('stick').textContent).toBe('pinned')
+  })
+
+  it('falls back to the row index when a row has no key', () => {
+    render(
+      <Harness rows={[undefined as unknown as ScrollRow]} messages={[{ id: 'a' }]} />
+    )
+
     expect(screen.getByTestId('stick').textContent).toBe('pinned')
   })
 })

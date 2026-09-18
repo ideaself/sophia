@@ -327,4 +327,25 @@ describe('ConversationStore — missing targets and patchy files', () => {
     await rm(conversationMessagesPath(dataRoot, conv.id), { recursive: true, force: true })
     await expect(store.addMessage(conv.id, 'user', 'ok')).resolves.toMatchObject({ content: 'ok' })
   })
+
+  it('appends a message even when the conversation record is missing', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
+    await rm(conversationPath(dataRoot, conv.id), { force: true })
+
+    const msg = await store.addMessage(conv.id, 'user', '孤儿消息')
+    expect(msg.content).toBe('孤儿消息')
+    expect(await store.getMessages(conv.id)).toHaveLength(1)
+  })
+
+  it('truncates messages even when the conversation record is missing', async () => {
+    const store = new ConversationStore(dataRoot)
+    const conv = await store.create({ companionId: 'comp_a', companionVersion: 1, textbookId: null, title: 't' })
+    const first = await store.addMessage(conv.id, 'user', 'q1')
+    await store.addMessage(conv.id, 'assistant', 'a1')
+    await rm(conversationPath(dataRoot, conv.id), { force: true })
+
+    expect(await store.truncateAfter(conv.id, first.id)).toBe(true)
+    expect(await store.getMessages(conv.id)).toHaveLength(1)
+  })
 })

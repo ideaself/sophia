@@ -45,4 +45,15 @@ describe('safeSend', () => {
       expect.stringContaining('destroyed')
     )
   })
+
+  it('stringifies non-Error send failures', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const send = vi.fn(() => {
+      throw 'channel closed'
+    })
+    const wc = { isDestroyed: () => false, send } as unknown as WebContents
+
+    expect(() => safeSend(wc, 'test:channel', { ok: true })).not.toThrow()
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('test:channel'), 'channel closed')
+  })
 })

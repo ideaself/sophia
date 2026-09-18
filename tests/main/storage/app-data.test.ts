@@ -8,7 +8,9 @@ import {
   artifactPath,
   relationPath,
   palMomentsPathForTextbook,
-  textbookNotesDir
+  textbookNotesDir,
+  diaryPath,
+  textbookOriginalPath
 } from '../../../src/main/storage/app-data'
 
 const dataRoot = 'C:\\data\\sophia'
@@ -56,5 +58,20 @@ describe('path builders refuse unsafe ids', () => {
 
   it('textbookNotesDir inherits textbookId validation', () => {
     expect(() => textbookNotesDir(dataRoot, '../x')).toThrow('Invalid id for path')
+  })
+})
+
+describe('diary and original-file paths', () => {
+  it('sanitizes unparseable diary months to "unknown"', () => {
+    expect(diaryPath(dataRoot, '2026-07')).toBe(join(dataRoot, 'diary', '2026-07.md'))
+    expect(diaryPath(dataRoot, 'nope')).toBe(join(dataRoot, 'diary', 'unknown.md'))
+  })
+
+  it('derives extensions from bare formats and keeps full file names', () => {
+    const dir = join(dataRoot, 'textbooks', 'tb_1')
+    expect(textbookOriginalPath(dataRoot, 'tb_1', 'epub')).toBe(join(dir, 'source.epub'))
+    expect(textbookOriginalPath(dataRoot, 'tb_1', 'pdf')).toBe(join(dir, 'source.pdf'))
+    expect(textbookOriginalPath(dataRoot, 'tb_1', 'markdown')).toBe(join(dir, 'source.pdf'))
+    expect(textbookOriginalPath(dataRoot, 'tb_1', 'my-book.pdf')).toBe(join(dir, 'my-book.pdf'))
   })
 })

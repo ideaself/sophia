@@ -212,6 +212,18 @@ describe('createChatStreamController', () => {
     expect(ctrl.state.sessionId).toBeNull()
   })
 
+  it('send() labels non-Error start failures with a generic message', async () => {
+    const bad = createFakeChatAPI({ startError: 'offline' as unknown as Error })
+    const ctrl = createChatStreamController(bad.api)
+
+    await ctrl.send(testMessages)
+
+    expect(ctrl.state.error).toEqual({
+      code: 'STREAM_START_FAILED',
+      message: 'Unknown stream start error'
+    })
+  })
+
   // --- Token events ---
 
   it('token callback appends to assistantContent', async () => {
@@ -276,6 +288,33 @@ describe('createChatStreamController', () => {
     expect(controller.state.error).toBeNull()
     // After end, all subscribers should be cleaned up
     expect(fake.captured.activeSubscribers).toBe(0)
+  })
+
+  it('streamEnd resolves with the content and finish reason, then clears', async () => {
+    await controller.send(testMessages)
+    const end = controller.streamEnd
+    expect(end).toBeInstanceOf(Promise)
+
+    const tokenCb = fake.captured.tokenCallbacks.get('fake-session-001')
+    tokenCb!('答案')
+    fake.captured.endCallbacks.get('fake-session-001')!('stop')
+
+    await expect(end).resolves.toEqual({ content: '答案', finishReason: 'stop' })
+    expect(controller.streamEnd).toBeNull()
+  })
+
+  it('streamEnd resolves with an error finish reason on stream errors', async () => {
+    await controller.send(testMessages)
+    const end = controller.streamEnd
+    expect(end).toBeInstanceOf(Promise)
+
+    fake.captured.errorCallbacks.get('fake-session-001')!({
+      code: 'RATE_LIMITED',
+      message: 'slow down'
+    })
+
+    await expect(end).resolves.toEqual({ content: '', finishReason: 'error:RATE_LIMITED' })
+    expect(controller.streamEnd).toBeNull()
   })
 
   // --- Error events ---

@@ -53,6 +53,28 @@ describe('MermaidBlock', () => {
     expect(fallback.closest('pre')?.className).toContain('text-red-400')
   })
 
+  it('ignores a mermaid rejection that lands after unmount', async () => {
+    let rejectRender!: (e: unknown) => void
+    state.render.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRender = reject
+        })
+    )
+
+    const view = render(<MermaidBlock code="bad diagram" />)
+    await waitFor(() => expect(state.render).toHaveBeenCalled())
+    view.unmount()
+    rejectRender(new Error('late failure'))
+
+    // Drain the promise chain: the catch must skip setState once cancelled.
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(screen.queryByText('bad diagram')).toBeNull()
+  })
+
   it('does not touch the DOM when unmounted before the render resolves', async () => {
     let release!: () => void
     state.resolveGate = new Promise<void>((resolve) => {

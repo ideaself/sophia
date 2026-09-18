@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { ArtifactStore } from '../../../src/main/storage/artifact-store'
+import { artifactsDir } from '../../../src/main/storage/app-data'
 import { ArtifactType } from '../../../src/shared/types/ids'
 import type { ConversationId } from '../../../src/shared/types/ids'
 
@@ -70,5 +71,16 @@ describe('ArtifactStore round-trip', () => {
 
     const fetched = await store.get(created.id, conversationId)
     expect(fetched?.content).toBe('new')
+  })
+
+  it('skips artifacts whose JSON is unreadable', async () => {
+    const store = new ArtifactStore(dataRoot)
+    const conversationId = 'conv_corrupt' as ConversationId
+    const kept = await store.create(conversationId, ArtifactType.LessonFaq, 'ok')
+    await writeFile(join(artifactsDir(dataRoot, conversationId), 'art_broken.json'), '{not json')
+
+    const listed = await store.list(conversationId)
+    expect(listed.map((a) => a.id)).toEqual([kept.id])
+    expect(warnSpy).toHaveBeenCalled()
   })
 })

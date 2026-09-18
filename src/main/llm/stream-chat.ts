@@ -231,6 +231,9 @@ export class StreamChatSession {
   // ---------------------------------------------------------------
 
   private clearTimeout(): void {
+    // timeoutHandle is armed synchronously in start() and only cleared here,
+    // so it is never null on entry.
+    /* v8 ignore next -- @preserve */
     if (this.timeoutHandle !== null) {
       clearTimeout(this.timeoutHandle)
       this.timeoutHandle = null

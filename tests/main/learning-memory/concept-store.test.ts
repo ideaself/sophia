@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ConceptStore, type ConceptEvidence } from '../../../src/main/learning-memory/concept-store'
@@ -126,6 +126,28 @@ describe('ConceptStore.applyEvidence', () => {
     const all = await reloaded.load()
     expect(all).toHaveLength(1)
     expect(all[0].name).toBe('导数')
+  })
+
+  it('从缺少 evidenceConversationIds 的旧数据继续累积证据会话', async () => {
+    await store.applyEvidence(
+      evidence({ conversationId: 'conv_a', updates: [{ name: '导数', performance: 'correct' }] })
+    )
+    const path = join(dataRoot, 'concepts.json')
+    const states = JSON.parse(await readFile(path, 'utf-8')) as Array<Record<string, unknown>>
+    delete states[0].evidenceConversationIds
+    await writeFile(path, JSON.stringify(states, null, 2), 'utf-8')
+
+    await store.applyEvidence(
+      evidence({
+        conversationId: 'conv_b',
+        messageIds: ['m9'],
+        updates: [{ name: '导数', performance: 'correct' }]
+      })
+    )
+
+    const merged = (await store.load())[0]
+    expect(merged.evidenceConversationIds).toEqual(['conv_a', 'conv_b'])
+    expect(merged.evidenceMessageIds).toContain('m9')
   })
 })
 

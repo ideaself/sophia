@@ -6,7 +6,7 @@
  * grouped tree with per-lesson counts, default selection, and the detail
  * panel (messages + artifacts) for the selected lesson.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react'
 
 vi.mock('../../../src/renderer/src/lib/MarkdownRenderer', () => ({
@@ -102,6 +102,15 @@ const api = {
   }
 }
 
+interface CompanionOption {
+  id: string
+  name: string
+  identity: string
+  personalityKeywords: string[]
+}
+
+let companionsGet: Mock<(id: string) => Promise<CompanionOption | null>>
+
 beforeEach(() => {
   for (const fn of Object.values(api)) if (typeof fn === 'function') fn.mockClear()
   api.listConversations.mockResolvedValue(CONVERSATIONS)
@@ -133,18 +142,18 @@ beforeEach(() => {
   useTextbookStore.setState({ textbooks: [], selectedTextbook: null })
   useAppStore.setState({ view: 'history', loadConversationId: null })
 
+  companionsGet = vi.fn(async (id: string): Promise<CompanionOption | null> => ({
+    id,
+    name: id === 'comp_a' ? '朗道' : '祖冲之',
+    identity: '导师',
+    personalityKeywords: []
+  }))
+
   Object.defineProperty(window, 'sophia', {
     configurable: true,
     value: {
       data: api,
-      companions: {
-        get: vi.fn(async (id: string) => ({
-          id,
-          name: id === 'comp_a' ? '朗道' : '祖冲之',
-          identity: '导师',
-          personalityKeywords: []
-        }))
-      },
+      companions: { get: companionsGet },
       dialog: { confirm: vi.fn().mockResolvedValue(true), saveFile: api.saveFile }
     }
   })
@@ -669,5 +678,314 @@ describe('HistoryView — artifact save guard', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(api.updateArtifact).not.toHaveBeenCalled()
+  })
+})
+
+describe('HistoryView — empty and partial data', () => {
+  it('shows the empty classroom state without conversations', async () => {
+    api.listConversations.mockResolvedValue([])
+
+    render(<HistoryView />)
+
+    expect(await screen.findByText(/还没有课堂/)).toBeTruthy()
+    expect(api.listMessages).not.toHaveBeenCalled()
+  })
+
+  it('falls back to 未知 when the companion lookup returns null', async () => {
+    companionsGet.mockResolvedValue(null)
+
+    render(<HistoryView />)
+
+    await screen.findByText('第一问：什么是熵？')
+    expect((await screen.findAllByText(/07-06 未知/)).length).toBeGreaterThan(0)
+  })
+
+  it('renders placeholder counts when the stats overview is empty', async () => {
+    api.statsOverview.mockResolvedValue(undefined)
+
+    render(<HistoryView />)
+
+    await screen.findByText('第一问：什么是熵？')
+    expect((await screen.findAllByText(/… 条/)).length).toBeGreaterThan(0)
+  })
+
+  it('ignores a stats overview that resolves after unmount', async () => {
+    let resolveOverview: (v: unknown) => void = () => {}
+    api.statsOverview.mockImplementation(() => new Promise((resolve) => { resolveOverview = resolve }))
+
+    const { unmount } = render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+    unmount()
+
+    await act(async () => { resolveOverview(undefined) })
+  })
+
+  it('ignores a stats overview that fails after unmount', async () => {
+    let rejectOverview: (e: unknown) => void = () => {}
+    api.statsOverview.mockImplementation(
+      () => new Promise((_resolve, reject) => { rejectOverview = reject })
+    )
+
+    const { unmount } = render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+    unmount()
+
+    await act(async () => { rejectOverview(new Error('late stats failure')) })
+  })
+
+  it('labels missing textbook metadata as 未知教材 in tree and header', async () => {
+    api.listTextbooks.mockResolvedValue([])
+
+    render(<HistoryView />)
+
+    await screen.findByText('第一问：什么是熵？')
+    expect((await screen.findAllByText(/📖 未知教材/)).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('sorts textbook groups by title with 未绑定教材 last', async () => {
+    api.listConversations.mockResolvedValue([
+      CONVERSATIONS[0],
+      CONVERSATIONS[1],
+      {
+        id: 'c3',
+        title: '第三课',
+        companionId: 'comp_a',
+        textbookId: 'tb_2',
+        createdAt: '2026-07-04T09:00:00',
+        updatedAt: '2026-07-04T10:00:00',
+        endedAt: '2026-07-04T10:00:00'
+      }
+    ])
+    api.listTextbooks.mockResolvedValue([
+      { id: 'tb_1', title: '热力学入门', format: 'pdf', originalFile: 'thermo.pdf' },
+      { id: 'tb_2', title: '数学分析', format: 'pdf', originalFile: 'math.pdf' }
+    ])
+
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    const headers = Array.from(document.querySelectorAll('aside button > span.truncate'))
+      .map((el) => el.textContent)
+      .filter((text) => text?.startsWith('📖 '))
+    expect(headers).toEqual(['📖 热力学入门', '📖 数学分析', '📖 未绑定教材'])
+  })
+})
+
+describe('HistoryView — resume and continue with missing relations', () => {
+  it('resumes an active lesson without selecting a companion', async () => {
+    companionsGet.mockResolvedValue(null)
+
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+    fireEvent.click((await screen.findAllByText(/07-05 未知/))[0].closest('button')!)
+    await screen.findByText('另一个课堂的问题')
+
+    fireEvent.click(screen.getByText('继续上课'))
+
+    await waitFor(() => expect(useAppStore.getState().loadConversationId).toBe('c2'))
+  })
+
+  it('resumes an ended lesson when its textbook vanished', async () => {
+    api.listConversations.mockResolvedValue([{ ...CONVERSATIONS[0], endedAt: null }])
+    api.getTextbook.mockResolvedValue(null)
+
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText('继续上课'))
+
+    await waitFor(() => expect(useAppStore.getState().loadConversationId).toBe('c1'))
+  })
+
+  it('continues learning when companion and textbook lookups are empty', async () => {
+    companionsGet.mockResolvedValue(null)
+    api.getTextbook.mockResolvedValue(null)
+
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText('继续学习'))
+
+    await waitFor(() => expect(useAppStore.getState().view).toBe('classroom'))
+    expect(useAppStore.getState().newClassroomOpen).toBe(true)
+  })
+
+  it('deletes the last lesson and returns to the diary view', async () => {
+    api.listConversations.mockResolvedValue([CONVERSATIONS[0]])
+
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByText('🗑 删除'))
+
+    await waitFor(() => expect(api.deleteConversation).toHaveBeenCalledWith('c1'))
+    expect(await screen.findByText(/还没有日记/)).toBeTruthy()
+  })
+})
+
+describe('HistoryView — exports with system messages and missing names', () => {
+  it('exports with the raw companion id while names are still loading', async () => {
+    companionsGet.mockImplementation(() => new Promise<CompanionOption | null>(() => {}))
+
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+
+    fireEvent.click(screen.getByTitle('导出为 Markdown'))
+    await waitFor(() => expect(api.writeTextFile).toHaveBeenCalledTimes(1))
+    const [, md] = api.writeTextFile.mock.calls[0] as [string, string]
+    expect(md).toContain('**AI 角色**: comp_a')
+
+    fireEvent.click(screen.getByTitle('导出为 PDF（含公式渲染）'))
+    await waitFor(() => expect(api.exportPdf).toHaveBeenCalledTimes(1))
+    const [html] = api.exportPdf.mock.calls[0] as [string, string]
+    expect(html).toContain('AI 角色：comp_a')
+  })
+
+  it('exports system messages with the 系统 label', async () => {
+    api.listMessages.mockImplementation(async (convId: string) =>
+      convId === 'c1'
+        ? [
+            ...MESSAGES.c1,
+            {
+              id: 'm4',
+              conversationId: 'c1',
+              role: 'system',
+              content: '系统提示：本课已结束',
+              createdAt: '2026-07-06T09:03:00'
+            }
+          ]
+        : MESSAGES[convId as 'c2'] ?? []
+    )
+
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+    expect(await screen.findByText(/^系统 · /)).toBeTruthy()
+
+    fireEvent.click(screen.getByTitle('导出为 Markdown'))
+    await waitFor(() => expect(api.writeTextFile).toHaveBeenCalledTimes(1))
+    const [, md] = api.writeTextFile.mock.calls[0] as [string, string]
+    expect(md).toContain('### 系统 — ')
+
+    fireEvent.click(screen.getByTitle('导出为 PDF（含公式渲染）'))
+    await waitFor(() => expect(api.exportPdf).toHaveBeenCalledTimes(1))
+    const [html] = api.exportPdf.mock.calls[0] as [string, string]
+    expect(html).toContain('<h3>系统 — ')
+  })
+})
+
+describe('HistoryView — search pagination and artifact edge cases', () => {
+  it('applies a late search page after the results were cleared', async () => {
+    let resolvePage: (v: unknown) => void = () => {}
+    api.searchMessages
+      .mockResolvedValueOnce({
+        results: [
+          { conversationId: 'c1', message: { id: 'm1', role: 'user', content: 'A 结果', createdAt: '2026-07-06T09:00:00' } }
+        ],
+        total: 3
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolvePage = resolve }))
+
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+    fireEvent.change(screen.getByPlaceholderText('搜索对话内容...'), { target: { value: '结果' } })
+    await screen.findByText('结果 1/3', undefined, { timeout: 2000 })
+
+    fireEvent.click(screen.getByText('加载更多'))
+    fireEvent.click(screen.getByText('清除'))
+
+    await act(async () => {
+      resolvePage({
+        results: [
+          { conversationId: 'c1', message: { id: 'm2', role: 'assistant', content: 'B 结果', createdAt: '2026-07-06T09:01:00' } }
+        ],
+        total: 3
+      })
+    })
+
+    // The late page replaced the cleared (null) result state.
+    expect(await screen.findByText('结果 1/3')).toBeTruthy()
+  })
+
+  it('keeps the previous page when a load-more search fails', async () => {
+    api.searchMessages
+      .mockResolvedValueOnce({
+        results: [
+          { conversationId: 'c1', message: { id: 'm1', role: 'user', content: 'A 结果', createdAt: '2026-07-06T09:00:00' } }
+        ],
+        total: 3
+      })
+      .mockRejectedValueOnce(new Error('search down'))
+
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+    fireEvent.change(screen.getByPlaceholderText('搜索对话内容...'), { target: { value: '结果' } })
+    await screen.findByText('结果 1/3', undefined, { timeout: 2000 })
+
+    fireEvent.click(screen.getByText('加载更多'))
+
+    await waitFor(() => expect(api.searchMessages).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('结果 1/3')).toBeTruthy()
+  })
+
+  it('updates only the edited artifact and leaves the others untouched', async () => {
+    api.listArtifacts.mockResolvedValue([
+      { id: 'a1', conversationId: 'c1', type: 'lesson_summary', content: '## 总结\n本节讲了熵。', createdAt: '2026-07-06T10:00:00' },
+      { id: 'a2', conversationId: 'c1', type: 'diary', content: '日记原文', createdAt: '2026-07-06T10:01:00' }
+    ])
+
+    render(<HistoryView />)
+    await screen.findByText('📋 课堂总结')
+
+    fireEvent.click(screen.getAllByTitle('编辑产物内容')[0])
+    const editor = document.querySelector('textarea') as HTMLTextAreaElement
+    fireEvent.change(editor, { target: { value: '## 总结\n更新后的总结。' } })
+    fireEvent.click(screen.getByText('保存'))
+
+    await waitFor(() =>
+      expect(api.updateArtifact).toHaveBeenCalledWith('a1', 'c1', '## 总结\n更新后的总结。')
+    )
+    expect(await screen.findByText(/更新后的总结/)).toBeTruthy()
+    expect(screen.getAllByText('日记原文').length).toBeGreaterThan(0)
+  })
+
+  it('keeps artifacts when the redo reports failure', async () => {
+    api.redoArtifacts.mockResolvedValue({ success: false, artifacts: 0, failures: [] })
+
+    render(<HistoryView />)
+    await screen.findByText('有学习摘要缺失，可只补齐缺失项')
+
+    fireEvent.click(screen.getByText('补齐缺失产物'))
+
+    await waitFor(() => expect(api.redoArtifacts).toHaveBeenCalledTimes(1))
+    expect(api.listArtifacts).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('有学习摘要缺失，可只补齐缺失项')).toBeTruthy()
+  })
+
+  it('falls back to the raw artifact type for unknown labels', async () => {
+    api.listArtifacts.mockResolvedValue([
+      { id: 'a9', conversationId: 'c1', type: 'mystery_type', content: '神秘产物', createdAt: '2026-07-06T10:00:00' }
+    ])
+
+    render(<HistoryView />)
+
+    expect(await screen.findByText('mystery_type')).toBeTruthy()
+  })
+
+  it('renders the empty detail when a search result points to a missing lesson', async () => {
+    api.searchMessages.mockResolvedValue({
+      results: [
+        { conversationId: 'ghost', message: { id: 'g1', role: 'user', content: '幽灵消息', createdAt: '2026-07-06T09:00:00' } }
+      ],
+      total: 1
+    })
+
+    render(<HistoryView />)
+    await screen.findByText('第一问：什么是熵？')
+    fireEvent.change(screen.getByPlaceholderText('搜索对话内容...'), { target: { value: '幽灵' } })
+    await screen.findByText('结果 1/1', undefined, { timeout: 2000 })
+
+    fireEvent.click(screen.getByTitle('幽灵消息'))
+
+    await waitFor(() => expect(screen.queryByText('对话记录')).toBeNull())
   })
 })

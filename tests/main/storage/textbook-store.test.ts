@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { TextbookStore } from '../../../src/main/storage/textbook-store'
@@ -82,6 +82,71 @@ describe('TextbookStore — original file', () => {
     const loaded = await store.get(tb.id)
     expect(loaded?.originalFile).toBe('高等数学.pdf')
   })
+
+  it('falls back to source.pdf when the provided name sanitizes to empty', async () => {
+    const sourcePath = join(importDir, '原稿.pdf')
+    await writeFile(sourcePath, PDF_BYTES)
+    const store = new TextbookStore(dataRoot)
+    const tb = await store.create({
+      title: '空白文件名',
+      format: 'pdf',
+      sourceFile: '   ',
+      originalSourcePath: sourcePath
+    })
+
+    expect(tb.originalFile).toBe('source.pdf')
+    expect(
+      (await readFile(join(textbookDir(dataRoot, tb.id), 'source.pdf'))).equals(PDF_BYTES)
+    ).toBe(true)
+  })
+
+  it('falls back to source.epub for epub imports', async () => {
+    const sourcePath = join(importDir, 'book.epub')
+    await writeFile(sourcePath, Buffer.from('EPUB'))
+    const store = new TextbookStore(dataRoot)
+    const tb = await store.create({
+      title: '电子书',
+      format: 'epub',
+      sourceFile: ' ',
+      originalSourcePath: sourcePath
+    })
+
+    expect(tb.originalFile).toBe('source.epub')
+  })
+
+  it('readOriginal uses originalFile when the record has no sourceFile', async () => {
+    const sourcePath = join(importDir, '手稿.pdf')
+    await writeFile(sourcePath, PDF_BYTES)
+    const store = new TextbookStore(dataRoot)
+    const tb = await store.create({ title: '无 sourceFile', format: 'pdf', originalSourcePath: sourcePath })
+
+    expect(tb.sourceFile).toBe('')
+    expect(tb.originalFile).toBe('手稿.pdf')
+    const result = await store.readOriginal(tb.id)
+    expect(result?.fileName).toBe('手稿.pdf')
+  })
+
+  it('creates a textbook without content or original file', async () => {
+    const store = new TextbookStore(dataRoot)
+    const tb = await store.create({ title: '空教材', format: 'markdown' })
+
+    expect(tb.content).toBe('')
+    await expect(store.getContent(tb.id)).resolves.toBe('')
+  })
+
+  it('rejects an import path without a usable basename', async () => {
+    const store = new TextbookStore(dataRoot)
+
+    // A directory path (trailing separator) yields an empty basename and then
+    // fails copying the "original file" — the metadata step still runs.
+    await expect(
+      store.create({
+        title: '无文件名',
+        format: 'pdf',
+        originalSourcePath: importDir + sep
+      })
+    ).rejects.toThrow()
+  })
 })
 
 describe('TextbookStore mutations', () => {
@@ -120,6 +185,19 @@ describe('TextbookStore mutations', () => {
     expect(got?.progress.lastPosition).toBe('chapter-2')
   })
 
+  it('updateProgress leaves unspecified fields untouched', async () => {
+    const store = new TextbookStore(dataRoot)
+    const tb = await createPdfTextbook(store, false)
+    await store.updateProgress(tb.id, { currentPage: 3 })
+    await store.updateProgress(tb.id, {})
+
+    const got = await store.get(tb.id)
+    expect(got?.progress.currentPage).toBe(3)
+    expect(got?.progress.totalPages).toBeNull()
+    expect(got?.progress.readingPercentage).toBe(0)
+    expect(got?.progress.lastPosition).toBe('')
+  })
+
   it('softDelete marks isDeleted and hides the textbook from list; delete removes it entirely', async () => {
     const store = new TextbookStore(dataRoot)
     const tb = await createPdfTextbook(store, true)
@@ -135,6 +213,11 @@ describe('TextbookStore mutations', () => {
     const tb = await createPdfTextbook(store, false)
     await rm(textbookContentPath(dataRoot, tb.id), { force: true })
     expect(await store.getContent(tb.id)).toBe(tb.content)
+  })
+
+  it('getContent returns an empty string for a missing textbook', async () => {
+    const store = new TextbookStore(dataRoot)
+    await expect(store.getContent('tb_missing')).resolves.toBe('')
   })
 })
 

@@ -50,4 +50,11 @@ describe('createBackupZip', () => {
     const restored = await readFile(join(extractDir, 'worlds', 'world_default', 'learner.md'), 'utf-8')
     expect(restored).toBe('# 学习者')
   })
+
+  it('surfaces write failures instead of crashing', async () => {
+    await writeFile(join(dataRoot, 'a.txt'), 'x')
+
+    // An existing directory as the destination makes the write stream fail.
+    await expect(createBackupZip(dataRoot, destDir)).rejects.toThrow()
+  })
 })

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, rm, access, stat, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -6,6 +6,28 @@ import { Readable } from 'node:stream'
 import { SyncManager, type SyncProgress } from '../../../src/main/sync/sync-manager'
 import { saveSyncState, type SyncStateEntry } from '../../../src/main/sync/sync-state'
 import type { WebDavConfig, WebDavFile, WebDavRemoteFile } from '../../../src/main/sync/webdav-client'
+
+const fsCtl = vi.hoisted(() => ({
+  rmMode: 'normal' as 'normal' | 'reject-error' | 'reject-string'
+}))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    rm: async (
+      path: Parameters<typeof actual.rm>[0],
+      options?: Parameters<typeof actual.rm>[1]
+    ): Promise<void> => {
+      const mode = fsCtl.rmMode
+      if (mode !== 'normal') {
+        fsCtl.rmMode = 'normal'
+        throw mode === 'reject-string' ? 'simulated rm failure' : new Error('simulated rm failure')
+      }
+      return actual.rm(path, options)
+    }
+  }
+})
 
 const CONFIG: WebDavConfig = { url: 'https://example.com/dav', username: 'u', password: 'p' }
 
@@ -146,6 +168,7 @@ let dataRoot: string
 let parentDir: string
 
 beforeEach(async () => {
+  fsCtl.rmMode = 'normal'
   parentDir = await mkdtemp(join(tmpdir(), 'sophia-sync-'))
   dataRoot = join(parentDir, 'data')
   await mkdir(dataRoot, { recursive: true })
@@ -1184,6 +1207,56 @@ describe('SyncManager — defensive branches', () => {
     const result = await makeManager(dataRoot, fake).pull(CONFIG)
 
     expect(result.errors).toEqual(['a.md: unknown error'])
+  })
+
+  it('records null local stats when a file vanishes mid-push', async () => {
+    await touch('vanish.md', 'x')
+    class VanishingClient extends FakeClient {
+      detailedCalls = 0
+      override async listAllFilesDetailed(dir: string): Promise<WebDavRemoteFile[]> {
+        this.detailedCalls++
+        // Second listing happens in rebuildStateAfterPush, after the walk.
+        if (this.detailedCalls === 2) await rm(join(dataRoot, 'vanish.md'), { force: true })
+        return super.listAllFilesDetailed(dir)
+      }
+    }
+    const fake = new VanishingClient()
+
+    const result = await makeManager(dataRoot, fake).push(CONFIG)
+
+    expect(result.success).toBe(true)
+    const state = JSON.parse(await readFile(join(dataRoot, 'sync-state.json'), 'utf-8')) as {
+      files: Record<string, { localSize: number | null; localMtimeMs: number | null }>
+    }
+    expect(state.files['vanish.md']).toMatchObject({ localSize: null, localMtimeMs: null })
+  })
+
+  it('labels non-Error local deletion failures as unknown errors', async () => {
+    await touch('gone.md', 'x')
+    const ls = await localStat('gone.md')
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: { 'gone.md': entry(ls, { size: 1, lastmod: 'mod-1' }) }
+    })
+    const fake = new FakeClient()
+    fsCtl.rmMode = 'reject-string'
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.success).toBe(false)
+    expect(result.errors).toEqual(['gone.md: unknown error'])
+  })
+
+  it('still reports the download error when temp cleanup fails', async () => {
+    const fake = new FakeClient()
+    fake.setRemote(R('a.md'), 'content')
+    fake.failDownloads.add(R('a.md'))
+    fsCtl.rmMode = 'reject-error'
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.success).toBe(false)
+    expect(result.errors).toEqual([expect.stringContaining('download rejected')])
   })
 })
 

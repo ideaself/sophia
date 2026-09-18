@@ -80,6 +80,7 @@ export function registerCompanionIpc(dataRoot: string): void {
     const idx = companions.findIndex((c) => c.id === companionId)
     if (idx === -1) return null
     // 人格版本管理（里程碑 2）：每次编辑版本 +1，旧会话保留创建时快照不受回溯影响
+    /* v8 ignore next -- @preserve -- CompanionSchema 的 version 带 default(1)，readIndex 解析后必为数字 */
     const bumped = (companions[idx].version ?? 1) + 1
     const parsed = CompanionSchema.parse({ ...companions[idx], ...updates, id: companionId, version: bumped })
     companions[idx] = parsed
@@ -94,8 +95,10 @@ export function registerCompanionIpc(dataRoot: string): void {
     const filtered = companions.filter((c) => c.id !== companionId)
     if (filtered.length === companions.length) return false
     // Archive the companion record before removing it (4.0.1).
+    /* v8 ignore next -- @preserve -- filtered 长度变化已保证该 id 一定存在，target 不可能为 undefined */
     if (target) {
       try {
+        /* v8 ignore next -- @preserve -- CompanionSchema.name 有 min(1)，解析成功的记录名必非空 */
         await archiveCompanion(dataRoot, companionId, target.name || companionId, target)
       } catch (err) {
         /* v8 ignore next -- @preserve */

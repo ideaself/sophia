@@ -48,6 +48,8 @@ export function estimateTokens(text: string): number {
 
   let tokens = 0
   for (const char of text) {
+    // for...of yields whole code points, so codePointAt(0) is always defined.
+    /* v8 ignore next -- @preserve */
     const codePoint = char.codePointAt(0) ?? 0
     if (isCJK(codePoint)) {
       tokens += 1
@@ -90,6 +92,8 @@ export function truncateToBudget(text: string, maxTokens: number): string {
   // char.length is 2 for surrogate pairs, 1 otherwise — so cutIndex
   // tracks the correct code-unit offset for text.slice().
   for (const char of text) {
+    // for...of yields whole code points, so codePointAt(0) is always defined.
+    /* v8 ignore next -- @preserve */
     const codePoint = char.codePointAt(0) ?? 0
     const cost = isCJK(codePoint) ? 1 : 0.25
 

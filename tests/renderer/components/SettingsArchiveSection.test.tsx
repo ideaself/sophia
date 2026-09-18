@@ -92,6 +92,34 @@ describe('SettingsArchiveSection — failure branches', () => {
     expect(await screen.findByText('暂无归档内容')).toBeTruthy()
   })
 
+  it('reports a failed restore', async () => {
+    archiveApi.restore.mockResolvedValueOnce({ success: false })
+    renderExpanded()
+    await screen.findByText('07-06 朗道')
+
+    fireEvent.click(screen.getByText('恢复'))
+
+    expect(await screen.findByText('恢复失败，可能原位置已存在同名数据')).toBeTruthy()
+  })
+
+  it('reports a failed purge', async () => {
+    archiveApi.purge.mockResolvedValueOnce({ success: false })
+    renderExpanded()
+    await screen.findByText('07-06 朗道')
+
+    fireEvent.click(screen.getByText('永久删除'))
+    fireEvent.click(screen.getByText('确认删除'))
+
+    expect(await screen.findByText('删除失败')).toBeTruthy()
+  })
+
+  it('falls back to the raw kind for unknown archive kinds', async () => {
+    archiveApi.list.mockResolvedValueOnce([{ ...entry, kind: 'mystery', label: '未知条目' }])
+    renderExpanded()
+
+    expect(await screen.findByText('mystery')).toBeTruthy()
+  })
+
   it('cancels the inline purge confirmation', async () => {
     renderExpanded()
     await screen.findByText('07-06 朗道')

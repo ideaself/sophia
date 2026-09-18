@@ -44,4 +44,18 @@ describe('findBodyStartPage — sparse page heuristics', () => {
 
     expect(findBodyStartPage(pages)).toBe(0)
   })
+
+  it('skips a short page whose only roman numeral is a strong front-matter hint', () => {
+    // 3 lines, no front-matter keyword, under 1200 chars, roman numeral present.
+    const pages = ['Alpha\nBeta\nIV', '第一章 熵\n熵是状态函数，孤立系统的熵永不减少，这一结论被称为熵增原理。熵是状态函数，孤立系统的熵永不减少，这一结论被称为熵增原理。']
+
+    expect(findBodyStartPage(pages)).toBe(1)
+  })
+
+  it('keeps a long prose page even when it contains a roman numeral', () => {
+    const line = 'Section IV explains why repeated observation and measurement matter. '.repeat(8).trimEnd()
+    const pages = [`${line}\n${line}\n${line}`, '第一章 熵\n熵是状态函数，孤立系统的熵永不减少，这一结论被称为熵增原理。熵是状态函数，孤立系统的熵永不减少，这一结论被称为熵增原理。']
+
+    expect(findBodyStartPage(pages)).toBe(0)
+  })
 })

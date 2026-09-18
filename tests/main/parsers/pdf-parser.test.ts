@@ -152,4 +152,33 @@ describe('globals polyfills for pdf.js', () => {
 
     expect(new globals.ImageData(1, 1, 1).height).toBe(1)
   })
+
+  it('defaults ImageData height to zero when no height argument is given', () => {
+    const sized = new globals.ImageData(3)
+    expect(sized.width).toBe(3)
+    expect(sized.height).toBe(0)
+    expect(sized.data.length).toBe(3 * 0 * 4)
+  })
+
+  it('keeps pre-existing pdf.js globals when they are already defined', async () => {
+    const g = globalThis as unknown as Record<string, unknown>
+    const original = { DOMMatrix: g.DOMMatrix, Path2D: g.Path2D, ImageData: g.ImageData }
+    class StubMatrix {}
+    class StubPath {}
+    class StubImage {}
+    g.DOMMatrix = StubMatrix
+    g.Path2D = StubPath
+    g.ImageData = StubImage
+    try {
+      vi.resetModules()
+      await import('../../../src/main/parsers/pdf-parser')
+      expect(g.DOMMatrix).toBe(StubMatrix)
+      expect(g.Path2D).toBe(StubPath)
+      expect(g.ImageData).toBe(StubImage)
+    } finally {
+      g.DOMMatrix = original.DOMMatrix
+      g.Path2D = original.Path2D
+      g.ImageData = original.ImageData
+    }
+  })
 })

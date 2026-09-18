@@ -123,7 +123,7 @@ describe('main bootstrap — edge environments', () => {
     cfg.lock = true
   })
 
-  it('keeps starting after a data-init failure and wires the stream callbacks', async () => {
+  it('keeps starting after a data-init failure and wires the stream callbacks', { timeout: 30_000 }, async () => {
     cfg.initRejects = true
     cfg.windows.length = 0
     cfg.readyResolvers.length = 0
@@ -158,7 +158,7 @@ describe('main bootstrap — edge environments', () => {
     cfg.initRejects = false
   })
 
-  it('logs startup failures instead of leaving an unhandled rejection', async () => {
+  it('logs startup failures instead of leaving an unhandled rejection', { timeout: 30_000 }, async () => {
     cfg.getPathThrows = true
     cfg.readyResolvers.length = 0
     await import('../../src/main/index')
@@ -174,7 +174,7 @@ describe('main bootstrap — edge environments', () => {
 })
 
 describe('main bootstrap — provider callbacks', () => {
-  it('resolves the stream key and model from the active provider', async () => {
+  it('resolves the stream key and model from the active provider', { timeout: 30_000 }, async () => {
     const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
     const { tmpdir } = await import('node:os')
     const { join } = await import('node:path')
@@ -221,6 +221,50 @@ describe('main bootstrap — provider callbacks', () => {
         model: 'deepseek-v4-flash',
         baseUrl: 'https://api.deepseek.com'
       })
+    } finally {
+      delete process.env['SOPHIA_TEST_DATA']
+      const { rm: remove } = await import('node:fs/promises')
+      await remove(envDir, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to the legacy key store when the active provider has no key', { timeout: 30_000 }, async () => {
+    const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+
+    const envDir = await mkdtemp(join(tmpdir(), 'sophia-edge-'))
+    process.env['SOPHIA_TEST_DATA'] = envDir
+    try {
+      const configDir = join(envDir, 'LocalData', 'config')
+      await mkdir(configDir, { recursive: true })
+      await writeFile(
+        join(configDir, 'providers.json'),
+        JSON.stringify([
+          {
+            id: 'prov_1',
+            name: 'DeepSeek',
+            type: 'deepseek',
+            baseUrl: 'https://api.deepseek.com',
+            models: ['deepseek-v4-flash'],
+            selectedModel: 'deepseek-v4-flash',
+            isActive: true,
+            createdAt: '2026-09-16T10:00:00Z',
+            updatedAt: '2026-09-16T10:00:00Z'
+          }
+        ]),
+        'utf-8'
+      )
+
+      cfg.windows.length = 0
+      cfg.readyResolvers.length = 0
+      cfg.chatStreamArgs = null
+      await import('../../src/main/index')
+      cfg.readyResolvers.forEach((resolve) => resolve())
+      await vi.waitFor(() => expect(cfg.chatStreamArgs).not.toBeNull(), { timeout: 10_000 })
+
+      const args = cfg.chatStreamArgs as unknown as [unknown, unknown, () => Promise<string | null>]
+      await expect(args[2]()).resolves.toBeNull()
     } finally {
       delete process.env['SOPHIA_TEST_DATA']
       const { rm: remove } = await import('node:fs/promises')

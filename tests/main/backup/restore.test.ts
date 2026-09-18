@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -6,12 +6,47 @@ import { randomUUID } from 'node:crypto'
 import { createBackupZip } from '../../../src/main/backup/backup'
 import { restoreFromBackup } from '../../../src/main/backup/restore'
 
+const fsCtl = vi.hoisted(() => ({
+  rmFailures: 0,
+  readdirReject: null as unknown
+}))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    readdir: async (
+      path: Parameters<typeof actual.readdir>[0],
+      options?: Parameters<typeof actual.readdir>[1]
+    ): Promise<unknown> => {
+      if (fsCtl.readdirReject !== null) {
+        const value = fsCtl.readdirReject
+        fsCtl.readdirReject = null
+        throw value
+      }
+      return (actual.readdir as (p: unknown, o?: unknown) => Promise<unknown>)(path, options)
+    },
+    rm: async (
+      path: Parameters<typeof actual.rm>[0],
+      options?: Parameters<typeof actual.rm>[1]
+    ): Promise<void> => {
+      if (fsCtl.rmFailures > 0) {
+        fsCtl.rmFailures--
+        throw new Error('simulated rm failure')
+      }
+      return actual.rm(path, options)
+    }
+  }
+})
+
 const TEST_ID = `restore-${randomUUID()}`
 const tempBase = join(tmpdir(), TEST_ID)
 
 let dataRoot: string
 
 beforeEach(async () => {
+  fsCtl.rmFailures = 0
+  fsCtl.readdirReject = null
   dataRoot = join(tempBase, 'Sophia')
   await mkdir(join(dataRoot, 'config'), { recursive: true })
   await mkdir(join(dataRoot, 'companions'), { recursive: true })
@@ -71,5 +106,38 @@ describe('restoreFromBackup', () => {
     expect(result.error).toBeTruthy()
     // 数据目录未被破坏
     expect(await readFile(join(dataRoot, 'config', 'providers.json'), 'utf-8')).toContain('"A"')
+  })
+
+  it('labels non-Error restore failures with String(err)', async () => {
+    const zip = await makeBackupZip()
+    fsCtl.readdirReject = 'weird failure'
+
+    const result = await restoreFromBackup(dataRoot, zip)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('weird failure')
+  })
+
+  it('keeps restoring when the old data snapshot cannot be removed', async () => {
+    const zip = await makeBackupZip()
+    fsCtl.rmFailures = 1
+
+    const result = await restoreFromBackup(dataRoot, zip)
+
+    expect(result.success).toBe(true)
+    expect(await readFile(join(dataRoot, 'learner.md'), 'utf-8')).toBe('# 学习者')
+  })
+
+  it('keeps the original error when the temp dir cleanup fails', async () => {
+    const badZip = join(tempBase, 'no-layout.zip')
+    await createBackupZip(join(tempBase, 'unrelated2'), badZip)
+    await mkdir(join(tempBase, 'unrelated2'), { recursive: true })
+    await writeFile(join(tempBase, 'unrelated2', 'note.txt'), 'not a backup')
+    fsCtl.rmFailures = 1
+
+    const result = await restoreFromBackup(dataRoot, badZip)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('备份文件缺少数据目录结构')
   })
 })

@@ -33,6 +33,7 @@ export function applySearchMarksToHtml(html: string, query: string): SearchMarkR
 
   let count = 0
   for (const node of textNodes) {
+    /* v8 ignore next -- @preserve */
     const raw = node.nodeValue ?? ''
     const lower = raw.toLowerCase()
     if (!lower.includes(q)) continue

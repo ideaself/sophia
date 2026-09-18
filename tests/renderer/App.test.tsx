@@ -686,3 +686,120 @@ describe('App — bootstrapping edge cases', () => {
     expect(await screen.findByTestId('classroom-view')).toBeTruthy()
   })
 })
+
+describe('App — branch closure', () => {
+  it('boots a conversation whose companion no longer exists', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    data.listConversations.mockResolvedValue([
+      {
+        id: 'c_orphan',
+        companionId: 'comp_gone',
+        title: '孤儿课',
+        endedAt: null,
+        updatedAt: '2026-09-16T10:00:00Z'
+      }
+    ])
+    companionsApi.get.mockResolvedValue(null)
+
+    render(<App />)
+
+    await waitFor(() => expect(useAppStore.getState().loadConversationId).toBe('c_orphan'))
+    expect(companionsApi.get).toHaveBeenCalledWith('comp_gone')
+    expect(useCompanionStore.getState().selectedCompanion).toBeNull()
+  })
+
+  it('boots a conversation whose textbook is missing from the library', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    data.listConversations.mockResolvedValue([
+      {
+        id: 'c_tb',
+        companionId: 'comp_landau',
+        title: '缺教材',
+        endedAt: null,
+        updatedAt: '2026-09-16T10:00:00Z',
+        textbookId: 'tb_missing'
+      }
+    ])
+    companionsApi.get.mockResolvedValue({
+      id: 'comp_landau',
+      name: '朗道',
+      identity: '理论物理学家',
+      personalityKeywords: []
+    })
+    data.getTextbook.mockResolvedValue(null)
+
+    render(<App />)
+
+    await waitFor(() => expect(data.getTextbook).toHaveBeenCalledWith('tb_missing'))
+    expect(useTextbookStore.getState().selectedTextbook).toBeNull()
+  })
+
+  it('keeps the classroom dropdown open on inside clicks and other keys', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    render(<App />)
+    await screen.findByTestId('classroom-view')
+
+    fireEvent.click(menu('课堂'))
+    await screen.findByText('选择课堂')
+
+    fireEvent.mouseDown(screen.getByText('选择课堂'))
+    expect(screen.getByText('选择课堂')).toBeTruthy()
+
+    fireEvent.keyDown(document, { key: 'a' })
+    expect(screen.getByText('选择课堂')).toBeTruthy()
+  })
+
+  it('resumes conversations whose companion or textbook is gone', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    useConversationStore.setState({
+      activeConversations: [
+        {
+          id: 'c_orphan',
+          title: '孤儿课',
+          companionId: 'comp_gone',
+          companionName: '旧伙伴',
+          textbookId: null,
+          textbookTitle: null,
+          updatedAt: '2026-09-16T10:00:00Z',
+          endedAt: null
+        },
+        {
+          id: 'c_tb',
+          title: '缺教材',
+          companionId: 'comp_landau',
+          companionName: '朗道',
+          textbookId: 'tb_gone',
+          textbookTitle: '旧教材',
+          updatedAt: '2026-09-16T10:00:00Z',
+          endedAt: null
+        }
+      ] as never,
+      fetchActive: vi.fn(async () => {})
+    })
+    companionsApi.get.mockResolvedValue(null)
+    data.getTextbook.mockResolvedValue(null)
+
+    render(<App />)
+    await screen.findByTestId('classroom-view')
+
+    fireEvent.click(menu('课堂'))
+    fireEvent.click(await screen.findByText('旧伙伴'))
+    await waitFor(() => expect(useAppStore.getState().loadConversationId).toBe('c_orphan'))
+
+    fireEvent.click(menu('课堂'))
+    fireEvent.click(await screen.findByText('朗道'))
+    await waitFor(() => expect(useAppStore.getState().loadConversationId).toBe('c_tb'))
+    expect(companionsApi.get).toHaveBeenCalledWith('comp_landau')
+    expect(data.getTextbook).toHaveBeenCalledWith('tb_gone')
+    expect(useTextbookStore.getState().selectedTextbook).toBeNull()
+  })
+
+  it('renders the create-companion modal without a delete action', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    useCompanionStore.setState({ editingCompanion: null, isCreating: true })
+
+    render(<App />)
+
+    expect(await screen.findByTestId('companion-edit-modal')).toBeTruthy()
+  })
+})

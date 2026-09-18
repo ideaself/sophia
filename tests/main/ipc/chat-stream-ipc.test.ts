@@ -168,6 +168,20 @@ describe('chat-stream IPC — start', () => {
     expect(mocks.adapterParams[1].thinking).toBe(false)
   })
 
+  it('keeps the requested model when the provider reader returns null', async () => {
+    setup(undefined, { provider: async () => null })
+
+    await invoke(CHAT_STREAM_START, {
+      messages: [{ role: 'user', content: 'hi' }],
+      model: 'deepseek-v4-flash'
+    })
+
+    expect(mocks.adapterParams[0]).toMatchObject({
+      model: 'deepseek-v4-flash',
+      _endpoint: undefined
+    })
+  })
+
   it('refuses to start without an API key', async () => {
     setup(undefined, { readApiKey: async () => null })
     await expect(

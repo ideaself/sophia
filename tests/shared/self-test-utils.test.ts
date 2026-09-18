@@ -40,6 +40,15 @@ describe('parseSelfTestQuestions', () => {
     expect(out).toHaveLength(1)
     expect(out[0].answer).toBe('第一行。\n第二行。')
   })
+
+  it('ignores indented prose before the first hint or answer', () => {
+    const out = parseSelfTestQuestions(
+      '**自测 1：什么是熵？**\n  一句没有字段的缩进说明。\n- 答案：无序度的度量。'
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0].hints).toEqual([])
+    expect(out[0].answer).toBe('无序度的度量。')
+  })
 })
 
 

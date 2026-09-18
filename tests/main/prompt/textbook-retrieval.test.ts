@@ -232,4 +232,41 @@ describe('textbook-retrieval — fuzzy and degenerate inputs', () => {
     expect(passages).toHaveLength(1)
     expect(passages[0].excerpt.length).toBeLessThanOrEqual(30)
   })
+
+  it('keeps an earlier fitting paragraph when a later hit overflows the excerpt', () => {
+    const content = [
+      '# 第一章',
+      '',
+      '短句提到状态函数。',
+      '',
+      '第二段也讲状态函数，' + '内容很长'.repeat(40) + '。',
+      '',
+      '# 第二章',
+      '',
+      '温度是分子平均动能的度量。',
+      '',
+      '# 第三章',
+      '',
+      '压强来自分子对器壁的碰撞。',
+      '',
+      '# 第四章',
+      '',
+      '体积随温度与压强变化。'
+    ].join('\n')
+
+    const passages = retrievePassages(content, ['状态函数'], { maxExcerptChars: 30 })
+
+    expect(passages).toHaveLength(1)
+    expect(passages[0].excerpt).toContain('短句提到状态函数')
+    expect(passages[0].excerpt).not.toContain('第二段')
+  })
+})
+
+describe('formatPassages — title fallback', () => {
+  it('uses 教材 when no textbook title is given', () => {
+    const out = formatPassages([{ heading: '第一章', excerpt: '正文内容' }])
+
+    expect(out).toContain('【相关教材段落 1 · 教材 · 第一章】')
+    expect(out).toContain('【教材出处 · 教材 · 章节名】')
+  })
 })

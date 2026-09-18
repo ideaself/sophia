@@ -264,6 +264,18 @@ describe('DeepSeekStreamAdapter — request construction', () => {
 
     expect(calls[0].init!.method).toBe('POST')
   })
+
+  it('keeps a per-request endpoint that already ends with /chat/completions', async () => {
+    const { fetchFn, calls } = mockFetch(200, ['data: [DONE]\n\n'])
+
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
+    await collectChunks(
+      adapter,
+      streamParams({ _endpoint: 'https://proxy.example.com/v1/chat/completions' })
+    )
+
+    expect(calls[0].input).toBe('https://proxy.example.com/v1/chat/completions')
+  })
 })
 
 // ---------------------------------------------------------------
@@ -609,6 +621,47 @@ describe('DeepSeekStreamAdapter — malformed JSON', () => {
       return err instanceof AppError && err.code === 'STREAM_IDLE_TIMEOUT'
     })
   })
+
+  it('surfaces a non-timeout read failure without cancelling the reader', async () => {
+    const encoder = new TextEncoder()
+    const broken = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n')
+        )
+        controller.error(new Error('socket reset'))
+      }
+    })
+    const fetchFn = (() =>
+      Promise.resolve(new Response(broken, { status: 200 }))) as unknown as typeof fetch
+
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn, idleTimeoutMs: 50 })
+
+    await expect(collectChunks(adapter, streamParams())).rejects.toThrow('socket reset')
+  })
+
+  it('swallows a rejecting reader.cancel when the idle timeout aborts', async () => {
+    const encoder = new TextEncoder()
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n')
+        )
+        // Never closes — simulates a stalled connection.
+      },
+      cancel() {
+        return Promise.reject(new Error('cancel failed'))
+      }
+    })
+    const fetchFn = (() =>
+      Promise.resolve(new Response(stalled, { status: 200 }))) as unknown as typeof fetch
+
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn, idleTimeoutMs: 30 })
+
+    await expect(collectChunks(adapter, streamParams())).rejects.toSatisfy((err: Error) => {
+      return err instanceof AppError && err.code === 'STREAM_IDLE_TIMEOUT'
+    })
+  })
 })
 
 // ---------------------------------------------------------------
@@ -664,6 +717,22 @@ describe('DeepSeekStreamAdapter — edge cases', () => {
     const chunks = await collectChunks(adapter, streamParams())
 
     expect(chunks).toHaveLength(0)
+  })
+
+  it('ignores non-data SSE fields such as event lines', async () => {
+    const { fetchFn } = mockFetch(200, [
+      'event: ping\n' +
+        sseData({ choices: [{ delta: { content: 'kept' } }] }) +
+        '\n\n' +
+        'id: 42\n\n' +
+        'data: [DONE]\n\n'
+    ])
+
+    const adapter = createDeepSeekStreamAdapter({ fetchImpl: fetchFn })
+    const chunks = await collectChunks(adapter, streamParams())
+
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0].choices?.[0]?.delta?.content).toBe('kept')
   })
 })
 

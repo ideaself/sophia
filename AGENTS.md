@@ -22,7 +22,7 @@ npm run test:coverage  # 覆盖率及门槛（CI 用这个）
 
 ## 覆盖率门槛（只升不降）
 
-- 门槛在 `vitest.config.ts` 的 `coverage.thresholds`；当前 **100/89/99/100**（语句/分支/函数/行）。
+- 门槛在 `vitest.config.ts` 的 `coverage.thresholds`；当前 **100/100/100/100**（语句/分支/函数/行）。
 - 覆盖率只能上调；**禁止为通过构建而下调**。
 - 死代码、纯防御分支（UI 已屏蔽、穷尽性 `never` 检查、无法在测试中可移植触发的故障捕获）用注释忽略：
 
@@ -44,6 +44,7 @@ npm run test:coverage  # 覆盖率及门槛（CI 用这个）
 - **模块级缓存**（如 `useTodayStudyMinutes`、`useFlashcards`）：测试之间用 `vi.resetModules()` + 动态 `import()` 隔离，不要指望 TTL 自然过期。
 - **假定时器 + `vi.waitFor`**：用 `vi.useFakeTimers({ shouldAdvanceTime: true })`，否则 waitFor 无法推进。
 - **重渲染/等待**：统一用 `await screen.findBy...` / `await vi.waitFor(...)`，禁止裸 `setTimeout` 断言（覆盖度运行会让慢机器误报，参考已修复的 app-bootstrap 落盘时序）。
+- **waitFor 的超时是等待预算，不是用例预算**：`vi.waitFor(..., { timeout: 10_000 })` 不会放宽默认 5s 的用例超时；等待后台任务（产物流水线/概念抽取/落盘）的用例必须同时声明用例超时，如 `it('...', { timeout: 30_000 }, async () => ...)`，否则慢机下先撞用例超时而误报。
 
 ## 数据与安全
 

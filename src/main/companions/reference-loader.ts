@@ -146,14 +146,12 @@ function extractSectionContent(content: string, sectionTitle: string): string {
   if (!match) {
     throw new Error(`Section "## ${sectionTitle}" not found`)
   }
-  const startIdx = (match.index ?? 0) + match[0].length
+  const startIdx = match.index! + match[0].length
 
   // Find next ## heading after this section
   const rest = content.slice(startIdx)
   const nextHeading = rest.match(/^## /m)
-  const endIdx = nextHeading
-    ? startIdx + (nextHeading.index ?? 0)
-    : content.length
+  const endIdx = nextHeading ? startIdx + nextHeading.index! : content.length
 
   return content.slice(startIdx, endIdx).trim()
 }
@@ -273,7 +271,8 @@ export async function loadReferenceCompanions(
   //   app updates that ship improved character files still take effect.
   const mergedBase = companions.map((base) => {
     const current = existingById.get(base.id)
-    return current && (current.version ?? 1) > (base.version ?? 1) ? current : base
+    // Both sides are schema-validated records: `version` always defaults to 1.
+    return current && current.version > base.version ? current : base
   })
   const customOnes = existing.filter(
     (c) => c.source === 'custom' && !mergedBase.some((b) => b.id === c.id)

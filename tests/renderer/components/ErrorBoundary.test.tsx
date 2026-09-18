@@ -63,6 +63,20 @@ describe('ErrorBoundary', () => {
     expect(screen.queryByText('应用遇到错误')).toBeNull()
   })
 
+  it('falls back to the unknown-error label for a non-Error throw', () => {
+    function StringBomb(): React.ReactElement {
+      throw 'string boom'
+    }
+    render(
+      <ErrorBoundary>
+        <StringBomb />
+      </ErrorBoundary>
+    )
+
+    expect(screen.getByText('应用遇到错误')).toBeTruthy()
+    expect(screen.getByText('未知错误')).toBeTruthy()
+  })
+
   it('reloads the page from the error card', () => {
     shouldThrow = true
     const reload = vi.fn()

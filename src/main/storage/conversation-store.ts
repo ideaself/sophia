@@ -341,6 +341,7 @@ export class ConversationStore {
       await this.buildIndex()
     }
 
+    /* v8 ignore next -- @preserve -- 上一行已确保 buildIndex() 落缓存，这里的 ?? [] 是无法触发的防御分支 */
     const index = this.indexCache.get(this.dataRoot) ?? []
     const lowerQuery = query.toLowerCase()
     const matched: Array<{ conversationId: string; message: Message }> = []

@@ -133,6 +133,17 @@ describe('generateArtifacts — happy path', () => {
     expect(result.results).toEqual([])
     expect(result.failures).toEqual([])
   })
+
+  it('skips artifacts when the response carries no content field at all', async () => {
+    llm.chat.mockResolvedValue({})
+
+    const result = await generateArtifacts(messages(6), config, {
+      types: [ArtifactType.Diary]
+    })
+
+    expect(result.results).toEqual([])
+    expect(result.failures).toEqual([])
+  })
 })
 
 describe('generateArtifacts — failure isolation', () => {

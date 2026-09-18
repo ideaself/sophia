@@ -181,6 +181,7 @@ describe('SyncWebDavClient', () => {
       '/sophia/sub/b.md'
     ])
     await expect(makeClient().listAllFiles('/missing')).resolves.toEqual([])
+    await expect(makeClient().listAllFilesDetailed('/missing')).resolves.toEqual([])
 
     const detailed = await makeClient().listAllFilesDetailed('/sophia')
     expect(detailed.map((f) => f.path).sort()).toEqual(['/sophia/a.md', '/sophia/sub/b.md'])
@@ -195,6 +196,9 @@ describe('SyncWebDavClient', () => {
       new TextEncoder().encode('bytes').buffer
     )
     await expect(makeClient().downloadFile('/b.md')).resolves.toBe('bytes')
+
+    webdavMock.client.getFileContents.mockResolvedValueOnce(Buffer.from('text-buffer'))
+    await expect(makeClient().downloadFile('/e.md')).resolves.toBe('text-buffer')
 
     webdavMock.client.getFileContents.mockResolvedValueOnce(Buffer.from('binary'))
     await expect(makeClient().downloadFileBuffer('/c.pdf')).resolves.toEqual(Buffer.from('binary'))

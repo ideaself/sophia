@@ -37,6 +37,17 @@ describe('DiaryStore', () => {
 
     await expect(store.listMonths()).resolves.toEqual(['2026-07', '2026-05'])
   })
+
+  it('writes a heading-only block for an empty diary body', async () => {
+    const store = new DiaryStore(dataRoot)
+    await store.append({
+      date: '2026-07-02T10:00:00.000Z',
+      companionName: '朗道',
+      content: '   \n'
+    })
+
+    await expect(store.getMonth('2026-07')).resolves.toBe('## 2026-07-02 | 朗道\n\n---\n')
+  })
 })
 
 describe('sync-state', () => {
@@ -103,6 +114,13 @@ describe('ConceptStore', () => {
 
     const states = await store.load()
     expect(states[0]).toMatchObject({ name: '熵', misconception: '与焓混淆' })
+  })
+
+  it('treats a non-array concepts.json as empty', async () => {
+    await writeFile(join(dataRoot, 'concepts.json'), JSON.stringify({ nope: true }), 'utf-8')
+    const store = new ConceptStore(dataRoot)
+
+    await expect(store.load()).resolves.toEqual([])
   })
 })
 

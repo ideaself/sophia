@@ -73,6 +73,20 @@ describe('ReadingNoteStore', () => {
     })
   })
 
+  it('leaves readerNote untouched when it is not part of the update', async () => {
+    const store = new ReadingNoteStore(dataRoot)
+    const note = await store.create({
+      textbookId: 'tb_1',
+      content: '旧内容',
+      position: '1',
+      readerNote: '原批注'
+    })
+
+    const updated = await store.update(note.id, 'tb_1', { content: '只改正文' })
+
+    expect(updated?.readerNote).toBe('原批注')
+  })
+
   it('returns null for a missing note and for unreadable files', async () => {
     const store = new ReadingNoteStore(dataRoot)
 

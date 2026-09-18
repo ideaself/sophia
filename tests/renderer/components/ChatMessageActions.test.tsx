@@ -153,6 +153,14 @@ describe('ChatMessage — structured content', () => {
     expect(await screen.findByText(/前面聊了熵的定义/)).toBeTruthy()
     expect(await screen.findByText(/什么是熵/)).toBeTruthy()
   })
+
+  it('renders quiz cards that start with the self-test marker', async () => {
+    const content = ['**自测 1：直接开始？**', '- 答案：可以'].join('\n')
+
+    render(<ChatMessage id="a1" role="assistant" content={content} />)
+
+    expect(await screen.findByText(/直接开始/)).toBeTruthy()
+  })
 })
 
 describe('ChatMessage — edit shortcuts', () => {

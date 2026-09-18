@@ -235,6 +235,9 @@ function readWithIdleTimeout(
     }, timeoutMs)
   })
   return Promise.race([reader.read(), timeout]).finally(() => {
+    // `timer` is assigned synchronously inside the Promise executor above,
+    // so it is always set by the time this callback runs.
+    /* v8 ignore next -- @preserve */
     if (timer) clearTimeout(timer)
   })
 }

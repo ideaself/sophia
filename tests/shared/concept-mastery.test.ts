@@ -57,4 +57,12 @@ describe('next-steps', () => {
     expect(steps.some((s) => s.tier === '目标')).toBe(false)
     expect(steps[0]?.tier).toBe('掌握')
   })
+
+  it('没有已掌握概念时不生成「向前推进」建议', () => {
+    const steps = buildNextSteps([
+      { name: 'A', mastery: 0.2, misconception: null, attemptCount: 1 },
+      { name: 'C', mastery: 0.5, misconception: null, attemptCount: 2 }
+    ])
+    expect(steps.map((s) => s.tier)).toEqual(['薄弱', '理解'])
+  })
 })

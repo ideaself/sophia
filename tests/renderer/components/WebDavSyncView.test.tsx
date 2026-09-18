@@ -403,6 +403,175 @@ describe('WebDavSyncView — remaining error branches', () => {
   })
 })
 
+describe('WebDavSyncView — uncovered result branches', () => {
+  it('falls back to Unknown result and shows the testing state', async () => {
+    let resolveTest!: (v: unknown) => void
+    setupMocks({
+      test: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveTest = resolve
+          })
+      )
+    })
+    render(<WebDavSyncView />)
+    fillUrl()
+
+    fireEvent.click(screen.getByText('Test Connection'))
+    await screen.findByText('Testing...')
+
+    resolveTest({ success: true })
+    await screen.findByText('OK: Unknown result')
+  })
+
+  it('reports a non-Error connection-test rejection', async () => {
+    setupMocks()
+    render(<WebDavSyncView />)
+    fillUrl()
+
+    sync.test.mockRejectedValueOnce('plain failure')
+    fireEvent.click(screen.getByText('Test Connection'))
+    await screen.findByText('Error: Failed')
+  })
+
+  it('confirms a large push deletion and continues when accepted', async () => {
+    setupMocks({
+      planPush: vi.fn(async () => ({
+        deleteCount: 12,
+        deleteSample: Array.from({ length: 12 }, (_, i) => `f${i}.md`)
+      }))
+    })
+    render(<WebDavSyncView />)
+    fillUrl()
+
+    fireEvent.click(screen.getByText('Push (Upload)'))
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1))
+    expect(confirmDialog.mock.calls[0][0].message).toContain('... and 2 more')
+    await screen.findByText('OK: Pushed 3, skipped 1, trashed 0, deleted 0')
+  })
+
+  it('handles push results without a timestamp and non-Error failures', async () => {
+    setupMocks({
+      push: vi.fn(async () => ({
+        success: true,
+        transferred: 1,
+        skipped: 0,
+        trashed: 0,
+        deleted: 0,
+        errors: []
+      }))
+    })
+    render(<WebDavSyncView />)
+    fillUrl()
+
+    fireEvent.click(screen.getByText('Push (Upload)'))
+    await screen.findByText('OK: Pushed 1, skipped 0, trashed 0, deleted 0')
+    expect(screen.getByText(/Last push: never/)).toBeTruthy()
+
+    sync.push.mockRejectedValueOnce('plain push failure')
+    fireEvent.click(screen.getByText('Push (Upload)'))
+    await screen.findByText('Error: Push failed')
+
+    sync.planPush.mockRejectedValueOnce('plain planning failure')
+    fireEvent.click(screen.getByText('Push (Upload)'))
+    await screen.findByText('Error: Push planning failed')
+  })
+
+  it('warns with <1h for a fresh last push and pulls when confirmed', async () => {
+    localStorage.setItem('webdav-last-push', new Date().toISOString())
+    setupMocks()
+    render(<WebDavSyncView />)
+    fillUrl()
+
+    fireEvent.click(screen.getByText('Pull (Download)'))
+
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1))
+    expect(confirmDialog.mock.calls[0][0].message).toContain('<1h')
+    await screen.findByText('OK: Pulled 2, skipped 0, deleted 0')
+    expect(localStorage.getItem('webdav-last-pull')).toBe('2026-09-16T11:00:00.000Z')
+  })
+
+  it('shows the pulling state while the download is pending', async () => {
+    let resolvePull!: (v: unknown) => void
+    setupMocks({
+      pull: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolvePull = resolve
+          })
+      )
+    })
+    render(<WebDavSyncView />)
+    fillUrl()
+
+    fireEvent.click(screen.getByText('Pull (Download)'))
+    await screen.findByText('Pulling...')
+
+    resolvePull({
+      success: true,
+      transferred: 0,
+      skipped: 0,
+      deleted: 0,
+      conflicts: 0,
+      errors: [],
+      timestamp: '2026-09-16T14:00:00.000Z'
+    })
+    await screen.findByText('OK: Pulled 0, skipped 0, deleted 0')
+  })
+
+  it('handles a large pull deletion and non-Error failures', async () => {
+    setupMocks({
+      planPull: vi.fn(async () => ({
+        deleteCount: 11,
+        deleteSample: Array.from({ length: 11 }, (_, i) => `g${i}.json`)
+      }))
+    })
+    render(<WebDavSyncView />)
+    fillUrl()
+
+    fireEvent.click(screen.getByText('Pull (Download)'))
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalledTimes(1))
+    expect(confirmDialog.mock.calls[0][0].message).toContain('... and 1 more')
+    await screen.findByText('OK: Pulled 2, skipped 0, deleted 0')
+
+    sync.planPull.mockRejectedValueOnce('plain pull planning failure')
+    fireEvent.click(screen.getByText('Pull (Download)'))
+    await screen.findByText('Error: Pull planning failed')
+
+    sync.pull.mockRejectedValueOnce('plain pull failure')
+    fireEvent.click(screen.getByText('Pull (Download)'))
+    await screen.findByText('Error: Pull failed')
+  })
+
+  it('shows the emptying state and non-Error clear failures', async () => {
+    setupMocks({
+      listTrash: vi.fn(async () => ({
+        batches: [{ name: 'b1', fileCount: 2, totalSize: 100 }],
+        fileCount: 2,
+        totalSize: 100
+      }))
+    })
+    let rejectEmpty!: (e: unknown) => void
+    sync.emptyTrash.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectEmpty = reject
+        })
+    )
+    render(<WebDavSyncView />)
+    await screen.findByText('WebDAV Sync')
+    fillUrl()
+
+    fireEvent.click(screen.getByText('刷新'))
+    fireEvent.click(await screen.findByText('清空回收站'))
+    await screen.findByText('清空中...')
+
+    rejectEmpty('plain trash failure')
+    await screen.findByText('Error: 清空失败')
+  })
+})
+
 describe('WebDavSyncView — trash guards', () => {
   it('skips the trash fetch without a URL', async () => {
     setupMocks()

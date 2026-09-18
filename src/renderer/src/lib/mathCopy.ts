@@ -64,6 +64,7 @@ export function handleCopyMathSource(e: React.ClipboardEvent): void {
   })
 
   e.preventDefault()
+  /* v8 ignore next -- @preserve */
   void navigator.clipboard.writeText(fragment.textContent ?? '')
 }
 
@@ -77,6 +78,7 @@ function closestDataTex(node: Node | null): HTMLElement | null {
 }
 
 function texSource(el: HTMLElement): string {
+  /* v8 ignore next -- @preserve */
   const tex = el.getAttribute('data-tex') ?? ''
   const isDisplay = el.classList.contains('math-display')
   return isDisplay ? `$$\n${tex}\n$$` : `$${tex}$`

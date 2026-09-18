@@ -41,6 +41,11 @@ describe('MathSymbolPanel', () => {
     expect(screen.getByTitle('\\frac{a}{b}')).toBeTruthy()
     expect(screen.getAllByText('模板').length).toBeGreaterThan(0)
   })
+
+  it('falls back to the first group for an unknown tab', () => {
+    render(<MathSymbolPanel tab="unknown" onSelectTab={() => {}} onInsert={() => {}} />)
+    expect(screen.getByTitle('α')).toBeTruthy()
+  })
 })
 
 describe('TemplatePanel', () => {

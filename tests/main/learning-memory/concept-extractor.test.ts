@@ -55,6 +55,32 @@ describe('extractConceptUpdates', () => {
       warn.mockRestore()
     }
   })
+
+  it('warns with the raw value when the model fails with a non-Error', async () => {
+    llm.chat.mockRejectedValue('boom-string')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await expect(extractConceptUpdates('对话', CONFIG)).resolves.toBeNull()
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('概念识别失败'),
+        'boom-string'
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('various malformed object shapes yield an empty array', () => {
+    expect(
+      parseUpdates(
+        JSON.stringify([
+          { name: 42, performance: 'correct' },
+          { name: '温度', performance: 7 },
+          { name: '内能', performance: 'correct' }
+        ])
+      )
+    ).toEqual([{ name: '内能', performance: 'correct' }])
+  })
 })
 
 describe('parseUpdates', () => {

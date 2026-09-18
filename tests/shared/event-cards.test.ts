@@ -35,6 +35,15 @@ describe('parseEventCard', () => {
     const card = parseEventCard('> 💡 提示：提示内容。\n\n正文继续。\n')
     expect(card?.rest).toBe('正文继续。')
   })
+
+  it('正文为空的卡片返回 null，连续引用块中的空行被跳过', () => {
+    expect(parseEventCard('> 💡 提示：')).toBeNull()
+    expect(parseEventCard('> 💡 提示：\n>   \n> 补充线索。')).toEqual({
+      kind: 'hint',
+      body: '补充线索。',
+      rest: ''
+    })
+  })
 })
 
 describe('grounding 规则校验', () => {

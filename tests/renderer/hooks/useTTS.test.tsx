@@ -75,6 +75,17 @@ describe('speakTTS', () => {
     expect(getTTSState().progress).toBe(1)
   })
 
+  it('ignores boundary events without a numeric charIndex', () => {
+    speakTTS('abcdef', 'zh-CN')
+    const utter = lastUtterance()
+
+    utter.onboundary?.({ charIndex: 2 })
+    expect(getTTSState().progress).toBeCloseTo(1 / 3)
+
+    utter.onboundary?.({} as { charIndex: number })
+    expect(getTTSState().progress).toBeCloseTo(1 / 3)
+  })
+
   it('applies the current rate to the utterance', () => {
     setRateTTS(1.5)
     speakTTS('hello', 'en-US')
@@ -191,5 +202,31 @@ describe('useTTS hook wrappers', () => {
 
     expect(pauseSpy).not.toHaveBeenCalled()
     expect(resumeSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('useTTS — unsupported platform', () => {
+  it('no-ops every transport control when speechSynthesis is missing', async () => {
+    const speechSynthesis = window.speechSynthesis
+    delete (window as unknown as Record<string, unknown>).speechSynthesis
+    try {
+      vi.resetModules()
+      const fresh = await import('../../../src/renderer/src/hooks/useTTS')
+
+      expect(fresh.getTTSState().supported).toBe(false)
+      fresh.speakTTS('文本', 'zh-CN')
+      expect(speakSpy).not.toHaveBeenCalled()
+      fresh.stopTTS()
+      fresh.pauseTTS()
+      fresh.resumeTTS()
+      expect(cancelSpy).not.toHaveBeenCalled()
+      expect(pauseSpy).not.toHaveBeenCalled()
+      expect(resumeSpy).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(window, 'speechSynthesis', {
+        configurable: true,
+        value: speechSynthesis
+      })
+    }
   })
 })

@@ -44,6 +44,7 @@ export async function extractZipSafely(zipPath: string, destDir: string): Promis
     }
 
     totalUncompressed += entry.uncompressedSize
+    /* v8 ignore next -- @preserve */
     if (totalUncompressed > MAX_UNCOMPRESSED_BYTES) {
       /* v8 ignore next -- @preserve */
       throw new Error('备份解压后体积超出上限，已中止（疑似异常压缩包）')

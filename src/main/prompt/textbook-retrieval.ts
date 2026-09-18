@@ -133,6 +133,9 @@ export function extractTerms(texts: string[], maxTerms = 24): string[] {
     const text = cleanText(raw)
     for (const token of text.match(LATIN_TOKEN_RE) ?? []) {
       const lower = token.toLowerCase()
+      // The latin token regex already requires 3+ chars, and STOPWORDS only
+      // holds CJK function words — this condition can never be false.
+      /* v8 ignore next -- @preserve */
       if (lower.length >= 3 && !STOPWORDS.has(lower)) add(lower)
     }
 
@@ -264,6 +267,10 @@ function buildExcerpt(text: string, terms: string[], maxChars: number): string {
     .filter(({ lower }) => lowerTerms.some((t) => lower.includes(t)))
     .sort((a, b) => a.idx - b.idx)
 
+  // A section only reaches buildExcerpt when at least one term is contained in
+  // its raw text; terms never contain whitespace, so that term also lies fully
+  // inside one newline-delimited paragraph — `hits` can never be empty.
+  /* v8 ignore next -- @preserve */
   if (hits.length === 0) {
     /* v8 ignore next -- @preserve */
     return text.slice(0, maxChars)

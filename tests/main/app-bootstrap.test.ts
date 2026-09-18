@@ -175,6 +175,21 @@ vi.mock('electron', () => ({
   }
 }))
 
+const atomicCtl = vi.hoisted(() => ({ fail: false }))
+
+vi.mock('../../src/main/storage/atomic-write', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../src/main/storage/atomic-write')>()
+  return {
+    atomicWriteFile: async (
+      ...args: Parameters<typeof actual.atomicWriteFile>
+    ): Promise<void> => {
+      if (atomicCtl.fail) throw new Error('simulated window-state write failure')
+      return actual.atomicWriteFile(...args)
+    }
+  }
+})
+
 import '../../src/main/index'
 
 let firstWindow: InstanceType<typeof h.FakeBrowserWindow>
@@ -265,6 +280,17 @@ describe('main bootstrap — window hardening', () => {
     } finally {
       error.mockRestore()
     }
+  })
+
+  it('does not save the window state when the app is not quitting', async () => {
+    firstWindow.bounds = { x: 7, y: 8, width: 500, height: 400 }
+    expect(() => firstWindow.emitAll('close', { preventDefault: vi.fn() })).not.toThrow()
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const raw = JSON.parse(
+      await readFile(join(h.state.userData, 'window-state.json'), 'utf-8')
+    ) as { x: number; y: number; width: number; height: number }
+    expect(raw).toMatchObject({ x: 100, y: 120, width: 900, height: 700 })
   })
 
   it('hides instead of closing until the app quits', () => {
@@ -599,7 +625,7 @@ describe('main bootstrap — tray and lifecycle', () => {
     }
   })
 
-  it('debounces window-state writes on resize', async () => {
+  it('debounces window-state writes on resize', { timeout: 30_000 }, async () => {
     vi.useFakeTimers()
     const win = firstWindow
     win.bounds = { x: 5, y: 6, width: 999, height: 777 }
@@ -610,7 +636,7 @@ describe('main bootstrap — tray and lifecycle', () => {
     await vi.waitFor(async () => {
       const raw = await readFile(join(h.state.userData, 'window-state.json'), 'utf-8')
       expect(JSON.parse(raw)).toMatchObject({ x: 5, y: 6, width: 999, height: 777 })
-    })
+    }, { timeout: 10_000 })
   })
 })
 
@@ -669,6 +695,19 @@ describe('main bootstrap — environment branches', () => {
       saved = JSON.parse(raw) as { x: number; y: number; width: number; height: number }
     })
     expect(saved).toMatchObject({ x: 11, y: 22, width: 640, height: 480 })
+  })
+
+  it('swallows window-state write failures when the data dir is gone', async () => {
+    const win = h.FakeBrowserWindow.instances[0]
+    atomicCtl.fail = true
+    try {
+      h.state.appEvents.get('before-quit')?.()
+      expect(() => win.emitAll('close', { preventDefault: vi.fn() })).not.toThrow()
+      // Let the rejected atomic write settle so its catch handler runs.
+      await new Promise((resolve) => setImmediate(resolve))
+    } finally {
+      atomicCtl.fail = false
+    }
   })
 })
 

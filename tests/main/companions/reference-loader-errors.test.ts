@@ -94,6 +94,14 @@ describe('reference-loader — malformed candidates', () => {
       /Schema validation failed/
     )
   })
+
+  it('parses keywords with an elaboration after ——', async () => {
+    await writeCandidate('dashed', goodMarkdown({ keywords: '严谨——认真、好奇' }))
+
+    const result = await loadReferenceCompanions({ candidatesDir, companionDir })
+
+    expect(result.companions[0].personalityKeywords).toEqual(['严谨'])
+  })
 })
 
 describe('reference-loader — merge and tombstones', () => {
@@ -144,5 +152,14 @@ describe('reference-loader — merge and tombstones', () => {
     // Clearing an unknown id leaves the file untouched.
     await clearDeletedCandidate(companionDir, 'comp_unknown')
     expect(JSON.parse(await readFile(tombstonePath, 'utf-8'))).toEqual([])
+  })
+
+  it('ignores a tombstone file whose payload is not an array', async () => {
+    await writeCandidate('kept', goodMarkdown())
+    await writeFile(join(companionDir, '.deleted-candidates.json'), '{"nope":true}', 'utf-8')
+
+    const result = await loadReferenceCompanions({ candidatesDir, companionDir })
+
+    expect(result.companions.map((c) => c.id)).toEqual(['comp_kept'])
   })
 })

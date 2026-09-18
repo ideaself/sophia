@@ -110,6 +110,17 @@ describe('setKey', () => {
     const store = createStore()
     await expect(store.setKey('   ')).rejects.toThrow()
   })
+
+  it('throws when OS-level encryption is unavailable', async () => {
+    const unavailable: SafeStorageAdapter = {
+      isEncryptionAvailable: () => false,
+      encryptString: () => Buffer.alloc(0),
+      decryptString: () => ''
+    }
+    const store = new SecureKeyStore(join(tempDir, 'no-encryption'), unavailable)
+
+    await expect(store.setKey('sk-test')).rejects.toThrow('Encryption is not available')
+  })
 })
 
 // ============================================================

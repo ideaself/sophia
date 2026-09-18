@@ -16,6 +16,7 @@ vi.mock('../../../src/renderer/src/components/MermaidBlock', () => ({
 }))
 
 import { ChatMessage } from '../../../src/renderer/src/chat/ChatMessage'
+import MarkdownRenderer from '../../../src/renderer/src/lib/MarkdownRenderer'
 
 beforeAll(async () => {
   // Warm the lazy() import so the first render isn't a cold module load.
@@ -51,6 +52,25 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+})
+
+describe('MarkdownRenderer default code pipeline', () => {
+  it('renders inline code without a language class and fenced code with one', async () => {
+    const { container } = render(
+      <MarkdownRenderer>{'说明：`npm test`\n\n```js\nconst a = 1\n```'}</MarkdownRenderer>
+    )
+
+    expect(await screen.findByText('npm test')).toBeTruthy()
+    await waitFor(() => {
+      expect(container.querySelector('code.hljs, code[class*="language-"]')).toBeTruthy()
+    })
+  })
+
+  it('routes mermaid fences to the mermaid block through the default component', async () => {
+    render(<MarkdownRenderer>{'```mermaid\ngraph TD; A-->B\n```'}</MarkdownRenderer>)
+    const block = await screen.findByTestId('mermaid')
+    expect(block.textContent).toContain('graph TD; A-->B')
+  })
 })
 
 describe('ChatMessage markdown components', () => {

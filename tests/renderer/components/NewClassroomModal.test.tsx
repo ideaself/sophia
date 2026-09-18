@@ -87,6 +87,25 @@ describe('NewClassroomModal', () => {
     expect(onCancel).toHaveBeenCalledTimes(2)
   })
 
+  it('ignores other keys while the modal is open', () => {
+    const { onCancel } = renderModal()
+    fireEvent.keyDown(window, { key: 'a' })
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  it('shows the empty-companion hint', () => {
+    useCompanionStore.setState({ companions: [] })
+    renderModal()
+    expect(screen.getByText(/还没有角色/)).toBeTruthy()
+  })
+
+  it('shows the empty-textbook hint in the textbook step', () => {
+    useTextbookStore.setState({ textbooks: [] })
+    renderModal({ initialCompanion: LANDAU })
+    expect(screen.getByText(/暂无教材/)).toBeTruthy()
+    expect(screen.queryByText('费曼物理学')).toBeNull()
+  })
+
   it('exposes dialog semantics', () => {
     renderModal()
     const dialog = screen.getByRole('dialog')

@@ -209,3 +209,63 @@ describe('StatsView — heat levels and title fallbacks', () => {
     expect(await screen.findByText('未知教材')).toBeTruthy()
   })
 })
+
+describe('StatsView — incomplete overview data', () => {
+  it('tolerates a missing stats overview', async () => {
+    dataMocks.statsOverview.mockResolvedValue(undefined)
+    companionsGet.mockResolvedValue(null)
+
+    render(<StatsView />)
+    await screen.findByText('学习统计')
+
+    expect(cardValue('总课堂数')).toBe('3')
+    expect(cardValue('累计学习时长')).toBe('0 分钟')
+    expect(cardValue('总消息数')).toBe('0')
+    expect(cardValue('学习产物')).toBe('0')
+    // The weekly report still renders with the empty-state labels.
+    expect(screen.getAllByText('本周暂无学习')).toHaveLength(2)
+
+    fireEvent.click(screen.getByText('导出 Markdown'))
+    await waitFor(() => expect(dataMocks.writeTextFile).toHaveBeenCalledTimes(1))
+    const [, content] = dataMocks.writeTextFile.mock.calls[0] as [string, string]
+    expect(content).toContain('- 学习时长：0 分钟')
+    expect(content).toContain('（无）')
+  })
+
+  it('renders empty distributions and skips the export when loading the overview fails', async () => {
+    dataMocks.listConversations.mockRejectedValue(new Error('ipc down'))
+
+    render(<StatsView />)
+    await screen.findByText('学习统计')
+
+    expect(cardValue('总课堂数')).toBe('0')
+    // No weekly-report card (and no export button) without an overview.
+    expect(screen.queryByText('本周报告')).toBeNull()
+    expect(screen.queryByText('导出 Markdown')).toBeNull()
+    expect(saveFile).not.toHaveBeenCalled()
+    expect(dataMocks.writeTextFile).not.toHaveBeenCalled()
+  })
+
+  it('tolerates a non-Error rejection from the stats overview', async () => {
+    dataMocks.statsOverview.mockRejectedValue('ipc down')
+
+    render(<StatsView />)
+    await screen.findByText('学习统计')
+
+    expect(cardValue('总课堂数')).toBe('0')
+    expect(screen.queryByText('本周报告')).toBeNull()
+  })
+
+  it('falls back to raw ids for unknown weekly distribution keys', async () => {
+    dataMocks.statsOverview.mockResolvedValue({
+      ...OVERVIEW,
+      week: { ...OVERVIEW.week, textbook: { tb_ghost: 3 }, companion: { comp_ghost: 5 } }
+    })
+
+    render(<StatsView />)
+    await screen.findByText('学习统计')
+
+    expect(await screen.findByText('未知教材')).toBeTruthy()
+    expect(screen.getByText('comp_ghost')).toBeTruthy()
+  })
+})

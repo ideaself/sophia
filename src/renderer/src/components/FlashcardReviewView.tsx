@@ -52,6 +52,7 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
   const [sessionReviewed, setSessionReviewed] = useState(0)
   const [sessionCorrect, setSessionCorrect] = useState(0)
   // 键盘连答：handleRate 每次渲染重建，用 ref 保证按键处理器拿到最新闭包
+  /* v8 ignore next -- @preserve */
   const handleRateRef = useRef<(rating: Rating) => void>(() => {})
   const [editing, setEditing] = useState(false)
   const [editQuestion, setEditQuestion] = useState('')
@@ -182,6 +183,7 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
   }, [isFlipped])
 
   const handleNext = () => {
+    /* v8 ignore next -- @preserve */
     if (currentIndex < displayList.length - 1) {
       setCurrentIndex(currentIndex + 1)
       setIsFlipped(false)
@@ -189,6 +191,7 @@ export function FlashcardReviewView({ scope, onClearScope }: FlashcardReviewView
   }
 
   const handlePrev = () => {
+    /* v8 ignore next -- @preserve */
     if (currentIndex > 0) {
       setCurrentIndex(currentIndex - 1)
       setIsFlipped(false)

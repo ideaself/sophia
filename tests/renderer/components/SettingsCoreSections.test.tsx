@@ -8,6 +8,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import { SettingsFontScaleSection } from '../../../src/renderer/src/components/SettingsFontScaleSection'
 import { SettingsLockSection } from '../../../src/renderer/src/components/SettingsLockSection'
 import { SettingsClassroomBehaviorSection } from '../../../src/renderer/src/components/SettingsClassroomBehaviorSection'
+import { SettingsView } from '../../../src/renderer/src/components/SettingsView'
 
 const lockApi = {
   has: vi.fn(),
@@ -113,6 +114,16 @@ describe('SettingsClassroomBehaviorSection', () => {
     expect(localStorage.getItem('sophia.hideNarration')).toBe('1')
   })
 
+  it('turns narration hiding back off', () => {
+    localStorage.setItem('sophia.hideNarration', '1')
+    render(<SettingsClassroomBehaviorSection />)
+
+    const checkbox = screen.getByRole('checkbox')
+    expect(checkbox).toHaveProperty('checked', true)
+    fireEvent.click(checkbox)
+    expect(localStorage.getItem('sophia.hideNarration')).toBe('0')
+  })
+
   it('dispatches a goal-changed event so the classroom ring refreshes', () => {
     const listener = vi.fn()
     window.addEventListener('sophia:goal-changed', listener)
@@ -125,6 +136,18 @@ describe('SettingsClassroomBehaviorSection', () => {
 })
 
 describe('SettingsLockSection — failure branches', () => {
+  it('shows Error messages from lock-set failures', async () => {
+    render(<SettingsLockSection />)
+    await waitFor(() => expect(screen.getByText('启用档案锁')).toBeTruthy())
+
+    lockApi.set.mockRejectedValueOnce(new Error('keychain locked'))
+    fireEvent.change(screen.getByPlaceholderText(/设置解锁密码/), { target: { value: '1234' } })
+    fireEvent.change(screen.getByPlaceholderText('再次输入确认'), { target: { value: '1234' } })
+    fireEvent.click(screen.getByText('启用档案锁'))
+
+    expect(await screen.findByText('keychain locked')).toBeTruthy()
+  })
+
   it('treats an unreadable lock state as unlocked and reports set failures', async () => {
     lockApi.has.mockRejectedValueOnce(new Error('db closed'))
     render(<SettingsLockSection />)
@@ -136,5 +159,32 @@ describe('SettingsLockSection — failure branches', () => {
     fireEvent.click(screen.getByText('启用档案锁'))
 
     expect(await screen.findByText('设置失败')).toBeTruthy()
+  })
+})
+
+describe('SettingsView', () => {
+  it('renders the settings shell with its sections', async () => {
+    Object.defineProperty(window, 'sophia', {
+      configurable: true,
+      value: {
+        data: {
+          lock: lockApi,
+          archive: { list: vi.fn(async () => []) }
+        },
+        providers: { list: vi.fn(async () => []) },
+        getVersion: vi.fn(async () => '0.1.0'),
+        sync: {
+          hasWebdavPassword: vi.fn(async () => false),
+          onProgress: vi.fn(() => () => {})
+        }
+      }
+    })
+
+    render(<SettingsView />)
+
+    expect(screen.getByText('设置')).toBeTruthy()
+    expect(screen.getByText('界面字号')).toBeTruthy()
+    expect(await screen.findByText('尚未配置模型服务')).toBeTruthy()
+    expect(screen.getByText(/Sophia v0\.1\.0/)).toBeTruthy()
   })
 })

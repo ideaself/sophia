@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, symlink, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -93,5 +93,17 @@ describe('collectSyncableFiles', () => {
 
     const files = await collected()
     expect(files).toEqual(['conversations/c_1/messages.json'])
+  })
+
+  it('does not follow symlinked directories (neither file nor directory entries)', async () => {
+    await touch('real/inside.md')
+    await symlink(
+      join(dataRoot, 'real'),
+      join(dataRoot, 'linked'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    )
+
+    const files = await collected()
+    expect(files).toEqual(['real/inside.md'])
   })
 })

@@ -7,14 +7,23 @@ import { describe, it, expect, beforeEach } from 'vitest'
 
 import { loadDictPopupPrefs, DEFAULT_DICT_POPUP_PREFS, isEnglishWord } from '../../src/shared/dict'
 import { parseEventCard } from '../../src/shared/event-cards'
-import { getFontScale, FONT_SCALE_OPTIONS } from '../../src/shared/font-scale'
-import { citationMatchesTextbook, hasTextbookCitation } from '../../src/shared/grounding'
+import {
+  applyFontScale,
+  getFontScale,
+  setFontScale,
+  FONT_SCALE_OPTIONS
+} from '../../src/shared/font-scale'
+import { citationMatchesTextbook, extractCitations, hasTextbookCitation } from '../../src/shared/grounding'
 import { applyNotesToHtml } from '../../src/shared/reading-notes-utils'
 import { parseSelfTestQuestions } from '../../src/shared/self-test-utils'
 import { parsePersistedTabs } from '../../src/shared/tab-persistence'
 import { loadTextTemplates, saveTextTemplates } from '../../src/shared/text-templates'
 import { loadThinkingMode, saveThinkingMode } from '../../src/shared/thinking'
-import { loadVoiceTriggers } from '../../src/shared/voice-trigger'
+import {
+  DEFAULT_VOICE_TRIGGERS,
+  loadVoiceTriggers,
+  saveVoiceTriggers
+} from '../../src/shared/voice-trigger'
 
 beforeEach(() => {
   localStorage.clear()
@@ -44,6 +53,25 @@ describe('font scale', () => {
     expect(getFontScale()).toBe('standard')
     expect(FONT_SCALE_OPTIONS.length).toBeGreaterThan(0)
   })
+
+  it('falls back to 16px for an unknown scale key', () => {
+    applyFontScale('gigantic' as never)
+    expect(document.documentElement.style.fontSize).toBe('16px')
+  })
+
+  it('applies a stored scale and defaults applyFontScale to it', () => {
+    localStorage.setItem('sophia.fontScale', 'large')
+    expect(getFontScale()).toBe('large')
+
+    applyFontScale()
+    expect(document.documentElement.style.fontSize).toBe('18px')
+  })
+
+  it('setFontScale persists the choice and applies it', () => {
+    setFontScale('xlarge')
+    expect(localStorage.getItem('sophia.fontScale')).toBe('xlarge')
+    expect(document.documentElement.style.fontSize).toBe('20px')
+  })
 })
 
 describe('grounding', () => {
@@ -51,6 +79,13 @@ describe('grounding', () => {
     expect(citationMatchesTextbook({ marker: '', quoted: '' }, '教材内容')).toBe(false)
     expect(citationMatchesTextbook({ marker: '', quoted: '很长的引用内容片段' }, '')).toBe(false)
     expect(hasTextbookCitation('没有任何出处')).toBe(false)
+  })
+
+  it('extracts citation blocks and skips markers without a quoted body', () => {
+    expect(extractCitations('> 【教材出处 · 《高等数学》 · 第3章】\n普通文字')).toEqual([])
+    expect(
+      extractCitations('> 【教材出处 · 《高等数学》 · 第3章】\n> 引文内容')
+    ).toEqual([{ marker: '【教材出处 · 《高等数学》 · 第3章】', quoted: '引文内容' }])
   })
 })
 
@@ -104,6 +139,11 @@ describe('tab persistence', () => {
       activeIdx: 0
     })
   })
+
+  it('defaults a missing activeIdx to the first tab', () => {
+    const parsed = parsePersistedTabs('{"tabs":[{"title":"A","conversationId":"c1"}]}')
+    expect(parsed?.activeIdx).toBe(0)
+  })
 })
 
 describe('text templates', () => {
@@ -129,6 +169,14 @@ describe('thinking mode', () => {
     saveThinkingMode('on')
     expect(localStorage.getItem('sophia.thinkingEnabled')).toBe('1')
   })
+
+  it('persists off and auto modes', () => {
+    saveThinkingMode('off')
+    expect(localStorage.getItem('sophia.thinkingEnabled')).toBe('0')
+    saveThinkingMode('auto')
+    expect(localStorage.getItem('sophia.thinkingEnabled')).toBe('auto')
+    expect(loadThinkingMode()).toBe('auto')
+  })
 })
 
 describe('voice triggers', () => {
@@ -140,5 +188,26 @@ describe('voice triggers', () => {
 
     localStorage.setItem('sophia.voiceTriggers', '{bad json')
     expect(loadVoiceTriggers().send).toBeTruthy()
+  })
+
+  it('trims both stored triggers and falls back for non-string values', () => {
+    localStorage.setItem(
+      'sophia.voiceTriggers',
+      JSON.stringify({ send: ' 开始 ', clear: ' 停下 ' })
+    )
+    expect(loadVoiceTriggers()).toEqual({ send: '开始', clear: '停下' })
+
+    localStorage.setItem('sophia.voiceTriggers', JSON.stringify({ send: 42, clear: '   ' }))
+    expect(loadVoiceTriggers()).toEqual(DEFAULT_VOICE_TRIGGERS)
+  })
+
+  it('returns defaults when nothing was stored', () => {
+    localStorage.removeItem('sophia.voiceTriggers')
+    expect(loadVoiceTriggers()).toEqual(DEFAULT_VOICE_TRIGGERS)
+  })
+
+  it('round-trips saved triggers through storage', () => {
+    saveVoiceTriggers({ send: '发射', clear: '清除' })
+    expect(loadVoiceTriggers()).toEqual({ send: '发射', clear: '清除' })
   })
 })

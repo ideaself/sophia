@@ -175,6 +175,15 @@ describe('SettingsConfigSection — import branches', () => {
     expect(await screen.findByText('导入失败：文件格式不正确')).toBeTruthy()
   })
 
+  it('reports a failed settings write', async () => {
+    api.writeTextFile.mockResolvedValueOnce({ success: false })
+    render(<SettingsConfigSection />)
+
+    fireEvent.click(screen.getByText('导出配置'))
+
+    expect(await screen.findByText('导出失败')).toBeTruthy()
+  })
+
   it('reports read failures from the file reader', async () => {
     const OriginalReader = window.FileReader
     class FailingReader {
@@ -196,6 +205,53 @@ describe('SettingsConfigSection — import branches', () => {
     } finally {
       vi.stubGlobal('FileReader', OriginalReader)
     }
+  })
+})
+
+describe('SettingsBackupSection — fallback messages', () => {
+  it('reports a non-Error backup rejection with the fallback message', async () => {
+    api.exportBackup.mockRejectedValueOnce('plain failure')
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('导出全部数据备份'))
+
+    expect(await screen.findByText('备份失败')).toBeTruthy()
+  })
+
+  it('reports restore failures without an error string', async () => {
+    api.restoreBackup.mockResolvedValueOnce({ success: false })
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('从备份恢复'))
+
+    expect(await screen.findByText('恢复失败：未知错误')).toBeTruthy()
+  })
+
+  it('reports a non-Error restore rejection with the fallback message', async () => {
+    api.restoreBackup.mockRejectedValueOnce('plain failure')
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('从备份恢复'))
+
+    expect(await screen.findByText('恢复失败：未知错误')).toBeTruthy()
+  })
+
+  it('reports a data-directory failure without an error string', async () => {
+    api.openDataDir.mockResolvedValueOnce({ success: false })
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('打开数据目录'))
+
+    expect(await screen.findByText('无法打开数据目录：未知错误')).toBeTruthy()
+  })
+
+  it('shows the restoring state while a restore is in flight', async () => {
+    api.restoreBackup.mockImplementationOnce(() => new Promise(() => {}))
+    render(<SettingsBackupSection />)
+
+    fireEvent.click(screen.getByText('从备份恢复'))
+
+    expect(await screen.findByText('恢复中...')).toBeTruthy()
   })
 })
 

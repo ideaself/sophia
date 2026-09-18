@@ -218,6 +218,26 @@ describe('archive-store', () => {
     await expect(listArchive(dataRoot)).resolves.toEqual([])
   })
 
+  it('defaults a missing originalPath to an empty string', async () => {
+    await mkdir(archiveDir(dataRoot), { recursive: true })
+    await writeFile(
+      join(archiveDir(dataRoot), 'manifest.json'),
+      JSON.stringify({
+        no_path: {
+          id: 'no_path',
+          kind: 'textbook',
+          label: 'x',
+          movedAt: new Date().toISOString()
+        }
+      }),
+      'utf-8'
+    )
+
+    const entries = await listArchive(dataRoot)
+    expect(entries).toHaveLength(1)
+    expect(entries[0].originalPath).toBe('')
+  })
+
   it('refuses unsafe ids and companion entries on restore', async () => {
     await mkdir(archiveDir(dataRoot), { recursive: true })
 

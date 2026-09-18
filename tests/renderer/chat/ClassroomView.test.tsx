@@ -1078,3 +1078,562 @@ describe('ClassroomView — guard branches', () => {
     expect(screen.queryByText('历史课')).toBeNull()
   })
 })
+
+describe('ClassroomView — branch closure', () => {
+  it('reads a valid daily goal at mount and tracks goal-change events', async () => {
+    localStorage.setItem('sophia.dailyGoal', '45')
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+    expect(await screen.findByTitle(/今日已学习 0\/45 分钟/)).toBeTruthy()
+
+    localStorage.setItem('sophia.dailyGoal', '60')
+    act(() => {
+      window.dispatchEvent(new Event('sophia:goal-changed'))
+    })
+    await screen.findByTitle(/今日已学习 0\/60 分钟/)
+
+    localStorage.removeItem('sophia.dailyGoal')
+    act(() => {
+      window.dispatchEvent(new Event('sophia:goal-changed'))
+    })
+    await waitFor(() => expect(screen.queryByTitle(/今日已学习/)).toBeNull())
+  })
+
+  it('keeps the surviving tab when a hydrated conversation was deleted', async () => {
+    localStorage.setItem(
+      CLASSROOM_TABS_KEY,
+      JSON.stringify({
+        tabs: [
+          { title: '保留课', conversationId: 'conv_b', input: '' },
+          { title: '已删除课', conversationId: 'conv_a', input: '' }
+        ],
+        activeIdx: 1
+      })
+    )
+    dataMocks.getConversation.mockImplementation(async (id: string) =>
+      id === 'conv_a' ? null : { id, title: '保留课', endedAt: null }
+    )
+    dataMocks.listMessages.mockResolvedValue([
+      { id: 'b1', conversationId: 'conv_b', role: 'user', content: '保留的消息', createdAt: '2026-07-06T09:00:00Z' }
+    ])
+    render(<Harness chat={createFakeChat()} />)
+
+    expect(await screen.findByText('保留的消息')).toBeTruthy()
+    expect(screen.queryByText('已删除课')).toBeNull()
+    expect(screen.getByText('保留课')).toBeTruthy()
+  })
+
+  it('falls back to the first tab when the persisted active index is out of range', async () => {
+    localStorage.setItem(
+      CLASSROOM_TABS_KEY,
+      JSON.stringify({
+        tabs: [{ title: '唯一课', conversationId: null, input: '越界草稿' }],
+        activeIdx: 7
+      })
+    )
+    render(<Harness chat={createFakeChat()} />)
+
+    expect(screen.getByText('唯一课')).toBeTruthy()
+    expect((screen.getByPlaceholderText(/输入你的问题/) as HTMLTextAreaElement).value).toBe(
+      '越界草稿'
+    )
+  })
+
+  it('drops an AI draft that resolves after its tab was closed', async () => {
+    localStorage.setItem(
+      CLASSROOM_TABS_KEY,
+      JSON.stringify({
+        tabs: [
+          { title: '第一课', conversationId: 'conv_1', input: '' },
+          { title: '临时课', conversationId: null, input: '' }
+        ],
+        activeIdx: 1
+      })
+    )
+    let releaseDraft!: (value: { content: string }) => void
+    dataMocks.composeAiAnswer.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseDraft = resolve })
+    )
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await waitFor(() => expect(dataMocks.listMessages).toHaveBeenCalledWith('conv_1'))
+
+    fireEvent.click(screen.getByTitle(/AI 代答/))
+    await screen.findByText('起草中...')
+    fireEvent.click(screen.getByLabelText('关闭标签 临时课'))
+    await waitFor(() => expect(screen.getByText('第一课')).toBeTruthy())
+
+    act(() => releaseDraft({ content: '迟到的草稿' }))
+    await waitFor(() => expect(dataMocks.composeAiAnswer).toHaveBeenCalled())
+    expect((screen.getByPlaceholderText(/输入你的问题/) as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('inserts a template through the shortcut without a mounted composer', async () => {
+    localStorage.setItem('sophia.textTemplates', JSON.stringify(['无输入框模板']))
+    const chat = createFakeChat()
+    const { rerender } = render(<Harness chat={chat} companion={null} />)
+    await screen.findByText('请先选择一位学习伙伴')
+
+    fireEvent.keyDown(window, { key: '1', altKey: true })
+
+    rerender(<Harness chat={chat} companion={COMPANION} />)
+    expect(await screen.findByDisplayValue('无输入框模板')).toBeTruthy()
+  })
+
+  it('does not cancel a stream that is not running when the companion changes', async () => {
+    const chat = createFakeChat()
+    const { rerender } = render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    rerender(
+      <Harness chat={chat} companion={{ ...COMPANION, id: 'comp_other', name: '祖冲之' }} />
+    )
+
+    await waitFor(() => expect(screen.getByText('祖冲之')).toBeTruthy())
+    expect(chat.cancelStream).not.toHaveBeenCalled()
+  })
+
+  it('keeps the math and template panels open on inside clicks', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getByTitle('插入数学符号 / 公式 (Σ)'))
+    fireEvent.mouseDown(await screen.findByText('π'))
+    expect(screen.getByText('π')).toBeTruthy()
+
+    fireEvent.click(screen.getByTitle('插入常用文本模板'))
+    await waitFor(() => expect(screen.queryByText('π')).toBeNull())
+    fireEvent.mouseDown(screen.getByLabelText('关闭模板面板'))
+    expect(screen.getByLabelText('关闭模板面板')).toBeTruthy()
+  })
+
+  it('does not steal focus from the title editor on a tab switch', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.keyDown(window, { key: 't', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true })
+    fireEvent.click(screen.getByTitle('点击重命名'))
+    const editor = await screen.findByDisplayValue('07-06 朗道')
+    editor.focus()
+    expect(document.activeElement).toBe(editor)
+
+    fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true })
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+    })
+
+    expect(document.activeElement).not.toBe(screen.getByPlaceholderText(/输入你的问题/))
+  })
+
+  it('closes the active last tab with Ctrl+Shift+W', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.keyDown(window, { key: 't', ctrlKey: true })
+    await waitFor(() => expect(screen.getAllByRole('tab')).toHaveLength(2))
+
+    fireEvent.keyDown(window, { key: 'w', ctrlKey: true, shiftKey: true })
+    await waitFor(() => expect(screen.getAllByRole('tab')).toHaveLength(1))
+    expect(screen.getByText('07-06 朗道')).toBeTruthy()
+  })
+
+  it('wraps to the last tab with Ctrl+Shift+Tab from the first', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.keyDown(window, { key: 't', ctrlKey: true })
+    fireEvent.change(screen.getByPlaceholderText(/输入你的问题/), {
+      target: { value: '末页草稿' }
+    })
+    fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true })
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText(/输入你的问题/) as HTMLTextAreaElement).value).toBe('')
+    )
+    fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true, shiftKey: true })
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText(/输入你的问题/) as HTMLTextAreaElement).value).toBe(
+        '末页草稿'
+      )
+    )
+  })
+
+  it('closes a later tab without moving the active index', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.keyDown(window, { key: 't', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true })
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText(/输入你的问题/) as HTMLTextAreaElement).value).toBe('')
+    )
+
+    fireEvent.click(screen.getByLabelText('关闭标签 新对话'))
+    await waitFor(() => expect(screen.getAllByRole('tab')).toHaveLength(1))
+    expect(screen.getByText('07-06 朗道')).toBeTruthy()
+  })
+
+  it('keeps the class running when end-conversation reports failure', async () => {
+    dataMocks.endConversation.mockResolvedValue({
+      success: false,
+      artifacts: 0,
+      farewell: '',
+      failures: [],
+      pending: false
+    })
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getByText('下课'))
+    await waitFor(() => expect(dataMocks.endConversation).toHaveBeenCalledWith('conv_1', 'standard'))
+    expect(screen.queryByText('课程已结束')).toBeNull()
+    expect(screen.getByText('A1 一种积分运算')).toBeTruthy()
+  })
+
+  it('keeps the failure notice after a failed redo and updates on success', async () => {
+    dataMocks.endConversation.mockResolvedValue({
+      success: true,
+      artifacts: 2,
+      farewell: '',
+      failures: ['flashcards'],
+      pending: false
+    })
+    dataMocks.redoArtifacts
+      .mockResolvedValueOnce({ success: false, artifacts: 0, failures: [] })
+      .mockResolvedValueOnce({ success: true, artifacts: 3, failures: ['diary'] })
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getByText('下课'))
+    await screen.findByText(/1 项学习摘要生成失败/)
+
+    fireEvent.click(screen.getByText('补齐缺失产物'))
+    await waitFor(() => expect(dataMocks.redoArtifacts).toHaveBeenCalledTimes(1))
+    await screen.findByText(/1 项学习摘要生成失败/)
+
+    fireEvent.click(screen.getByText('补齐缺失产物'))
+    await waitFor(() => expect(dataMocks.redoArtifacts).toHaveBeenCalledTimes(2))
+    await screen.findByText(/已自动生成 5 个学习摘要/)
+    expect(screen.getByText(/1 项学习摘要生成失败/)).toBeTruthy()
+  })
+
+  it('uses the typed draft as the AI-answer question and prepends it', async () => {
+    dataMocks.composeAiAnswer.mockResolvedValue({ content: '示范回答' })
+    const chat = createFakeChat()
+    render(<Harness chat={chat} freshStartNonce={1} />)
+
+    fireEvent.change(screen.getByPlaceholderText(/输入你的问题/), {
+      target: { value: '我自己写的问题' }
+    })
+    fireEvent.click(screen.getByTitle(/AI 代答/))
+
+    await waitFor(() =>
+      expect(dataMocks.composeAiAnswer).toHaveBeenCalledWith('我自己写的问题', '')
+    )
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText(/输入你的问题/) as HTMLTextAreaElement).value).toBe(
+        '我自己写的问题\n示范回答'
+      )
+    )
+  })
+
+  it('falls back to a placeholder AI-answer question', async () => {
+    dataMocks.composeAiAnswer.mockResolvedValue({ content: '示范回答' })
+    const chat = createFakeChat()
+    render(<Harness chat={chat} freshStartNonce={1} />)
+
+    fireEvent.click(screen.getByTitle(/AI 代答/))
+
+    await waitFor(() =>
+      expect(dataMocks.composeAiAnswer).toHaveBeenCalledWith('（当前没有明确的问题）', '')
+    )
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText(/输入你的问题/) as HTMLTextAreaElement).value).toBe(
+        '示范回答'
+      )
+    )
+  })
+
+  it('shows the fallback AI-answer error for non-Error rejections', async () => {
+    dataMocks.composeAiAnswer.mockRejectedValueOnce('offline')
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getByTitle(/AI 代答/))
+
+    expect(await screen.findByText('AI 代答失败，请重试')).toBeTruthy()
+  })
+
+  it('leaves the draft untouched when the AI answer is empty', async () => {
+    dataMocks.composeAiAnswer.mockResolvedValue({ content: '' })
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.change(screen.getByPlaceholderText(/输入你的问题/), {
+      target: { value: '保留的草稿' }
+    })
+    fireEvent.click(screen.getByTitle(/AI 代答/))
+
+    await waitFor(() => expect(screen.getByText('AI 代答')).toBeTruthy())
+    expect((screen.getByPlaceholderText(/输入你的问题/) as HTMLTextAreaElement).value).toBe(
+      '保留的草稿'
+    )
+  })
+
+  it('ignores an edit that finishes after its tab was closed', async () => {
+    localStorage.setItem(
+      CLASSROOM_TABS_KEY,
+      JSON.stringify({
+        tabs: [
+          { title: '第一课', conversationId: 'conv_1', input: '' },
+          { title: '第二课', conversationId: 'conv_b', input: '' }
+        ],
+        activeIdx: 1
+      })
+    )
+    dataMocks.getConversation.mockImplementation(async (id: string) => ({
+      id,
+      title: id,
+      endedAt: null
+    }))
+    dataMocks.listMessages.mockImplementation(async (id: string) =>
+      id === 'conv_b'
+        ? [
+            {
+              id: 'b1',
+              conversationId: 'conv_b',
+              role: 'user',
+              content: 'B 的问题',
+              createdAt: '2026-07-06T09:00:00Z'
+            }
+          ]
+        : STORED_MESSAGES
+    )
+    let releaseEdit!: (value: { id: string }) => void
+    dataMocks.updateMessage.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseEdit = resolve })
+    )
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('B 的问题')
+
+    fireEvent.click(screen.getByLabelText('编辑消息'))
+    fireEvent.change(await screen.findByDisplayValue('B 的问题'), {
+      target: { value: 'B 改后' }
+    })
+    fireEvent.click(screen.getByText('保存'))
+    fireEvent.click(screen.getByLabelText('关闭标签 第二课'))
+    await waitFor(() => expect(screen.getByText('Q1 什么是卷积？')).toBeTruthy())
+
+    act(() => releaseEdit({ id: 'b1' }))
+    await waitFor(() =>
+      expect(dataMocks.updateMessage).toHaveBeenCalledWith('conv_b', 'b1', 'B 改后')
+    )
+    expect(screen.getByText('Q1 什么是卷积？')).toBeTruthy()
+  })
+
+  it('ignores a delete that finishes after its tab was closed', async () => {
+    localStorage.setItem(
+      CLASSROOM_TABS_KEY,
+      JSON.stringify({
+        tabs: [
+          { title: '第一课', conversationId: 'conv_1', input: '' },
+          { title: '第二课', conversationId: 'conv_b', input: '' }
+        ],
+        activeIdx: 1
+      })
+    )
+    dataMocks.getConversation.mockImplementation(async (id: string) => ({
+      id,
+      title: id,
+      endedAt: null
+    }))
+    dataMocks.listMessages.mockImplementation(async (id: string) =>
+      id === 'conv_b'
+        ? [
+            {
+              id: 'b1',
+              conversationId: 'conv_b',
+              role: 'user',
+              content: 'B 的问题',
+              createdAt: '2026-07-06T09:00:00Z'
+            }
+          ]
+        : STORED_MESSAGES
+    )
+    let releaseDelete!: (value: boolean) => void
+    dataMocks.deleteMessage.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseDelete = resolve })
+    )
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('B 的问题')
+
+    fireEvent.click(screen.getByLabelText('删除消息'))
+    fireEvent.click(screen.getByLabelText('关闭标签 第二课'))
+    await waitFor(() => expect(screen.getByText('Q1 什么是卷积？')).toBeTruthy())
+
+    act(() => releaseDelete(true))
+    await waitFor(() => expect(dataMocks.deleteMessage).toHaveBeenCalledWith('conv_b', 'b1'))
+    expect(screen.getByText('Q1 什么是卷积？')).toBeTruthy()
+  })
+
+  it('ignores a rewind that finishes after its tab was closed', async () => {
+    localStorage.setItem(
+      CLASSROOM_TABS_KEY,
+      JSON.stringify({
+        tabs: [
+          { title: '第一课', conversationId: 'conv_1', input: '' },
+          { title: '第二课', conversationId: 'conv_b', input: '' }
+        ],
+        activeIdx: 1
+      })
+    )
+    dataMocks.getConversation.mockImplementation(async (id: string) => ({
+      id,
+      title: id,
+      endedAt: null
+    }))
+    dataMocks.listMessages.mockImplementation(async (id: string) =>
+      id === 'conv_b'
+        ? [
+            {
+              id: 'b1',
+              conversationId: 'conv_b',
+              role: 'user',
+              content: 'B 的问题',
+              createdAt: '2026-07-06T09:00:00Z'
+            },
+            {
+              id: 'b2',
+              conversationId: 'conv_b',
+              role: 'assistant',
+              content: 'B 的回答',
+              createdAt: '2026-07-06T09:00:05Z'
+            }
+          ]
+        : STORED_MESSAGES
+    )
+    let releaseConfirm!: (ok: boolean) => void
+    dialogMocks.confirm.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseConfirm = resolve })
+    )
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('B 的回答')
+
+    fireEvent.click(screen.getAllByLabelText('从这里重新开始')[0])
+    fireEvent.click(screen.getByLabelText('关闭标签 第二课'))
+    await waitFor(() => expect(screen.getByText('Q1 什么是卷积？')).toBeTruthy())
+
+    act(() => releaseConfirm(true))
+    await waitFor(() =>
+      expect(dataMocks.truncateConversation).toHaveBeenCalledWith('conv_b', 'b1')
+    )
+    expect(screen.getByText('Q1 什么是卷积？')).toBeTruthy()
+  })
+
+  it('skips a rewind when the target message is gone from the tab', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    let releaseConfirm!: (ok: boolean) => void
+    dialogMocks.confirm.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseConfirm = resolve })
+    )
+
+    fireEvent.keyDown(window, { key: 't', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true })
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText(/输入你的问题/) as HTMLTextAreaElement).value).toBe('')
+    )
+
+    fireEvent.click(screen.getAllByLabelText('从这里重新开始')[0])
+    fireEvent.click(screen.getByLabelText('关闭标签 07-06 朗道'))
+    await waitFor(() => expect(screen.queryByText('A1 一种积分运算')).toBeNull())
+
+    act(() => releaseConfirm(true))
+    await waitFor(() =>
+      expect(dataMocks.truncateConversation).toHaveBeenCalledWith('conv_1', 'm1')
+    )
+    expect(screen.queryByText('A1 一种积分运算')).toBeNull()
+  })
+
+  it('keeps the message list when the truncate reports nothing removed', async () => {
+    dataMocks.truncateConversation.mockResolvedValueOnce(false)
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getAllByLabelText('从这里重新开始')[0])
+
+    await waitFor(() => expect(dataMocks.truncateConversation).toHaveBeenCalledWith('conv_1', 'm1'))
+    expect(screen.getByText('A1 一种积分运算')).toBeTruthy()
+  })
+
+  it('shows the redo affordance when background artifacts partially fail', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getByText('下课'))
+    await screen.findByText('课程已结束')
+
+    act(() => {
+      artifactsCb?.({ conversationId: 'conv_1', artifacts: 1, farewell: '', failures: ['flashcards'] })
+    })
+    expect(await screen.findByText(/1 项学习摘要生成失败/)).toBeTruthy()
+  })
+
+  it('toggles the class mode back from feynman to standard', async () => {
+    const chat = createFakeChat()
+    render(<Harness chat={chat} />)
+    await screen.findByText('A1 一种积分运算')
+
+    fireEvent.click(screen.getByTitle(/切换课堂模式/))
+    expect(screen.getByText('🗣 费曼回讲')).toBeTruthy()
+
+    fireEvent.click(screen.getByTitle(/切换课堂模式/))
+    expect(screen.getByText('🎓 标准课堂')).toBeTruthy()
+  })
+
+  it('does not flag non user-assistant pairs for missing citations', async () => {
+    dataMocks.listMessages.mockResolvedValue([
+      {
+        id: 'm1',
+        conversationId: 'conv_1',
+        role: 'assistant',
+        content: '先给一个回答',
+        createdAt: '2026-07-06T09:00:00Z'
+      },
+      {
+        id: 'm2',
+        conversationId: 'conv_1',
+        role: 'user',
+        content: '那什么是卷积？',
+        createdAt: '2026-07-06T09:00:05Z'
+      }
+    ])
+    const chat = createFakeChat()
+    render(
+      <Harness
+        chat={chat}
+        textbook={{ id: 'tb_1', title: '物理讲义', format: 'pdf', originalFile: 'x.pdf' }}
+      />
+    )
+
+    await screen.findByText('那什么是卷积？')
+    expect(screen.queryByText(/未引用教材出处/)).toBeNull()
+  })
+})

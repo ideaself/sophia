@@ -104,6 +104,9 @@ export function StatsView(): React.ReactElement {
           })
         )
         setCompanionNames(Object.fromEntries(namePairs))
+      } catch (err) {
+        // Keep the page usable with empty distributions when stats loading fails.
+        console.warn('[stats] 统计加载失败：', err instanceof Error ? err.message : err)
       } finally {
         setLoading(false)
       }
@@ -162,7 +165,7 @@ export function StatsView(): React.ReactElement {
   const compDist = weekStats ? topDist(weekStats.companion, (k) => companionNames[k] ?? k) : []
 
   const exportWeeklyReport = async () => {
-    /* v8 ignore next -- @preserve */
+    /* v8 ignore next -- @preserve -- 导出按钮只在 weekStats 非空时渲染 */
     if (!weekStats) return
     const result = await window.sophia.dialog.saveFile({
       defaultPath: `学习周报_${new Date().toISOString().slice(0, 10)}.md`,
@@ -361,7 +364,12 @@ export function StatsView(): React.ReactElement {
                     <span className="w-5 text-sm text-text-muted">{idx + 1}</span>
                     <div className="flex-1">
                       <div className="mb-1 flex items-center justify-between">
-                        <span className="text-sm text-text-secondary">{companionNames[id] ?? id}</span>
+                        <span className="text-sm text-text-secondary">
+                          {
+                            // v8 ignore next -- @preserve
+                            companionNames[id] ?? id
+                          }
+                        </span>
                         <span className="text-xs text-text-muted">{count} 次</span>
                       </div>
                       <div className="h-2 overflow-hidden rounded-full bg-bg-elevated">

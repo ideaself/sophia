@@ -187,6 +187,13 @@ describe('sync IPC — transfers', () => {
     await handler(dead, CONFIG)
     expect(dead.sender.send).not.toHaveBeenCalled()
   })
+
+  it('skips pull progress sends for destroyed renderers', async () => {
+    const handler = mocks.handlers.get('sync:pull')!
+    const dead = { sender: { isDestroyed: () => true, send: vi.fn() } }
+    await expect(handler(dead, CONFIG)).resolves.toMatchObject({ success: false })
+    expect(dead.sender.send).not.toHaveBeenCalled()
+  })
 })
 
 describe('sync IPC — remote trash', () => {

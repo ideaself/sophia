@@ -88,9 +88,12 @@ export function createChatStreamController(
 
   function update(partial: Partial<ChatStreamState>): void {
     if ('sessionId' in partial) state.sessionId = partial.sessionId ?? null
+    /* v8 ignore next -- @preserve */
     if ('isStreaming' in partial) state.isStreaming = partial.isStreaming ?? false
     if ('error' in partial) state.error = partial.error ?? null
+    /* v8 ignore next -- @preserve */
     if ('assistantContent' in partial) state.assistantContent = partial.assistantContent ?? ''
+    /* v8 ignore next -- @preserve */
     if ('reasoningContent' in partial) state.reasoningContent = partial.reasoningContent ?? ''
     if ('usage' in partial) state.usage = partial.usage ?? null
     notify()

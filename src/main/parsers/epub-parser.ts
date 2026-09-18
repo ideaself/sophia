@@ -361,6 +361,9 @@ function posixResolve(dir: string, rel: string): string {
 }
 
 function mimeFromExt(path: string): string | null {
+  // String.prototype.split always returns at least one element, so pop()
+  // is never undefined here — the fallback is unreachable.
+  /* v8 ignore next -- @preserve */
   const ext = path.toLowerCase().split('.').pop() ?? ''
   switch (ext) {
     case 'png': return 'image/png'

@@ -119,6 +119,21 @@ describe('TextbooksView — import', () => {
     await screen.findByText('磁盘已满')
   })
 
+  it('surfaces a non-Error paste-import failure', async () => {
+    data.createTextbook.mockRejectedValueOnce('plain failure')
+    render(<TextbooksView />)
+
+    fireEvent.change(screen.getByPlaceholderText('教材标题（从文件导入时可留空）'), {
+      target: { value: 'x' }
+    })
+    fireEvent.change(screen.getByPlaceholderText('粘贴 Markdown 或文本内容...'), {
+      target: { value: 'y' }
+    })
+    fireEvent.click(screen.getByText('粘贴导入'))
+
+    expect(await screen.findByText('导入失败')).toBeTruthy()
+  })
+
   it('imports a file with an inferred format and title', async () => {
     dialog.openFile.mockResolvedValue({ canceled: false, filePaths: ['C:\\books\\线代.epub'] })
     render(<TextbooksView />)
@@ -270,6 +285,49 @@ describe('TextbooksView — EPUB repair', () => {
     await waitFor(() => expect(data.reparseEpubContent).toHaveBeenCalledWith('tb_broken'))
     await screen.findByText(/重新提取的正文/)
   })
+
+  it('keeps the stored body when re-extraction returns nothing', async () => {
+    useTextbookStore.setState({ textbooks: [broken()] })
+    data.getTextbook.mockResolvedValueOnce({ id: 'tb_broken', title: 'x', content: '书名 作者' })
+    data.reparseEpubContent.mockResolvedValueOnce({ success: true, content: '   ' })
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getByText('查看'))
+
+    await waitFor(() => expect(data.reparseEpubContent).toHaveBeenCalledWith('tb_broken'))
+    await screen.findByText('书名 作者')
+  })
+
+  it('reports a repair that returns success without content', async () => {
+    useTextbookStore.setState({ textbooks: [broken()] })
+    data.reparseEpubContent.mockResolvedValueOnce({ success: false, content: '' })
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getByText('⚠️ 正文缺失 · 重新提取'))
+
+    expect(await screen.findByText('「热力学讲义」重新提取失败')).toBeTruthy()
+  })
+
+  it('reports a non-Error repair failure', async () => {
+    useTextbookStore.setState({ textbooks: [broken()] })
+    data.reparseEpubContent.mockRejectedValueOnce('损坏')
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getByText('⚠️ 正文缺失 · 重新提取'))
+
+    expect(await screen.findByText(/重新提取失败：未知错误/)).toBeTruthy()
+  })
+
+  it('treats an EPUB without a content field as missing its body', () => {
+    useTextbookStore.setState({
+      textbooks: [
+        textbook({ id: 'tb_noc', format: 'epub', originalFile: 'n.epub', content: undefined })
+      ]
+    })
+    render(<TextbooksView />)
+
+    expect(screen.getByText(/1 本 EPUB 正文缺失/)).toBeTruthy()
+  })
 })
 
 describe('TextbooksView — import format inference', () => {
@@ -298,6 +356,16 @@ describe('TextbooksView — import format inference', () => {
     fireEvent.click(screen.getByText('从文件导入 (PDF/EPUB)'))
 
     expect(await screen.findByText('导入失败')).toBeTruthy()
+  })
+
+  it('surfaces an Error file-import failure with its message', async () => {
+    dialog.openFile.mockResolvedValue({ canceled: false, filePaths: ['C:\\books\\broken.pdf'] })
+    data.createTextbook.mockRejectedValueOnce(new Error('解析器崩溃'))
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getByText('从文件导入 (PDF/EPUB)'))
+
+    expect(await screen.findByText('解析器崩溃')).toBeTruthy()
   })
 })
 
@@ -332,6 +400,39 @@ describe('TextbooksView — content and edit failures', () => {
     fireEvent.click(screen.getByText('保存'))
 
     expect(await screen.findByText('保存失败')).toBeTruthy()
+  })
+
+  it('reports an Error save failure with its message', async () => {
+    data.updateTextbook.mockRejectedValueOnce(new Error('写入冲突'))
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getAllByText('编辑')[0])
+    await screen.findByDisplayValue('热力学讲义')
+    fireEvent.click(screen.getByText('保存'))
+
+    expect(await screen.findByText('写入冲突')).toBeTruthy()
+  })
+
+  it('opens an empty editor when the stored content is missing', async () => {
+    data.getTextbook.mockResolvedValueOnce(null)
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getAllByText('编辑')[0])
+
+    await screen.findByDisplayValue('热力学讲义')
+    expect(
+      (screen.getByPlaceholderText('教材内容 (Markdown)...') as HTMLTextAreaElement).value
+    ).toBe('')
+  })
+
+  it('shows an empty viewer when the stored content is missing', async () => {
+    data.getTextbook.mockResolvedValueOnce(null)
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getAllByText('查看')[0])
+
+    await waitFor(() => expect(screen.getByTestId('markdown')).toBeTruthy())
+    expect(screen.getByTestId('markdown').textContent).toBe('')
   })
 })
 

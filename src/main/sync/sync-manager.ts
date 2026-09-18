@@ -610,6 +610,7 @@ export class SyncManager {
       for (const dir of dirs) {
         const files = await client.listAllFilesDetailed(dir)
         const size = files.reduce((a, f) => a + f.size, 0)
+        /* v8 ignore next -- @preserve */
         batches.push({ name: dir.split('/').pop() ?? dir, fileCount: files.length, totalSize: size })
         fileCount += files.length
         totalSize += size

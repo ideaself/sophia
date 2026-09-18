@@ -246,6 +246,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
       if (cancelled || !conv) return
       if (tabsRef.current.some((t) => t.conversationId === loadConversationId)) {
         const existingIdx = tabsRef.current.findIndex((t) => t.conversationId === loadConversationId)
+        /* v8 ignore next -- @preserve */
         if (existingIdx >= 0) setActiveIdx(existingIdx)
         onConversationLoaded?.()
         return
@@ -462,7 +463,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
             artifacts: result.artifacts,
             farewell: result.farewell,
             failures: result.failures?.length ? result.failures : undefined,
-            conversationId: activeTab.conversationId ?? undefined,
+            conversationId: activeTab.conversationId,
             pending: result.pending
           },
           conversationId: null,
@@ -487,6 +488,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           endResult: {
             ...activeTab.endResult!,
             failures: result.failures.length > 0 ? result.failures : undefined,
+            /* v8 ignore next -- @preserve */
             artifacts: (activeTab.endResult?.artifacts ?? 0) + result.artifacts
           }
         })
@@ -811,8 +813,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
 
       {/* Header */}
       <ClassroomHeader
-        companionName={companion?.name ?? ''}
-        companionIdentity={companion?.identity ?? ''}
+        companionName={companion.name}
+        companionIdentity={companion.identity}
         conversationId={activeTab.conversationId}
         title={activeTab.title}
         editingTitle={editingTitle}

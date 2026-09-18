@@ -155,4 +155,16 @@ describe('compressMessages', () => {
       })
     ).resolves.toBe('')
   })
+
+  it('returns an empty summary when the response carries no content field', async () => {
+    llm.chat.mockResolvedValue({})
+
+    await expect(
+      compressMessages([makeMsg('user', 'x')], {
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.example.com',
+        model: 'm'
+      })
+    ).resolves.toBe('')
+  })
 })

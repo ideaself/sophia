@@ -72,6 +72,27 @@ describe('rehypeTexSource', () => {
     expect((tree.children[0] as { properties: Record<string, unknown> }).properties.dataTex).toBeUndefined()
     expect(() => rehypeTexSource()(null)).not.toThrow()
   })
+
+  it('handles math elements with missing or non-object children', () => {
+    const tree = {
+      type: 'root',
+      children: [
+        { type: 'element', tagName: 'span', properties: { className: ['math', 'math-inline'] } },
+        {
+          type: 'element',
+          tagName: 'span',
+          properties: { className: ['math'] },
+          children: ['raw text', null]
+        }
+      ]
+    }
+
+    rehypeTexSource()(tree)
+
+    const [missing, mixed] = tree.children as Array<{ properties: Record<string, unknown> }>
+    expect(missing.properties.dataTex).toBe('')
+    expect(mixed.properties.dataTex).toBe('')
+  })
 })
 
 describe('handleCopyMathSource', () => {
@@ -135,5 +156,16 @@ describe('handleCopyMathSource', () => {
     // restored for the copied text.
     expect(preventDefault).toHaveBeenCalled()
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('$x^2$'))
+  })
+
+  it('leaves a selection that starts and ends in a non-math element alone', () => {
+    document.body.innerHTML = '<p id="plain"><span id="inner">纯文本</span></p>'
+    select(document.getElementById('inner')!)
+    const { event, preventDefault } = copyEvent()
+
+    handleCopyMathSource(event)
+
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(writeText).not.toHaveBeenCalled()
   })
 })

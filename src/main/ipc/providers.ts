@@ -113,6 +113,7 @@ export function registerProviderIpc(
     if (!parsed.success) {
       return {
         success: false,
+        /* v8 ignore next -- @preserve -- zod 校验失败必带至少一条 issue，?. 与 ?? 均为纯防御 */
         error: parsed.error.issues[0]?.message ?? 'Invalid connection parameters'
       }
     }
