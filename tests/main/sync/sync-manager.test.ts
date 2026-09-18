@@ -1079,4 +1079,112 @@ describe('SyncManager — error and safety branches', () => {
   }, 30_000)
 })
 
+describe('SyncManager — defensive branches', () => {
+  it('treats a remote path outside the /sophia prefix as a plain relative path', async () => {
+    // Contract violation by the server: the fallback keeps the raw path
+    // instead of crashing or dropping the file.
+    class RogueClient extends FakeClient {
+      override async listAllFilesDetailed(): Promise<WebDavRemoteFile[]> {
+        return [{ path: 'stray.md', size: 1, lastmod: 'mod-1' }]
+      }
+    }
+    const fake = new RogueClient()
+    fake.setRemote('stray.md', 'x', 'mod-1')
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.success).toBe(true)
+    expect(await readFile(join(dataRoot, 'stray.md'), 'utf-8')).toBe('x')
+  })
+
+  it('treats a lastmod-only remote change as a conflict and keeps extension-less copies', async () => {
+    await touch('conv/notes', 'local version')
+    const ls = await localStat('conv/notes')
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: {
+        'conv/notes': entry(
+          { size: ls.size, mtimeMs: ls.mtimeMs - 1000 }, // local changed since the record
+          { size: 14, lastmod: 'mod-1' }                  // recorded remote: same size, older lastmod
+        )
+      }
+    })
+    const fake = new FakeClient()
+    fake.setRemote(R('conv/notes'), 'remote version', 'mod-2')
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.conflicts).toBe(1)
+    const names = (await readdir(join(dataRoot, 'conv'))).filter((n) =>
+      n.startsWith('notes.conflict-')
+    )
+    expect(names).toHaveLength(1)
+  })
+
+  it('forgets bookkeeping for a file that disappeared locally and remotely', async () => {
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: { 'ghost.md': entry({ size: 1, mtimeMs: 1 }, null) }
+    })
+    const fake = new FakeClient()
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.success).toBe(true)
+    expect(result.deleted).toBe(0)
+    expect(fake.downloads).toEqual([])
+  })
+
+  it('labels non-Error upload failures as unknown errors', async () => {
+    class StringRejectClient extends FakeClient {
+      override async uploadFile(): Promise<void> {
+        return Promise.reject('boom')
+      }
+    }
+    await touch('a.md', 'A')
+
+    const result = await makeManager(dataRoot, new StringRejectClient()).push(CONFIG)
+
+    expect(result.errors).toEqual(['a.md: unknown error'])
+  })
+
+  it('labels non-Error trash and delete failures as unknown errors', async () => {
+    class StringRejectClient extends FakeClient {
+      override async moveFile(): Promise<void> {
+        return Promise.reject('nope')
+      }
+      override async deleteFile(): Promise<void> {
+        return Promise.reject('nope')
+      }
+    }
+    const fake = new StringRejectClient()
+    fake.setRemote(R('junk.md'), 'x', 'mod-1')
+    await saveSyncState(dataRoot, {
+      version: 1,
+      files: { 'junk.md': entry(null, { size: 1, lastmod: 'mod-1' }) }
+    })
+
+    const result = await makeManager(dataRoot, fake).push(CONFIG)
+
+    expect(result.errors.some((e) => e.endsWith('unknown error'))).toBe(true)
+  })
+
+  it('labels non-Error download failures as unknown errors', async () => {
+    class StringRejectClient extends FakeClient {
+      override async downloadFile(): Promise<string> {
+        return Promise.reject('down')
+      }
+      override async downloadToFile(): Promise<void> {
+        return Promise.reject('down')
+      }
+    }
+    const fake = new StringRejectClient()
+    fake.setRemote(R('a.md'), 'hello')
+
+    const result = await makeManager(dataRoot, fake).pull(CONFIG)
+
+    expect(result.errors).toEqual(['a.md: unknown error'])
+  })
+})
+
 

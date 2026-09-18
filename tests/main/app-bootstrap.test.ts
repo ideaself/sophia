@@ -319,6 +319,22 @@ describe('main bootstrap — IPC surface', () => {
       expect(h.state.handlers.has(channel), `missing handler: ${channel}`).toBe(true)
     }
   })
+
+  it('tolerates window-less tray requests and rejects non-string URLs', async () => {
+    const windows = h.FakeBrowserWindow.instances
+    const destroyed = windows.map((w) => w.destroyed)
+    windows.forEach((w) => (w.destroyed = true))
+    try {
+      await expect(invoke('app:minimize-to-tray')).resolves.toBeUndefined()
+
+      h.shellMock.openExternal.mockClear()
+      await expect(invoke('app:open-external', 123)).rejects.toThrow(/http\(s\)/)
+      expect(h.shellMock.openExternal).not.toHaveBeenCalled()
+    } finally {
+      // Restore the module-level windows: later tests reuse them.
+      windows.forEach((w, i) => (w.destroyed = destroyed[i]))
+    }
+  })
 })
 
 describe('main bootstrap — CSP and frame blocking', () => {
@@ -331,6 +347,31 @@ describe('main bootstrap — CSP and frame blocking', () => {
     const csp = result.responseHeaders?.['Content-Security-Policy']?.[0] ?? ''
     expect(csp).toContain("default-src 'self'")
     expect(csp).toContain("object-src 'none'")
+  })
+
+  it('handles a response without headers and leaves embeddable frames alone', () => {
+    // No responseHeaders at all: the CSP injection must still work.
+    const result: { cancel?: boolean; responseHeaders?: Record<string, string[]> } = {}
+    h.state.onHeadersReceived?.({ url: 'app://x/index.html' }, (arg) => {
+      Object.assign(result, arg)
+    })
+    expect(result.cancel).toBeUndefined()
+    expect(result.responseHeaders?.['Content-Security-Policy']).toBeDefined()
+
+    // A frame with no blocking headers must not be cancelled or reported.
+    h.state.sentToRenderer = []
+    const frame: { cancel?: boolean } = {}
+    h.state.onHeadersReceived?.(
+      {
+        url: 'https://dict.example/w',
+        resourceType: 'subFrame',
+        webContentsId: 7,
+        responseHeaders: {}
+      },
+      (a) => Object.assign(frame, a)
+    )
+    expect(frame.cancel).toBeUndefined()
+    expect(h.state.sentToRenderer).toEqual([])
   })
 
   it('cancels dictionary frames that refuse embedding and notifies the popup', () => {
@@ -402,6 +443,11 @@ describe('main bootstrap — CSP and frame blocking', () => {
     const allowed = vi.fn()
     attachHandler({ preventDefault: allowed }, { ...prefs }, { src: 'https://dict.example' })
     expect(allowed).not.toHaveBeenCalled()
+
+    // Missing src is treated as "not https" and blocked.
+    const noSrc = vi.fn()
+    attachHandler({ preventDefault: noSrc }, { ...prefs }, {} as { src: string })
+    expect(noSrc).toHaveBeenCalled()
   })
 })
 
@@ -453,6 +499,41 @@ describe('main bootstrap — tray and lifecycle', () => {
     }
   })
 
+  it('keeps running on window-all-closed under darwin', () => {
+    const original = process.platform
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+    try {
+      h.appMock.quit.mockClear()
+      h.state.appEvents.get('window-all-closed')?.()
+      expect(h.appMock.quit).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(process, 'platform', { value: original, configurable: true })
+    }
+  })
+
+  it('tolerates a second instance when no window is open', () => {
+    h.FakeBrowserWindow.instances.forEach((w) => (w.destroyed = true))
+    const handler = h.state.appEvents.get('second-instance')!
+    expect(() => handler({}, [], '', {})).not.toThrow()
+  })
+
+  it('focuses an unminimized window without restoring it', async () => {
+    if (!h.FakeBrowserWindow.instances.some((w) => !w.destroyed)) {
+      const idle = h.FakeBrowserWindow.instances.length
+      h.state.appEvents.get('activate')?.()
+      await vi.waitFor(() => expect(h.FakeBrowserWindow.instances.length).toBe(idle + 1))
+    }
+    const win = h.FakeBrowserWindow.instances.find((w) => !w.destroyed)!
+    win.minimized = false
+    win.restore.mockClear()
+    win.focus.mockClear()
+
+    h.state.appEvents.get('second-instance')!({}, [], '', {})
+
+    expect(win.restore).not.toHaveBeenCalled()
+    expect(win.focus).toHaveBeenCalled()
+  })
+
   it('creates a fresh window with defaults when the stored state is invalid', async () => {
     await writeFile(join(h.state.userData, 'window-state.json'), JSON.stringify({ width: 50 }), 'utf-8')
     const before = h.FakeBrowserWindow.instances.length
@@ -467,6 +548,39 @@ describe('main bootstrap — tray and lifecycle', () => {
     expect(fresh.options.height).toBe(800)
     expect(fresh.options.x).toBeUndefined()
     expect(fresh.loadFile).toHaveBeenCalled()
+  })
+
+  it('rejects a window state whose y coordinate is not a number', async () => {
+    await writeFile(
+      join(h.state.userData, 'window-state.json'),
+      JSON.stringify({ x: 10, y: 'top', width: 900, height: 700 }),
+      'utf-8'
+    )
+    const before = h.FakeBrowserWindow.instances.length
+    h.FakeBrowserWindow.instances.forEach((w) => (w.destroyed = true))
+    h.state.appEvents.get('activate')?.()
+
+    await vi.waitFor(() => expect(h.FakeBrowserWindow.instances.length).toBe(before + 1))
+    const fresh = h.FakeBrowserWindow.instances[before]
+    // Size is kept, but an untrustworthy position is dropped entirely.
+    expect(fresh.options.x).toBeUndefined()
+    expect(fresh.options.y).toBeUndefined()
+    expect(fresh.options.width).toBe(900)
+    expect(fresh.options.height).toBe(700)
+  })
+
+  it('does not create a window when one is already open on activate', async () => {
+    if (!h.FakeBrowserWindow.instances.some((w) => !w.destroyed)) {
+      const idle = h.FakeBrowserWindow.instances.length
+      h.state.appEvents.get('activate')?.()
+      await vi.waitFor(() => expect(h.FakeBrowserWindow.instances.length).toBe(idle + 1))
+    }
+    const before = h.FakeBrowserWindow.instances.length
+
+    h.state.appEvents.get('activate')?.()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(h.FakeBrowserWindow.instances.length).toBe(before)
   })
 
   it('loads the dev server URL when one is provided', async () => {

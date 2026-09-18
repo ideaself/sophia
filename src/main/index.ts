@@ -82,6 +82,10 @@ async function loadWindowState(): Promise<WindowState | null> {
       })
       /* v8 ignore next -- @preserve */
       if (!onScreen) { x = undefined; y = undefined }
+    } else {
+      // 半个坐标（或类型不对）不可信：交给系统默认摆放。
+      x = undefined
+      y = undefined
     }
     return { x, y, width: s.width, height: s.height, maximized: s.maximized === true }
   } catch {

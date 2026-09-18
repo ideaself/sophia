@@ -124,6 +124,62 @@ function createSession(
 // ---------------------------------------------------------------
 
 describe('StreamChatSession — normal stream', () => {
+  it('fills missing usage counters with zeros', async () => {
+    const adapter = mockStreamAdapter([tokenChunk('Hi'), finishChunk('stop', {})])
+    const { events, start } = createSession(adapter)
+    await start()
+
+    const usageEvent = events.find((e) => e.type === 'usage') as {
+      promptTokens: number
+      completionTokens: number
+      totalTokens: number
+    }
+    expect(usageEvent.promptTokens).toBe(0)
+    expect(usageEvent.completionTokens).toBe(0)
+    expect(usageEvent.totalTokens).toBe(0)
+  })
+
+  it('normalizes an empty finish_reason to stop', async () => {
+    const adapter = mockStreamAdapter([tokenChunk('Hi'), finishChunk('')])
+    const { events, start } = createSession(adapter)
+    await start()
+
+    const endEvent = events.find((e) => e.type === 'end')
+    expect((endEvent as { finishReason: string }).finishReason).toBe('stop')
+  })
+
+  it('reports a non-Error stream failure as a string message', async () => {
+    const adapter: DeepSeekStreamAdapter = {
+      streamChat: async function* () {
+        yield* []
+        throw 'boom'
+      }
+    } as unknown as DeepSeekStreamAdapter
+    const { events, start } = createSession(adapter)
+    await start()
+
+    const errorEvent = events.find((e) => e.type === 'error') as {
+      code: string
+      message: string
+    }
+    expect(errorEvent.code).toBe('STREAM_ERROR')
+    expect(errorEvent.message).toBe('boom')
+  })
+
+  it('finishes cleanly when the iterator exposes no return()', async () => {
+    const adapter: DeepSeekStreamAdapter = {
+      streamChat: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: async () => ({ done: true, value: undefined as never })
+        })
+      })
+    } as unknown as DeepSeekStreamAdapter
+    const { events, start } = createSession(adapter)
+    await start()
+
+    expect(events.some((e) => e.type === 'end')).toBe(true)
+  })
+
   it('emits token events for each content delta in order', async () => {
     const adapter = mockStreamAdapter([
       tokenChunk('Hello'),
