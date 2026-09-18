@@ -66,7 +66,9 @@
     "test:fuses": "node scripts/verify-fuses.mjs",
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test": "npm run typecheck && npm run lint && npm run test:unit && npm run test:security"
+    "test": "npm run typecheck && npm run lint && npm run test:unit && npm run test:security",
+    "build:dir": "npm run build && electron-builder --win --dir --publish never",
+    "smoke": "node scripts/smoke-app.mjs"
   },
   "dependencies": {
     "archiver": "^8.0.0",

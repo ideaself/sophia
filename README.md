@@ -27,6 +27,8 @@ npm run test          # typecheck + lint + 单测 + 安全基线
 npm run test:coverage # 单测 + 覆盖率报告（含保守门槛，防止覆盖率回退）
 npm run build         # 构建（electron-vite）
 npm run build:win     # 打包 Windows 安装包（NSIS）
+npm run build:dir     # 只打包到 release/win-unpacked（不生成安装包）
+npm run smoke         # 启动 win-unpacked 冒烟：存活 12s + 数据布局落盘（需先 build:dir）
 npm run clean         # 清理 out/ release/ coverage/
 ```
 
