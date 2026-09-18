@@ -743,33 +743,33 @@ describe('artifact pipeline end-to-end', () => {
     const win = new mocks.FakeBrowserWindow()
     mocks.FakeBrowserWindow.windows = [win]
 
-    // The background queue persists every regular artifact type. Generous
-    // timeout: the mock is fast but 15 artifact writes + parallel test files
-    // can be slow on a loaded machine.
+    // The background queue persists every regular artifact type. Wait for the
+    // required types themselves (not just a count): 15 unrelated writes can
+    // finish in any order on a loaded machine.
+    const requiredTypes = [
+      'lesson_summary',
+      'flashcards',
+      'diary',
+      'progress',
+      'handoff_tail',
+      'feynman_note',
+      'lesson_timeline',
+      'lesson_faq'
+    ]
     await vi.waitFor(
       async () => {
         const list = await invoke<Array<{ type: string }>>('artifact:list', {
           conversationId: conv.id
         })
         expect(list.length).toBeGreaterThanOrEqual(10)
+        expect(list.map((a) => a.type)).toEqual(expect.arrayContaining(requiredTypes))
       },
       { timeout: 20_000, interval: 50 }
     )
     const types = (
       await invoke<Array<{ type: string }>>('artifact:list', { conversationId: conv.id })
     ).map((a) => a.type)
-    expect(types).toEqual(
-      expect.arrayContaining([
-        'lesson_summary',
-        'flashcards',
-        'diary',
-        'progress',
-        'handoff_tail',
-        'feynman_note',
-        'lesson_timeline',
-        'lesson_faq'
-      ])
-    )
+    expect(types).toEqual(expect.arrayContaining(requiredTypes))
 
     // Diary writeback (monthly file) is the pipeline's LAST step: waiting for
     // it also guarantees the earlier writebacks below are in place.
