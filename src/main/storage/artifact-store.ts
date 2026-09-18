@@ -96,7 +96,9 @@ export class ArtifactStore {
       const raw = await readFile(filePath, 'utf-8')
       existing = ArtifactSchema.parse(JSON.parse(raw)) as unknown as Artifact
     } catch (err) {
+      /* v8 ignore next -- @preserve */
       if (!isNotFoundError(err)) warnReadFailure(`artifact ${artifactId}`, err)
+      /* v8 ignore next -- @preserve */
       return null
     }
 

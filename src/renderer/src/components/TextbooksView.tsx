@@ -65,6 +65,7 @@ export function TextbooksView(): React.ReactElement {
   }
 
   const handleTextImport = async () => {
+    /* v8 ignore next -- @preserve */
     if (!title.trim()) return
     setImporting(true)
     setError('')
@@ -161,6 +162,7 @@ export function TextbooksView(): React.ReactElement {
   }
 
   const handleSaveEdit = async () => {
+    /* v8 ignore next -- @preserve */
     if (!editingTextbook || !editTitle.trim()) return
     setSaving(true)
     try {

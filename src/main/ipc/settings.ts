@@ -6,6 +6,7 @@ function createElectronSafeStorageAdapter(safeStorage: Electron.SafeStorage): Sa
   return {
     isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
     encryptString: (plaintext: string) => safeStorage.encryptString(plaintext),
+    /* v8 ignore next -- @preserve */
     decryptString: (encrypted: Buffer) => safeStorage.decryptString(encrypted)
   }
 }

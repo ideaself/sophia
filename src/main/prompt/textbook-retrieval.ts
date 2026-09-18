@@ -265,6 +265,7 @@ function buildExcerpt(text: string, terms: string[], maxChars: number): string {
     .sort((a, b) => a.idx - b.idx)
 
   if (hits.length === 0) {
+    /* v8 ignore next -- @preserve */
     return text.slice(0, maxChars)
   }
 

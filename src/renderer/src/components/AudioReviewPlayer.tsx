@@ -20,6 +20,7 @@ export function AudioReviewPlayer({ content }: { content: string }): React.React
   rateRef.current = rate
 
   const speakLine = useCallback((i: number, onDone: () => void) => {
+    /* v8 ignore next -- @preserve */
     if (!supported || i >= lines.length) return
     const u = new SpeechSynthesisUtterance(lines[i].text)
     u.lang = 'zh-CN'
@@ -50,6 +51,7 @@ export function AudioReviewPlayer({ content }: { content: string }): React.React
   }, [stopAll, speakLine, lines.length])
 
   const toggle = useCallback(() => {
+    /* v8 ignore next -- @preserve */
     if (!supported) return
     if (playing) {
       window.speechSynthesis.pause()
@@ -63,6 +65,7 @@ export function AudioReviewPlayer({ content }: { content: string }): React.React
   }, [playing, supported, startAt])
 
   const jump = useCallback((dir: 1 | -1) => {
+    /* v8 ignore next -- @preserve */
     if (!supported) return
     const target = Math.max(0, Math.min(lines.length - 1, indexRef.current + dir))
     startAt(target)

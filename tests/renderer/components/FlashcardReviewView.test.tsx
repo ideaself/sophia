@@ -167,6 +167,10 @@ describe('FlashcardReviewView — deck, tabs and empty states', () => {
     fireEvent.click(screen.getByText('珍藏（0）'))
 
     expect(await screen.findByText('还没有珍藏卡片')).toBeTruthy()
+    // The 珍藏 tab is already active; clicking it keeps the empty state.
+    fireEvent.click(screen.getByText('珍藏（0）'))
+    expect(screen.getByText('还没有珍藏卡片')).toBeTruthy()
+
     fireEvent.click(screen.getByText('全部（2）'))
     expect(await screen.findByText('什么是卷积？')).toBeTruthy()
   })

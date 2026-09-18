@@ -8,7 +8,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 
 vi.mock('../../../src/renderer/src/components/DictionaryPopup', () => ({
-  DictionaryPopup: () => <div data-testid="dict-popup" />
+  DictionaryPopup: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid="dict-popup">
+      <button onClick={onClose}>关闭词典</button>
+    </div>
+  )
 }))
 
 // The TTS store samples support once at module load → stub before importing.
@@ -564,3 +568,23 @@ describe('EpubReaderView — progress restore and TOC dismissal edges', () => {
   })
 })
 
+
+describe('EpubReaderView — dictionary popup dismissal', () => {
+  it('closes the dictionary popup from inside it', async () => {
+    localStorage.setItem('sophia.dictEnabled', '1')
+    data.readEpubChapters.mockResolvedValueOnce({
+      chapters: [{ id: 'e1', title: 'English', html: '<p>entropy is conserved</p>' }],
+      title: 'x',
+      author: ''
+    })
+    renderReader()
+    await screen.findByText(/entropy is conserved/)
+    await waitFor(() => expect(data.listReadingNotes).toHaveBeenCalled())
+
+    selectWord('entropy')
+    expect(await screen.findByTestId('dict-popup')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('关闭词典'))
+    await waitFor(() => expect(screen.queryByTestId('dict-popup')).toBeNull())
+  })
+})

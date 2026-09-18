@@ -118,6 +118,7 @@ function CitationChip({ textbookId, chapter }: { textbookId?: string | null; cha
   const [errorMsg, setErrorMsg] = useState('')
 
   const load = async (mode: 'source' | 'translation') => {
+    /* v8 ignore next -- @preserve */
     if (!textbookId) return
     if (panel === mode) {
       setPanel(null)

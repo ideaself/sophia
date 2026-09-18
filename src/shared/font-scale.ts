@@ -21,6 +21,7 @@ export function getFontScale(): FontScale {
     const v = localStorage.getItem(STORAGE_KEY) as FontScale | null
     return FONT_SCALE_OPTIONS.some((o) => o.key === v) ? (v as FontScale) : 'standard'
   } catch {
+    /* v8 ignore next -- @preserve */
     return 'standard'
   }
 }

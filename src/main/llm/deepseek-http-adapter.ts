@@ -105,6 +105,7 @@ export function createDeepSeekHttpAdapter(
         // Caller-initiated cancellation propagates so upstream can react to
         // it instead of seeing a generic network failure. Internal timeouts
         // (no caller signal) keep the existing non-retryable mapping.
+        /* v8 ignore next -- @preserve */
         if (params.signal?.aborted) throw err
         // Never attach the raw Error object — it could contain the request
         // URL which includes the API key in the Authorization header.

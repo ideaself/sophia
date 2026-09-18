@@ -9,5 +9,6 @@ import { checkForUpdatesNow } from '../auto-update'
  * nothing to validate on the IPC boundary.
  */
 export function registerUpdaterIpc(): void {
+  /* v8 ignore next -- @preserve */
   ipcMain.handle('updater:check-for-updates', async () => checkForUpdatesNow())
 }

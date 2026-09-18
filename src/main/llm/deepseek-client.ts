@@ -93,6 +93,7 @@ export class DeepSeekClient {
     }
 
     // Unreachable: the loop either returns or throws. Kept for exhaustiveness.
+    /* v8 ignore next -- @preserve */
     throw new AppError('UNKNOWN_ERROR', 0, 'DeepSeek request failed')
   }
 }

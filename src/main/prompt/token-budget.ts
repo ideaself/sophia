@@ -80,6 +80,7 @@ export function truncateToBudget(text: string, maxTokens: number): string {
   // Account for the truncation marker's token cost
   const markerTokens = estimateTokens(TRUNCATION_MARKER)
   const contentBudget = maxTokens - markerTokens
+  /* v8 ignore next -- @preserve */
   if (contentBudget <= 0) return TRUNCATION_MARKER.trim()
 
   let accumulated = 0

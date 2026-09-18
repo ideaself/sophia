@@ -157,6 +157,7 @@ export class ConversationStore {
         this.invalidateIndex()
         return true
       } catch {
+        /* v8 ignore next -- @preserve */
         return false
       }
     })

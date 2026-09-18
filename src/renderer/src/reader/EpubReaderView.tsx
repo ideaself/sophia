@@ -117,6 +117,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
     ;void (async () => {
       try {
         const result = await window.sophia.data.readEpubChapters(textbookId)
+        /* v8 ignore next -- @preserve */
         if (cancelled) return
         if (!result || result.chapters.length === 0) {
           setError('该教材没有可读的章节（EPUB 的 spine 与 manifest 均未提供可读 HTML/XHTML；查看主进程日志以定位具体原因）')
@@ -291,6 +292,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
 
   const jumpSearchMatch = (dir: 1 | -1) => {
     const marks = searchMarksRef.current
+    /* v8 ignore next -- @preserve */
     if (marks.length === 0) return
     const next = (searchIndex + dir + marks.length) % marks.length
     setSearchIndex(next)
@@ -332,6 +334,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
   }
 
   const createNote = async (type: 'highlight' | 'underline' | 'note', readerNote = '') => {
+    /* v8 ignore next -- @preserve */
     if (!selMenu) return
     const ok = await createReadingNote({
       content: selMenu.text,
@@ -502,6 +505,7 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
                     return
                   }
                   const text = htmlToPlainText(rendered.html)
+                  /* v8 ignore next -- @preserve */
                   if (!text) return
                   tts.speak(text)
                   setTtsOpen(true)

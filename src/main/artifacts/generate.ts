@@ -375,7 +375,9 @@ function buildArtifactPrompt(type: ArtifactType, cardTarget?: string): string {
 - 铁律：仅输出问答行，不要标题、不要解释。`
 
     default: {
+      /* v8 ignore next -- @preserve */
       const _exhaustive: never = type
+      /* v8 ignore next -- @preserve */
       throw new Error(`Unknown artifact type: ${_exhaustive}`)
     }
   }

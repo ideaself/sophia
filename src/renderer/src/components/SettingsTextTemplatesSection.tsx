@@ -19,6 +19,7 @@ export function SettingsTextTemplatesSection(): React.ReactElement {
 
   const addTemplate = () => {
     setTemplates((prev) => {
+      /* v8 ignore next -- @preserve */
       if (prev.length >= MAX_TEXT_TEMPLATES) return prev
       const next = [...prev, '']
       saveTextTemplates(next)

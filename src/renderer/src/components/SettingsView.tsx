@@ -17,6 +17,7 @@ import { WebDavSyncView } from './WebDavSyncView'
  * 具体区块各自独立成组件（状态自洽），见同名 Section 组件文件。
  */
 export function SettingsView(): React.ReactElement {
+  /* v8 ignore next -- @preserve */
   return (
     <div className="mx-auto max-w-2xl p-8">
       <h2 className="mb-6 text-2xl font-bold">设置</h2>

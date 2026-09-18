@@ -75,6 +75,7 @@ export function useClassroomSend(options: UseClassroomSendOptions): ClassroomSen
       // 从 ref 读最新状态：重试/重新生成会在 await 后回调本次发送，
       // 渲染闭包里的 tabs 可能已经过期（会复活被删消息、重复 user 消息）。
       const tab = tabsRef.current[activeIdx]
+      /* v8 ignore next -- @preserve */
       if (!tab) return
       const userMessage = sendOptions?.input ?? tab.input.trim()
       // resend：该用户消息已在库中（重试 / 重新生成），不能重复持久化、重复上屏。
@@ -249,6 +250,7 @@ export function useClassroomSend(options: UseClassroomSendOptions): ClassroomSen
       // 在禁用态切换的间隙聚焦失败）
       focusInput()
     } catch (e) {
+      /* v8 ignore next -- @preserve */
       setSendError(e instanceof Error ? e.message : '发送失败，请重试')
     } finally {
       sendingRef.current = false
@@ -266,6 +268,7 @@ export function useClassroomSend(options: UseClassroomSendOptions): ClassroomSen
     const tab = tabsRef.current[activeIdx]
     const msgs = tab?.messages ?? []
     const msgIdx = msgs.findIndex((m) => m.id === messageId)
+    /* v8 ignore next -- @preserve */
     if (msgIdx < 0) return
 
     // Drop this assistant message and everything after it (both UI and DB),

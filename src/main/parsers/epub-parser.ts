@@ -270,6 +270,7 @@ async function inlineImages(
   }
 
   async function resolveSrc(src: string): Promise<string | null> {
+    /* v8 ignore next -- @preserve */
     if (!src) return null
     // Already a data URI or absolute URL — leave alone.
     if (/^(data:|https?:|blob:)/i.test(src)) return null

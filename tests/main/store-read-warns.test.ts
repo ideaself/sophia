@@ -3,12 +3,12 @@
  * markdownToHtml rendering, and ErrorBoundary's reload action.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { ArtifactStore } from '../../src/main/storage/artifact-store'
-import { artifactPath } from '../../src/main/storage/app-data'
+import { artifactPath, artifactsDir } from '../../src/main/storage/app-data'
 
 let dataRoot = ''
 
@@ -33,5 +33,19 @@ describe('unreadable store files', () => {
     } finally {
       warn.mockRestore()
     }
+  })
+})
+
+describe('artifact listing', () => {
+  it('skips non-json entries in the artifacts directory', async () => {
+    const store = new ArtifactStore(dataRoot)
+    const note = await store.create('conv_1' as never, 'diary', '内容')
+
+    // A stray non-json file must be ignored by list().
+    await mkdir(artifactsDir(dataRoot, 'conv_1'), { recursive: true })
+    await writeFile(join(artifactsDir(dataRoot, 'conv_1'), 'README.txt'), 'notes')
+
+    const list = await store.list('conv_1')
+    expect(list.map((a) => a.id)).toEqual([note.id])
   })
 })

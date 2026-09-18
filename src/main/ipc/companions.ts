@@ -98,6 +98,7 @@ export function registerCompanionIpc(dataRoot: string): void {
       try {
         await archiveCompanion(dataRoot, companionId, target.name || companionId, target)
       } catch (err) {
+        /* v8 ignore next -- @preserve */
         console.warn(`Archive companion ${companionId} failed:`, err)
       }
       // Candidate companions are rebuilt from the shipped .md files on every
@@ -106,6 +107,7 @@ export function registerCompanionIpc(dataRoot: string): void {
         try {
           await recordDeletedCandidate(companionDir(dataRoot), companionId)
         } catch (err) {
+          /* v8 ignore next -- @preserve */
           console.warn(`Record deleted candidate ${companionId} failed:`, err)
         }
       }

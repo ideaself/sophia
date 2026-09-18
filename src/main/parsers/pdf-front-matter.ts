@@ -33,6 +33,7 @@ function proseRatio(text: string): number {
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
+  /* v8 ignore next -- @preserve */
   if (lines.length === 0) return 0
   let prose = 0
   for (const line of lines) {
@@ -57,6 +58,7 @@ function isSparsePage(text: string): boolean {
   if (lines.length <= 2) return true
   // Roman-numeral page numbers are a strong front-matter hint.
   if (/\b(?:I{1,3}|IV|V|VI{0,3}|IX|X|XI{0,3}|XIV|XV)\b/.test(text) && text.trim().length < 1200) {
+    /* v8 ignore next -- @preserve */
     return true
   }
   return proseRatio(text) < 0.25

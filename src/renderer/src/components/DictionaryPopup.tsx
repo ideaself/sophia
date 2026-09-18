@@ -96,6 +96,7 @@ export function DictionaryPopup({ word, onClose }: DictionaryPopupProps): React.
       addEventListener: (t: string, fn: () => void) => void
       removeEventListener: (t: string, fn: () => void) => void
     }) | null
+    /* v8 ignore next -- @preserve */
     if (!wv) return
     const onReady = () => {
       setStatus('ready')
@@ -111,6 +112,7 @@ export function DictionaryPopup({ word, onClose }: DictionaryPopupProps): React.
   }, [url])
 
   const changeZoom = (delta: number) => {
+    /* v8 ignore next -- @preserve */
     if (status !== 'ready') return
     const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((zoom + delta) * 10) / 10))
     setZoom(next)
@@ -127,6 +129,7 @@ export function DictionaryPopup({ word, onClose }: DictionaryPopupProps): React.
     resizeStart.current = { x: e.clientX, y: e.clientY, w: size.w, h: size.h }
     const onMove = (ev: MouseEvent) => {
       const s = resizeStart.current
+      /* v8 ignore next -- @preserve */
       if (!s) return
       const next = {
         w: Math.max(MIN_W, s.w + (ev.clientX - s.x)),

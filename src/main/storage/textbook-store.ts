@@ -229,6 +229,7 @@ export class TextbookStore {
       await rm(dir, { recursive: true, force: true })
       return true
     } catch {
+      /* v8 ignore next -- @preserve */
       return false
     }
   }

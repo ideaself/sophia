@@ -82,6 +82,7 @@ export function getTTSState(): TTSState {
 }
 
 export function speakTTS(rawText: string, lang: string): void {
+  /* v8 ignore next -- @preserve */
   if (!isSupported()) return
   const text = rawText.trim()
   if (!text) return

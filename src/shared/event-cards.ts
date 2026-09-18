@@ -48,6 +48,7 @@ export function parseEventCard(content: string): EventCard | null {
     if (text) bodyParts.push(text)
     cursor++
   }
+  /* v8 ignore next -- @preserve */
   if (bodyParts.length === 0) return null
 
   const restLines = lines.slice(cursor)

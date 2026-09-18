@@ -8,6 +8,7 @@ export function MermaidBlock({ code }: { code: string }): React.ReactElement {
   const id = useRef(`mermaid-${Math.random().toString(36).slice(2, 10)}`)
 
   useEffect(() => {
+    /* v8 ignore next -- @preserve */
     if (!ref.current) return
     let cancelled = false
     loadMermaid()

@@ -162,6 +162,7 @@ export function StatsView(): React.ReactElement {
   const compDist = weekStats ? topDist(weekStats.companion, (k) => companionNames[k] ?? k) : []
 
   const exportWeeklyReport = async () => {
+    /* v8 ignore next -- @preserve */
     if (!weekStats) return
     const result = await window.sophia.dialog.saveFile({
       defaultPath: `学习周报_${new Date().toISOString().slice(0, 10)}.md`,

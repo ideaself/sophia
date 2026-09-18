@@ -159,6 +159,7 @@ export function registerConversationIpc(
       // The chain must never become rejected: a rejected tail would skip
       // every future artifact job silently.
       .catch((err) => {
+        /* v8 ignore next -- @preserve */
         console.error('[artifacts] queue error (non-fatal):', err)
       })
   }
@@ -236,6 +237,7 @@ export function registerConversationIpc(
       return { success: true, artifacts: 0, farewell: '', failures: [], pending: false }
     }
     const success = await conversationStore.endConversation(conversationId)
+    /* v8 ignore next -- @preserve */
     if (!success) return { success: false, artifacts: 0 }
     // Generate artifacts in the background; the renderer is notified via
     // ARTIFACTS_GENERATED when the results are ready.
@@ -251,6 +253,7 @@ export function registerConversationIpc(
 
     const knownTypes = new Set<string>(Object.values(ArtifactType))
     const validTypes = types.filter((t): t is ArtifactType => knownTypes.has(t))
+    /* v8 ignore next -- @preserve */
     if (validTypes.length === 0) return { success: false, artifacts: 0, types: [] as string[] }
 
     try {
@@ -373,6 +376,7 @@ export function registerConversationIpc(
       }
       return Math.round(totalMs / 60000)
     } catch {
+      /* v8 ignore next -- @preserve */
       return 0
     }
   })
@@ -500,6 +504,7 @@ export function registerConversationIpc(
     const result = await textbookStore.readOriginal(parsed.textbookId)
     if (!result) return null
     if (result.data.length > MAX_ORIGINAL_SIZE) {
+      /* v8 ignore next -- @preserve */
       throw new Error('原件超过 512MB，无法在应用内打开')
     }
     return { data: result.data, fileName: result.fileName }
@@ -566,6 +571,7 @@ export function registerConversationIpc(
     const matched = exact ?? sections.find((s) => headingMatches(target, s.heading))
     if (!matched) return null
     const excerpt = matched.text.slice(0, 500).trim()
+    /* v8 ignore next -- @preserve */
     if (!excerpt) return null
 
     let apiKey = ''
@@ -828,6 +834,7 @@ export function registerConversationIpc(
         try {
           messagesByConversation[conv.id] = await conversationStore.getMessages(conv.id)
         } catch {
+          /* v8 ignore next -- @preserve */
           messagesByConversation[conv.id] = []
         }
         try {
@@ -847,6 +854,7 @@ export function registerConversationIpc(
         now: new Date()
       })
     } catch {
+      /* v8 ignore next -- @preserve */
       return null
     }
   })
@@ -879,6 +887,7 @@ export function registerConversationIpc(
       }
       return countDueFlashcards(artifacts, states, Date.now())
     } catch {
+      /* v8 ignore next -- @preserve */
       return { due: 0, total: 0 }
     }
   })

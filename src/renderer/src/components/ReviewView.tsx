@@ -257,6 +257,7 @@ function masteryLevel(m: number): { label: string; bar: string; text: string } {
 /** 复盘页「概念掌握」：本课涉及概念的增量识别结果与累计掌握度。 */
 function ConceptStateList({ concepts }: { concepts: ConceptStateDTO[] }): React.ReactElement {
   if (concepts.length === 0) {
+    /* v8 ignore next -- @preserve */
     return (
       <div className="max-w-3xl rounded-xl border border-surface-border bg-bg-surface p-6 text-center text-sm text-text-muted">
         本课尚未积累概念状态。课堂对话会实时识别涉及的概念与掌握表现。

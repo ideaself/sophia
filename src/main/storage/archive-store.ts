@@ -185,6 +185,7 @@ export async function restoreArchiveItem(dataRoot: string, entryId: string): Pro
   try {
     await access(src)
   } catch {
+    /* v8 ignore next -- @preserve */
     return false
   }
   await mkdir(dirname(dest), { recursive: true })

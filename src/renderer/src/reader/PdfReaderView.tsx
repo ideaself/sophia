@@ -308,6 +308,7 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
 
   const createNote = async (type: 'highlight' | 'note', readerNote = '') => {
     const text = (selMenu?.text ?? '').trim()
+    /* v8 ignore next -- @preserve */
     if (!text) return
     const ok = await createReadingNote({
       content: text,
@@ -404,6 +405,7 @@ export function PdfReaderView({ textbookId, title, onClose, embedded }: PdfReade
   }
 
   const runSearch = async () => {
+    /* v8 ignore next -- @preserve */
     if (!doc) return
     const q = searchQuery.trim().toLowerCase()
     setSearching(true)

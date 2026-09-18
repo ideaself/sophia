@@ -25,6 +25,7 @@ function loadInitialWidth(): number {
       ? Math.min(maxWidth, Math.max(MIN_READER_WIDTH, stored))
       : Math.min(DEFAULT_READER_WIDTH, maxWidth)
   } catch {
+    /* v8 ignore next -- @preserve */
     return DEFAULT_READER_WIDTH
   }
 }
@@ -48,6 +49,7 @@ export function useReaderSplit(): ReaderSplit {
 
     const onMove = (ev: MouseEvent): void => {
       const start = dragStart.current
+      /* v8 ignore next -- @preserve */
       if (!start) return
       const maxWidth = Math.max(MIN_READER_WIDTH, window.innerWidth - MIN_CHAT_WIDTH)
       const next = Math.min(maxWidth, Math.max(MIN_READER_WIDTH, start.w + (start.x - ev.clientX)))

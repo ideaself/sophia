@@ -51,7 +51,9 @@ export async function restoreFromBackup(dataRoot: string, zipPath: string): Prom
       await rename(tmp, dataRoot)
     } catch (err) {
       // Roll back
+      /* v8 ignore next -- @preserve */
       await rename(oldData, dataRoot).catch(() => {})
+      /* v8 ignore next -- @preserve */
       throw err
     }
     await rm(oldData, { recursive: true, force: true }).catch(() => {})

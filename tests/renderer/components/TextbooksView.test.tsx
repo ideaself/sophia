@@ -380,3 +380,24 @@ describe('TextbooksView — readers', () => {
     second.unmount()
   })
 })
+
+describe('TextbooksView — edit modal details', () => {
+  it('closes the edit modal with its ✕ and edits the content textarea', async () => {
+    render(<TextbooksView />)
+
+    fireEvent.click(screen.getAllByText('编辑')[0])
+    const textarea = (await screen.findByPlaceholderText(
+      '教材内容 (Markdown)...'
+    )) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: '## 新正文' } })
+    expect(textarea.value).toBe('## 新正文')
+
+    // The header ✕ closes without saving.
+    const closers = screen.getAllByText('✕')
+    fireEvent.click(closers[closers.length - 1])
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText('教材内容 (Markdown)...')).toBeNull()
+    )
+    expect(data.updateTextbook).not.toHaveBeenCalled()
+  })
+})

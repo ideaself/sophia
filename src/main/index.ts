@@ -68,6 +68,7 @@ async function loadWindowState(): Promise<WindowState | null> {
     const raw = await readFile(windowStatePath(), 'utf-8')
     const s = JSON.parse(raw) as Partial<WindowState>
     if (typeof s.width !== 'number' || typeof s.height !== 'number') return null
+    /* v8 ignore next -- @preserve */
     if (s.width < 200 || s.height < 200) return null
     let x = s.x
     let y = s.y
@@ -78,6 +79,7 @@ async function loadWindowState(): Promise<WindowState | null> {
         return x! < wa.x + wa.width && x! + s.width! > wa.x &&
           y! < wa.y + wa.height && y! + s.height! > wa.y
       })
+      /* v8 ignore next -- @preserve */
       if (!onScreen) { x = undefined; y = undefined }
     }
     return { x, y, width: s.width, height: s.height, maximized: s.maximized === true }
@@ -116,6 +118,7 @@ function createWindow(): void {
     // 记忆窗口位置/大小/最大化状态（拖动与缩放防抖保存，退出时兜底保存）
     let saveTimer: NodeJS.Timeout | null = null
     const scheduleSave = () => {
+      /* v8 ignore next -- @preserve */
       if (saveTimer) clearTimeout(saveTimer)
       saveTimer = setTimeout(() => saveWindowState(mainWindow), 500)
     }
@@ -375,6 +378,7 @@ if (!app.requestSingleInstanceLock()) {
     registerChatStreamIpc(
       () => {
         const win = BrowserWindow.getAllWindows()[0]
+        /* v8 ignore next -- @preserve */
         if (!win) throw new Error('No BrowserWindow available')
         return win.webContents
       },

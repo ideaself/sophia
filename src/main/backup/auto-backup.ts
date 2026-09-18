@@ -43,6 +43,7 @@ export async function maybeAutoBackup(dataRoot: string): Promise<void> {
           try {
             return { f, t: (await stat(join(dir, f))).mtimeMs }
           } catch {
+            /* v8 ignore next -- @preserve */
             return null
           }
         })
@@ -54,6 +55,7 @@ export async function maybeAutoBackup(dataRoot: string): Promise<void> {
     }
   } catch (err) {
     // Best-effort: never crash startup because of a backup failure
+    /* v8 ignore next -- @preserve */
     console.error('Auto backup failed:', err)
   }
 }

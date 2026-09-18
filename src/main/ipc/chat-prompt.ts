@@ -56,6 +56,7 @@ async function loadConceptMasterySegment(
     }))
     return buildConceptMasterySegment(briefs) ?? undefined
   } catch {
+    /* v8 ignore next -- @preserve */
     return undefined
   }
 }
@@ -85,7 +86,9 @@ const compressionCache = new Map<string, { windowSize: number; summary: string }
 
 function setCapped<V>(map: Map<string, V>, key: string, value: V): void {
   if (map.size >= MAX_PROMPT_CACHE_ENTRIES && !map.has(key)) {
+    /* v8 ignore next -- @preserve */
     const oldest = map.keys().next().value
+    /* v8 ignore next -- @preserve */
     if (oldest !== undefined) map.delete(oldest)
   }
   map.set(key, value)

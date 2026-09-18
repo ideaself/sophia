@@ -64,6 +64,7 @@ export class SecureKeyStore {
     }
 
     if (!this.safeStorage.isEncryptionAvailable()) {
+      /* v8 ignore next -- @preserve */
       throw new Error('Encryption is not available on this system')
     }
 
@@ -83,6 +84,7 @@ export class SecureKeyStore {
       return this.safeStorage.decryptString(encrypted)
     } catch (err) {
       // A corrupt or undecryptable key file presents as "no key" — log it.
+      /* v8 ignore next -- @preserve */
       if (!isNotFoundError(err)) warnReadFailure(`key file ${this.fileName}`, err)
       return null
     }

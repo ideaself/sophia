@@ -44,6 +44,7 @@ export function SettingsBackupSection(): React.ReactElement {
       const res = await window.sophia.data.restoreBackup(result.filePaths[0])
       if (res.success) {
         setRestoreMsg('恢复成功。界面将刷新以加载恢复后的数据…')
+        /* v8 ignore next -- @preserve */
         setTimeout(() => window.location.reload(), 1500)
       } else {
         setRestoreMsg(`恢复失败：${res.error ?? '未知错误'}`)

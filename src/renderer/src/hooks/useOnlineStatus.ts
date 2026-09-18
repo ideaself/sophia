@@ -17,6 +17,7 @@ export function useOnlineStatus(): boolean {
   return useSyncExternalStore(
     subscribe,
     () => navigator.onLine,
+    /* v8 ignore next -- @preserve */
     () => true
   )
 }

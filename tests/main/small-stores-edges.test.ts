@@ -84,6 +84,26 @@ describe('ConceptStore', () => {
     expect(states).toHaveLength(1)
     expect(states[0]).toMatchObject({ name: '熵', misconception: '把它当成能量' })
   })
+
+  it('records a misconception on a partial recall of an existing concept', async () => {
+    const store = new ConceptStore(dataRoot)
+
+    await store.applyEvidence({
+      conversationId: 'c1',
+      textbookId: null,
+      messageIds: ['m1', 'm2'],
+      updates: [{ name: '熵', performance: 'correct' }]
+    })
+    await store.applyEvidence({
+      conversationId: 'c1',
+      textbookId: null,
+      messageIds: ['m3', 'm4'],
+      updates: [{ name: '熵', performance: 'partial', misconception: '与焓混淆' }]
+    })
+
+    const states = await store.load()
+    expect(states[0]).toMatchObject({ name: '熵', misconception: '与焓混淆' })
+  })
 })
 
 describe('token-budget', () => {

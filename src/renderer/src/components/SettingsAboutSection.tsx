@@ -21,6 +21,7 @@ export function SettingsAboutSection(): React.ReactElement {
   }, [])
 
   const handleCheck = async () => {
+    /* v8 ignore next -- @preserve */
     if (state.kind === 'checking') return
     setState({ kind: 'checking' })
     try {

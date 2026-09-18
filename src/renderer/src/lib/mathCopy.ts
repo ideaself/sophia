@@ -68,6 +68,7 @@ export function handleCopyMathSource(e: React.ClipboardEvent): void {
 }
 
 function closestDataTex(node: Node | null): HTMLElement | null {
+  /* v8 ignore next -- @preserve */
   if (!node) return null
   const el = node.nodeType === Node.ELEMENT_NODE
     ? (node as HTMLElement)

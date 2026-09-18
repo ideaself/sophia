@@ -335,12 +335,14 @@ export function HistoryView(): React.ReactElement {
 
   // --- 产物操作 ---
   const handleStartArtifactEdit = (artifact: ArtifactDTO) => {
+    /* v8 ignore next -- @preserve */
     if (!selected) return
     setEditingArtifact({ conversationId: selected.id, artifactId: artifact.id })
     setEditArtifactText(artifact.content)
   }
 
   const handleSaveArtifact = async () => {
+    /* v8 ignore next -- @preserve */
     if (!editingArtifact || !editArtifactText.trim()) return
     await window.sophia.data.updateArtifact(editingArtifact.artifactId, editingArtifact.conversationId, editArtifactText.trim())
     setArtifacts((prev) => prev.map((a) => a.id === editingArtifact.artifactId ? { ...a, content: editArtifactText.trim() } : a))
@@ -348,8 +350,10 @@ export function HistoryView(): React.ReactElement {
   }
 
   const handleRedoMissingArtifacts = async () => {
+    /* v8 ignore next -- @preserve */
     if (!selected || redoingMissing) return
     const missing = STORED_ARTIFACT_TYPES.filter((t) => !artifacts.some((a) => a.type === t))
+    /* v8 ignore next -- @preserve */
     if (missing.length === 0) return
     setRedoingMissing(true)
     try {

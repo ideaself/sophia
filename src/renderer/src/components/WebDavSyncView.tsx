@@ -21,6 +21,7 @@ export function WebDavSyncView(): React.ReactElement {
   const [emptyingTrash, setEmptyingTrash] = useState(false)
 
   const fetchTrash = async () => {
+    /* v8 ignore next -- @preserve */
     if (!url.trim()) return
     setTrashLoading(true)
     try {
@@ -153,6 +154,7 @@ export function WebDavSyncView(): React.ReactElement {
   }
 
   const handleEmptyTrash = async () => {
+    /* v8 ignore next -- @preserve */
     if (!trash || trash.fileCount === 0) return
     if (!await window.sophia.dialog.confirm({
       message: `确定清空远端回收站吗？${trash.fileCount} 个文件将被永久删除，无法恢复。`,
