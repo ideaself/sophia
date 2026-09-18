@@ -25,7 +25,6 @@ function loadInitialWidth(): number {
       ? Math.min(maxWidth, Math.max(MIN_READER_WIDTH, stored))
       : Math.min(DEFAULT_READER_WIDTH, maxWidth)
   } catch {
-    /* v8 ignore next -- @preserve */
     return DEFAULT_READER_WIDTH
   }
 }

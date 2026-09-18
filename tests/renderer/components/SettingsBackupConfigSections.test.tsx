@@ -249,3 +249,14 @@ describe('SettingsBackupSection — failure and cancel branches', () => {
     expect(await screen.findByText(/没有权限/)).toBeTruthy()
   })
 })
+
+describe('SettingsConfigSection — empty file selection', () => {
+  it('ignores a change event without a file', async () => {
+    const { container } = render(<SettingsConfigSection />)
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+
+    fireEvent.change(fileInput, { target: { files: [] } })
+
+    expect(screen.queryByText(/导入失败|读取文件失败/)).toBeNull()
+  })
+})

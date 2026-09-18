@@ -110,3 +110,27 @@ describe('useTodayStudyMinutes', () => {
     expect(data.todayStudyMinutes).not.toHaveBeenCalled()
   })
 })
+
+describe('useTodayStudyMinutes — pending focus timer cleanup', () => {
+  it('clears a pending focus timer on unmount', async () => {
+    vi.useFakeTimers()
+    data.todayStudyMinutes.mockResolvedValue(5)
+    const { useTodayStudyMinutes } = await import(
+      '../../../src/renderer/src/hooks/useTodayStudyMinutes'
+    )
+    const hook = renderHook(() => useTodayStudyMinutes())
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(hook.result.current).toBe(5)
+
+    // Schedule the debounce, then unmount before it fires.
+    window.dispatchEvent(new Event('focus'))
+    hook.unmount()
+    data.todayStudyMinutes.mockClear()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect(data.todayStudyMinutes).not.toHaveBeenCalled()
+  })
+})

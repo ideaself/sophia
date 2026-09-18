@@ -40,7 +40,6 @@ export function SettingsConfigSection(): React.ReactElement {
   const handleImportSettings = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
-    /* v8 ignore next -- @preserve */
     if (!file) return
     setConfigMsg(null)
     const reader = new FileReader()

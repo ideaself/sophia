@@ -656,3 +656,18 @@ describe('HistoryView — remaining branches', () => {
     }
   })
 })
+
+describe('HistoryView — artifact save guard', () => {
+  it('ignores saving an artifact with blank content', async () => {
+    render(<HistoryView />)
+    await screen.findByText('📋 课堂总结')
+
+    fireEvent.click(screen.getByTitle('编辑产物内容'))
+    const editor = document.querySelector('textarea') as HTMLTextAreaElement
+    fireEvent.change(editor, { target: { value: '   ' } })
+    fireEvent.click(screen.getByText('保存'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(api.updateArtifact).not.toHaveBeenCalled()
+  })
+})

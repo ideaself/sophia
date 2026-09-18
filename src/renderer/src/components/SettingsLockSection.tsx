@@ -14,7 +14,6 @@ export function SettingsLockSection(): React.ReactElement {
     try {
       setLockEnabled(await window.sophia.data.lock.has())
     } catch {
-      /* v8 ignore next -- @preserve */
       setLockEnabled(false)
     }
   }, [])
@@ -41,7 +40,6 @@ export function SettingsLockSection(): React.ReactElement {
       setLockMsg('已启用档案锁，下次启动时需要解锁')
       await loadLockStatus()
     } catch (err) {
-      /* v8 ignore next -- @preserve */
       setLockError(err instanceof Error ? err.message : '设置失败')
     }
   }

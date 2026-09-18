@@ -98,3 +98,19 @@ describe('useReaderSplit', () => {
     expect(hook.result.current.readerOpen).toBe(false)
   })
 })
+
+describe('useReaderSplit — storage failures', () => {
+  it('falls back to the default width when storage is unavailable', () => {
+    const getItem = vi
+      .spyOn(Storage.prototype, 'getItem')
+      .mockImplementation(() => {
+        throw new Error('storage denied')
+      })
+    try {
+      const hook = renderHook(() => useReaderSplit())
+      expect(hook.result.current.readerWidth).toBe(480)
+    } finally {
+      getItem.mockRestore()
+    }
+  })
+})

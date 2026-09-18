@@ -342,7 +342,6 @@ export function HistoryView(): React.ReactElement {
   }
 
   const handleSaveArtifact = async () => {
-    /* v8 ignore next -- @preserve */
     if (!editingArtifact || !editArtifactText.trim()) return
     await window.sophia.data.updateArtifact(editingArtifact.artifactId, editingArtifact.conversationId, editArtifactText.trim())
     setArtifacts((prev) => prev.map((a) => a.id === editingArtifact.artifactId ? { ...a, content: editArtifactText.trim() } : a))

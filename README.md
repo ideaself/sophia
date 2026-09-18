@@ -40,7 +40,7 @@ src/
   preload/     contextBridge 桥：只暴露 window.sophia（类型化 invoke/订阅）
   renderer/    React 渲染层：课堂、阅读器、复习、统计、设置（Vite 打包，依赖进 bundle）
   shared/      两侧共享：Zod schema、IPC 契约、纯逻辑工具（tab 持久化、SRS、事件卡等）
-tests/         Vitest：main / shared / renderer 纯逻辑（无 jsdom 组件测试）
+tests/         Vitest：main / shared 纯逻辑 + renderer jsdom 组件测试（`.tsx`）
 scripts/       verify-security.mjs（安全基线）、clean.mjs
 ```
 
@@ -80,8 +80,10 @@ scripts/       verify-security.mjs（安全基线）、clean.mjs
 
 - `npm run test`：typecheck + lint + 单测 + 安全基线，CI（`.github/workflows/ci.yml`）同款。
 - 覆盖率按"全部源码"口径统计（`include` 覆盖 src 全部文件），不是只统计被测试加载过的文件。
-  渲染层已有 jsdom 组件测试（课堂发送/重新生成、复习流、TTS、模态框、错误边界等），
-  但大部分视图仍无测试；`vitest.config.ts` 中设有保守下限，只随覆盖率提升而上调。
+  当前 **100% 语句 / 89% 分支 / 99% 函数 / 100% 行**（门槛 100/89/99/100，只升不降；
+  CI 直接跑 `test:coverage`，门槛在 CI 强制执行）。
+- 不可达/纯防御分支用 `/* v8 ignore next -- @preserve */` 标注（`@preserve` 必需，
+  否则 esbuild 会剥掉注释）；约定详见 [AGENTS.md](./AGENTS.md)。
 - 类型契约：`src/renderer/src/types/api-contract.ts` 在编译期校验 renderer 声明与
   preload 实现的双向一致性（`skipLibCheck` 不会掩盖两边的漂移）。
 - 变更历史见 [CHANGELOG.md](./CHANGELOG.md)；环境变量模板见 [.env.example](./.env.example)。
@@ -91,13 +93,17 @@ scripts/       verify-security.mjs（安全基线）、clean.mjs
 - **构建安装包**：本地 `npm run build:win`，或 GitHub Actions → Release workflow
   （手动触发即产出 artifact；推送 `v*` tag 会自动创建 GitHub Release）。
   产物为 `release/Sophia-<version>-Setup.exe`，构建流程内含 Electron fuses 校验。
+- **安装**：下载 `Sophia-<version>-Setup.exe` 双击安装即可（当前用户级安装，无需管理员）。
+  安装包未签名，首次运行 SmartScreen 会提示"Windows 已保护你的电脑"——点「更多信息」→
+  「仍要运行」；也可在文件属性里勾选"解除锁定"。
 - **平台**：当前仅 Windows x64。mac/arm64 需要对应签名与 CI 运行时，尚未配置。
 - **代码签名未启用**：未签名安装会触发 SmartScreen 提示。配置仓库 Secrets
   `CSC_LINK`（证书 base64/路径）与 `CSC_KEY_PASSWORD` 后，release workflow 与本地
   构建会自动签名。
 - **自动更新已启用**：打包版启动 30 秒后后台检查 GitHub Releases（`electron-updater`），
-  自动下载并在**下次退出时安装**，不打断课堂；设置页「关于」可手动检查更新并显示版本。
-  检查失败仅记录日志。发版要求：Release 必须包含 workflow 产出的 `latest.yml`（自动附带），
+  自动下载并在**下次退出时安装**（静默安装后自动重启，不打断课堂）；设置页「关于」
+  可手动检查更新并显示版本。检查失败仅记录日志。升级链路已实测（0.1.2 → 0.1.3，
+  含退出时安装）。发版要求：Release 必须包含 workflow 产出的 `latest.yml`（自动附带），
   且**发布前先用安装包完整验证一次升级链路**——自动更新会把任何发布失误直接推送给所有用户。
 
 ## 技术栈

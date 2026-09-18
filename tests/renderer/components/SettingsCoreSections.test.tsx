@@ -123,3 +123,18 @@ describe('SettingsClassroomBehaviorSection', () => {
     window.removeEventListener('sophia:goal-changed', listener)
   })
 })
+
+describe('SettingsLockSection — failure branches', () => {
+  it('treats an unreadable lock state as unlocked and reports set failures', async () => {
+    lockApi.has.mockRejectedValueOnce(new Error('db closed'))
+    render(<SettingsLockSection />)
+    await waitFor(() => expect(screen.getByText('启用档案锁')).toBeTruthy())
+
+    lockApi.set.mockRejectedValueOnce('plain failure')
+    fireEvent.change(screen.getByPlaceholderText(/设置解锁密码/), { target: { value: '1234' } })
+    fireEvent.change(screen.getByPlaceholderText('再次输入确认'), { target: { value: '1234' } })
+    fireEvent.click(screen.getByText('启用档案锁'))
+
+    expect(await screen.findByText('设置失败')).toBeTruthy()
+  })
+})

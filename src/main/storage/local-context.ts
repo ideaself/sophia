@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises'
 import { learnerPath } from './app-data'
-import { isNotFoundError, warnReadFailure } from './fs-errors'
 
 export interface LocalContext {
   learnerProfile: string
@@ -13,20 +12,12 @@ export interface LocalContext {
 export async function readLocalContext(
   dataRoot: string
 ): Promise<LocalContext | null> {
+  let learnerProfile = ''
   try {
-    let learnerProfile = ''
-    try {
-      learnerProfile = await readFile(learnerPath(dataRoot), 'utf-8')
-    } catch {
-      // learner.md is optional
-    }
-
-    return { learnerProfile }
-  } catch (err) {
-    // Defensive: the only I/O above already tolerates every failure.
-    /* v8 ignore next -- @preserve */
-    if (!isNotFoundError(err)) warnReadFailure('local context', err)
-    /* v8 ignore next -- @preserve */
-    return null
+    learnerProfile = await readFile(learnerPath(dataRoot), 'utf-8')
+  } catch {
+    // learner.md is optional
   }
+
+  return { learnerProfile }
 }

@@ -61,7 +61,6 @@ export function useTodayStudyMinutes(): number {
 
     return () => {
       cancelled = true
-      /* v8 ignore next -- @preserve */
       if (focusTimer) clearTimeout(focusTimer)
       window.removeEventListener('focus', onFocus)
       clearInterval(timer)
