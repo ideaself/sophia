@@ -460,6 +460,9 @@ describe('dialog + file handlers', () => {
   })
 
   it('exports a backup zip and validates restore input', async () => {
+    // The data root is fresh per test: give it a real file so the backup has
+    // deterministic content (relying on the in-progress zip itself is a race).
+    await writeFile(join(dataRoot, 'learner.md'), '# 学习者档案', 'utf-8')
     const zipPath = join(dataRoot, '备份.zip')
     mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: zipPath })
     await invoke('dialog:saveFile', {})
