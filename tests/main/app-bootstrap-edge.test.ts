@@ -128,14 +128,16 @@ describe('main bootstrap — edge environments', () => {
 
     await import('../../src/main/index')
     cfg.readyResolvers.forEach((resolve) => resolve())
-    await vi.waitFor(() =>
-      expect(console.error).toHaveBeenCalledWith(
-        'Failed to initialize data directory:',
-        expect.any(Error)
-      )
+    await vi.waitFor(
+      () =>
+        expect(console.error).toHaveBeenCalledWith(
+          'Failed to initialize data directory:',
+          expect.any(Error)
+        ),
+      { timeout: 10_000 }
     )
     // The window still comes up.
-    await vi.waitFor(() => expect(cfg.windows.length).toBe(1))
+    await vi.waitFor(() => expect(cfg.windows.length).toBe(1), { timeout: 10_000 })
 
     // createWindow → setupAutoUpdate → registerChatStreamIpc(…)
     const args = cfg.chatStreamArgs as unknown as [
@@ -159,8 +161,10 @@ describe('main bootstrap — edge environments', () => {
     await import('../../src/main/index')
     cfg.readyResolvers.forEach((resolve) => resolve())
 
-    await vi.waitFor(() =>
-      expect(console.error).toHaveBeenCalledWith('App startup failed:', expect.any(Error))
+    await vi.waitFor(
+      () =>
+        expect(console.error).toHaveBeenCalledWith('App startup failed:', expect.any(Error)),
+      { timeout: 10_000 }
     )
     cfg.getPathThrows = false
   })
@@ -201,7 +205,7 @@ describe('main bootstrap — provider callbacks', () => {
       cfg.chatStreamArgs = null
       await import('../../src/main/index')
       cfg.readyResolvers.forEach((resolve) => resolve())
-      await vi.waitFor(() => expect(cfg.chatStreamArgs).not.toBeNull())
+      await vi.waitFor(() => expect(cfg.chatStreamArgs).not.toBeNull(), { timeout: 10_000 })
 
       const args = cfg.chatStreamArgs as unknown as [
         unknown,

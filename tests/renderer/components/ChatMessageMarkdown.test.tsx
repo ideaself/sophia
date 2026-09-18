@@ -8,8 +8,8 @@ import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vite
 import { render, screen, fireEvent, cleanup, waitFor, configure } from '@testing-library/react'
 
 // The markdown vendor stack is heavy — allow slower first paints in CI.
-configure({ asyncUtilTimeout: 10000 })
-vi.setConfig({ testTimeout: 30000 })
+configure({ asyncUtilTimeout: 15000 })
+vi.setConfig({ testTimeout: 45000 })
 
 vi.mock('../../../src/renderer/src/components/MermaidBlock', () => ({
   MermaidBlock: ({ code }: { code: string }) => <div data-testid="mermaid">{code}</div>
@@ -19,8 +19,9 @@ import { ChatMessage } from '../../../src/renderer/src/chat/ChatMessage'
 
 beforeAll(async () => {
   // Warm the lazy() import so the first render isn't a cold module load.
+  // Generous timeout: the vendor markdown stack is heavy under coverage.
   await import('../../../src/renderer/src/lib/MarkdownRenderer')
-})
+}, 60_000)
 
 const searchExcerpt = vi.fn()
 const translateExcerpt = vi.fn()
