@@ -492,9 +492,11 @@ describe('main bootstrap — tray and lifecycle', () => {
     win.handlers['resize']?.()
     await vi.advanceTimersByTimeAsync(600)
 
-    const raw = await readFile(join(h.state.userData, 'window-state.json'), 'utf-8')
-    const saved = JSON.parse(raw) as { x: number; width: number; height: number }
-    expect(saved).toMatchObject({ x: 5, y: 6, width: 999, height: 777 })
+    // The debounced write is async — poll until the atomic write lands.
+    await vi.waitFor(async () => {
+      const raw = await readFile(join(h.state.userData, 'window-state.json'), 'utf-8')
+      expect(JSON.parse(raw)).toMatchObject({ x: 5, y: 6, width: 999, height: 777 })
+    })
   })
 })
 

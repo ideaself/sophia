@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, nativeImage, session, webContents, screen } from 'electron'
 import trayIconDataUrl from '../../build/icon.png?inline'
 import { join } from 'path'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
+import { atomicWriteFile } from './storage/atomic-write'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerChatStreamIpc } from './ipc/chat-stream'
 import { registerConversationIpc } from './ipc/data'
@@ -91,7 +92,8 @@ async function loadWindowState(): Promise<WindowState | null> {
 function saveWindowState(win: BrowserWindow): void {
   const bounds = win.getBounds()
   const state: WindowState = { ...bounds, maximized: win.isMaximized() }
-  void writeFile(windowStatePath(), JSON.stringify(state), 'utf-8').catch(() => {})
+  // Atomic: a crash mid-write must not leave an empty/partial state file.
+  void atomicWriteFile(windowStatePath(), JSON.stringify(state), 'utf-8').catch(() => {})
 }
 
 function createWindow(): void {
