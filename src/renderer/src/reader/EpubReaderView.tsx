@@ -292,8 +292,10 @@ export function EpubReaderView({ textbookId, title, onClose, embedded }: EpubRea
 
   const jumpSearchMatch = (dir: 1 | -1) => {
     const marks = searchMarksRef.current
-    /* v8 ignore next -- @preserve */
-    if (marks.length === 0) return
+    if (marks.length === 0) {
+      /* v8 ignore next -- @preserve */
+      return
+    }
     const next = (searchIndex + dir + marks.length) % marks.length
     setSearchIndex(next)
     marks[next].scrollIntoView({ block: 'center' })

@@ -406,6 +406,9 @@ describe('EpubReaderView — search navigation', () => {
     const input = await screen.findByPlaceholderText('输入关键词，回车跳转...')
     fireEvent.change(input, { target: { value: '熵' } })
     await screen.findByText(/本页 1\/2 · 全书共 2 处/)
+    // Wait for the highlight marks to land in the DOM — the navigation
+    // handlers read searchMarksRef, which the render effect fills async.
+    await waitFor(() => expect(document.querySelectorAll('mark').length).toBeGreaterThan(0))
 
     // Enter advances, Shift+Enter goes back (marks exist in this chapter).
     fireEvent.keyDown(input, { key: 'Enter' })
