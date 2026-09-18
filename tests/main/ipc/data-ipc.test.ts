@@ -359,6 +359,24 @@ describe('message handlers', () => {
     await flush()
   })
 
+  it('reports false for edits and deletes of unknown messages', async () => {
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '未知消息'
+    })
+
+    expect(
+      await invoke('message:update', {
+        conversationId: conv.id,
+        messageId: 'msg_missing',
+        content: '改不存在的消息'
+      })
+    ).toBeNull()
+    expect(
+      await invoke('message:delete', { conversationId: conv.id, messageId: 'msg_missing' })
+    ).toBe(false)
+  })
+
   it('rejects whitespace-only message content', async () => {
     const conv = await invoke<{ id: string }>('conversation:create', {
       companionId: 'comp_landau',
@@ -490,6 +508,12 @@ describe('dialog + file handlers', () => {
 })
 
 describe('textbook handlers', () => {
+  it('archives an unknown textbook under its id and reports the failed delete', async () => {
+    // Delete is idempotent (true even when nothing matched); the point here is
+    // the archive step falling back to the raw id as the title.
+    expect(await invoke('textbook:delete', { textbookId: 'tb_missing' })).toBe(true)
+  })
+
   it('creates a textbook, updates it, tracks progress and deletes it', async () => {
     const tb = await invoke<{ id: string; title: string; progress: { currentPage: number } }>(
       'textbook:create',

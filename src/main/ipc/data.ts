@@ -296,7 +296,7 @@ export function registerConversationIpc(
         if (!lastUser || !lastAssistant) return
 
         const conv = await conversationStore.get(conversationId)
-        const transcript = `${lastUser.role === 'user' ? '学习者' : '导师'}: ${lastUser.content}\n\n${lastAssistant.role === 'user' ? '学习者' : '导师'}: ${lastAssistant.content}`
+        const transcript = `学习者: ${lastUser.content}\n\n导师: ${lastAssistant.content}`
 
         const active = providerStore ? await providerStore.getActive() : null
         if (!active) return
@@ -503,8 +503,8 @@ export function registerConversationIpc(
     const parsed = IpcReadOriginalInputSchema.parse(input)
     const result = await textbookStore.readOriginal(parsed.textbookId)
     if (!result) return null
+    /* v8 ignore next 3 -- @preserve -- 512MB 原件无法在测试中构造，靠内存保护兜底 */
     if (result.data.length > MAX_ORIGINAL_SIZE) {
-      /* v8 ignore next -- @preserve */
       throw new Error('原件超过 512MB，无法在应用内打开')
     }
     return { data: result.data, fileName: result.fileName }
