@@ -1508,3 +1508,103 @@ describe('reading notes in the diary prompt', () => {
     expect(prompt).toContain('熵增原理很重要')
   })
 })
+
+describe('data IPC — optional branches', () => {
+  it('deletes an unknown conversation with the id as the archive label', async () => {
+    // Missing conversation → the archive label falls back to the id; the
+    // forced rm still reports success.
+    await expect(invoke('conversation:delete', { conversationId: 'conv_missing' })).resolves.toBe(true)
+  })
+
+  it('keeps caches when truncation changes nothing', async () => {
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '截断'
+    })
+    const msg = await invoke<{ id: string }>('message:send', {
+      conversationId: conv.id,
+      content: '唯一一条'
+    })
+
+    // Truncating at the last message is a no-op (clear caches branch false).
+    await expect(
+      invoke('conversation:truncate', { conversationId: conv.id, messageId: msg.id })
+    ).resolves.toBe(false)
+  })
+
+  it('ignores reading-note updates for unknown notes', async () => {
+    await expect(
+      invoke('reading-note:update', { noteId: 'note_missing', textbookId: 'tb_1', content: 'x' })
+    ).resolves.toBeNull()
+  })
+
+  it('accepts dialog calls without input and reports cancellations', async () => {
+    mocks.showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] })
+    mocks.showSaveDialog.mockResolvedValue({ canceled: true, filePath: '' })
+
+    await expect(invoke('dialog:openFile')).resolves.toMatchObject({ canceled: true })
+    await expect(invoke('dialog:saveFile')).resolves.toMatchObject({ canceled: true })
+  })
+
+  it('asks confirmations without a focused window', async () => {
+    mocks.FakeBrowserWindow.focused = null
+    mocks.showMessageBox.mockResolvedValueOnce({ response: 0 })
+
+    await expect(invoke('dialog:confirm', { message: '继续？' })).resolves.toBe(true)
+  })
+
+  it('falls back to the default model when the active provider has none', async () => {
+    const providerStore = new ProviderStore(dataRoot, fakeSafeStorage)
+    const provider = await providerStore.create({
+      name: 'NoModel',
+      type: 'deepseek',
+      baseUrl: 'https://api.example.com',
+      apiKey: 'sk-nomodel',
+      models: [],
+      selectedModel: ''
+    })
+    await providerStore.update(provider.id, { isActive: true })
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      if ((messages[0]?.content ?? '').includes('学习分析助手')) {
+        return { content: JSON.stringify([{ name: '熵', performance: 'correct' }]) }
+      }
+      return { content: '通用内容' }
+    })
+
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '默认模型'
+    })
+    await invoke('message:send', { conversationId: conv.id, content: '问' })
+    await invoke('message:send', { conversationId: conv.id, content: '答', role: 'assistant' })
+
+    await vi.waitFor(() => expect(llm.clients.length).toBeGreaterThan(0), { timeout: 10_000 })
+    expect(llm.clients.some((c) => c.model === 'deepseek-v4-flash')).toBe(true)
+  })
+
+  it('validates the backup restore input shape', async () => {
+    await expect(invoke('data:restore-backup', 42 as never)).resolves.toMatchObject({
+      success: false
+    })
+  })
+
+  it('treats a non-array favorites payload as empty', async () => {
+    await writeFile(join(dataRoot, 'flashcard-favorites.json'), JSON.stringify({ nope: true }))
+    await expect(invoke('flashcard:get-favorites')).resolves.toEqual([])
+  })
+
+  it('ignores non-flashcard artifacts when counting due cards', async () => {
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '非卡片'
+    })
+    await invoke('artifact:create', {
+      conversationId: conv.id,
+      type: 'lesson_summary',
+      content: '## 总结'
+    })
+    await invoke('conversation:end', { conversationId: conv.id })
+
+    await expect(invoke('stats:due-flashcards')).resolves.toMatchObject({ due: 0, total: 0 })
+  })
+})

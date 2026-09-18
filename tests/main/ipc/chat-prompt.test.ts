@@ -49,6 +49,7 @@ import { ConceptStore } from '../../../src/main/learning-memory/concept-store'
 import { loadReferenceCompanions } from '../../../src/main/companions/reference-loader'
 import {
   companionDir,
+  configDir,
   learnerPath,
   palMomentsPath,
   relationPath,
@@ -697,5 +698,122 @@ describe('ai:compose-answer — provider-powered path', () => {
     expect(call[0].content).toContain('代答助手')
     expect(call[1].content).toContain('什么是熵？')
     expect(llm.clients.at(-1)).toEqual({ apiKey: 'sk-live', model: 'deepseek-v4-flash' })
+  })
+})
+
+describe('chat-prompt — fallback branches', () => {
+  it('omits optional segments when the files are missing or empty', async () => {
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '空上下文'
+    })
+    // Empty relation file and no learner/pal files at all.
+    await mkdir(join(dataRoot, 'learned'), { recursive: true })
+    await writeFile(relationPath(dataRoot, 'comp_landau'), '   ', 'utf-8')
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: conv.id, companionId: 'comp_landau', userMessage: '继续' }
+    )
+
+    expect(messages[0].content).not.toContain('## 与学习者的关系')
+  })
+
+  it('skips provider-powered segments when the stored key is gone', async () => {
+    await withProvider()
+    const conv = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '无钥匙'
+    })
+    await conversations.addMessage(conv.id, 'user', '问题')
+    await conversations.addMessage(conv.id, 'assistant', '回答'.repeat(5000))
+
+    const providerStoreLocal = new ProviderStore(dataRoot, fakeSafeStorage)
+    const active = await providerStoreLocal.getActive()
+    await rm(join(configDir(dataRoot), `${active!.id}.key.enc`), { force: true })
+    llm.chat.mockClear()
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: conv.id, companionId: 'comp_landau', userMessage: '继续' }
+    )
+
+    expect(messages.length).toBeGreaterThan(0)
+    expect(llm.chat).not.toHaveBeenCalled()
+  })
+
+  it('uses the default model when the active provider has none', async () => {
+    const providerStoreLocal = new ProviderStore(dataRoot, fakeSafeStorage)
+    const provider = await providerStoreLocal.create({
+      name: 'NoModel',
+      type: 'deepseek',
+      baseUrl: 'https://api.example.com',
+      apiKey: 'sk-nomodel',
+      models: [],
+      selectedModel: ''
+    })
+    await providerStoreLocal.update(provider.id, { isActive: true })
+    llm.chat.mockResolvedValue({ content: '  答案  ' })
+
+    await invoke('ai:compose-answer', { question: '什么是熵？', history: '' })
+
+    expect(llm.clients.at(-1)).toMatchObject({ model: 'deepseek-v4-flash' })
+  })
+
+  it('handles an empty history and an empty model response', async () => {
+    await withProvider()
+    llm.chat.mockResolvedValueOnce({} as never)
+
+    const result = await invoke<{ content: string }>('ai:compose-answer', {
+      question: '什么是熵？',
+      history: ''
+    })
+
+    expect(result.content).toBe('')
+    const call = llm.chat.mock.calls.at(-1)![0] as Array<{ content: string }>
+    expect(call[1].content).toContain('没有历史上下文')
+  })
+
+  it('ignores handoff meta without a stored handoff tail', async () => {
+    const previous = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '上一课'
+    })
+    await conversations.endConversation(previous.id)
+    await mkdir(join(dataRoot, 'learned'), { recursive: true })
+    await writeFile(
+      handoffMetaPath(dataRoot),
+      JSON.stringify({
+        comp_landau: {
+          savedAt: new Date().toISOString(),
+          prevConvId: previous.id,
+          companionName: '朗道',
+          companionSlot: null,
+          endingPage: null,
+          textbookId: null
+        }
+      }),
+      'utf-8'
+    )
+
+    const current = await conversations.create({
+      companionId: 'comp_landau',
+      companionVersion: 1,
+      textbookId: null,
+      title: '新一课'
+    })
+
+    const messages = await invoke<Array<{ role: string; content: string }>>(
+      'chat:get-prompt-messages',
+      { conversationId: current.id, companionId: 'comp_landau', userMessage: '继续' }
+    )
+
+    expect(messages[0].content).not.toContain('接力')
   })
 })
