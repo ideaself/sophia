@@ -14,6 +14,11 @@ npm run test:coverage  # 覆盖率及门槛（CI 用这个）
 - 打包相关：`npm run build:win`（会附带 `test:fuses`）；`npm run build:dir` 只出 `release/win-unpacked`，`npm run smoke` 启动它（独立 `--user-data-dir`，校验存活 12s + LocalData 布局落盘）。CI 跑 `build:dir` + `smoke` 拦截「能打包但启动即崩」。
 - 发布走 `release.yml`（附带 `latest.yml`，`--publish never`）；依赖更新由 `.github/dependabot.yml` 每周开 PR（minor/patch 聚合、major 单独）。
 
+## 依赖与版本策略
+
+- `overrides.lodash-es = 4.18.1`：mermaid 12 经 chevrotain 11.1.2 精确锁 lodash-es 4.17.23（5 项高危），override 到 4.18.1 后 `npm audit` 归零；chevrotain 上游升级后可移除。
+- 暂缓的 major（Dependabot PR #1/#2/#4，均已在 PR 评论记录复核日期）：vite 8 与 @vitejs/plugin-react 6 需等 electron-vite 6 稳定版（electron-vite 5 的 peer 仅到 vite 7）；typescript 7 需等 typescript-eslint 支持（当前 peer `>=4.8.4 <6.1.0`）。
+
 ## 数据版本与迁移（LocalData）
 
 - `src/main/storage/data-version.ts` 是数据布局的版本闸门：`initDataDir` 启动时调 `migrateDataRoot`，把 `LocalData/data-version.json` 升到 `DATA_VERSION`。
