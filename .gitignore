@@ -19,3 +19,6 @@ Thumbs.db
 /diag-*.js
 /.codex-write-test.tmp
 coverage/
+
+# Local AI quality-test credentials (never commit real keys).
+.env.ai-quality.local

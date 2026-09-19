@@ -125,10 +125,44 @@ describe('AI 质量 · 离线：引用真实性规则', () => {
 // 在线：真实 LLM 端到端（无 key 自动跳过）
 // ---------------------------------------------------------------------------
 
-const apiKey = process.env.SOPHIA_AI_QUALITY_KEY ?? process.env.DEEPSEEK_API_KEY ?? ''
-const endpoint = process.env.SOPHIA_AI_QUALITY_ENDPOINT ?? 'https://api.deepseek.com'
-const model = process.env.SOPHIA_AI_QUALITY_MODEL ?? 'deepseek-chat'
+/**
+ * 本地凭据文件（已 gitignore）：KEY / ENDPOINT / MODEL 三行，方便不配置
+ * shell 环境变量也能跑在线质量测试。优先级：进程环境变量 > 本地文件。
+ */
+function loadLocalAiQualityEnv(): Record<string, string> {
+  try {
+    const raw = readFileSync(join(process.cwd(), '.env.ai-quality.local'), 'utf-8')
+    const out: Record<string, string> = {}
+    for (const line of raw.split(/\r?\n/)) {
+      const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$/.exec(line)
+      if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '')
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/** 适配器要求完整 chat/completions 路径；允许只填 base URL。 */
+function toChatEndpoint(base: string): string {
+  const trimmed = base.replace(/\/+$/, '')
+  return trimmed.endsWith('/chat/completions') ? trimmed : `${trimmed}/chat/completions`
+}
+
+const localAiEnv = loadLocalAiQualityEnv()
+const envOf = (name: string): string | undefined => process.env[name] ?? localAiEnv[name]
+
+const apiKey = envOf('SOPHIA_AI_QUALITY_KEY') ?? envOf('DEEPSEEK_API_KEY') ?? ''
+const endpoint = toChatEndpoint(envOf('SOPHIA_AI_QUALITY_ENDPOINT') ?? 'https://api.deepseek.com')
+const model = envOf('SOPHIA_AI_QUALITY_MODEL') ?? 'deepseek-chat'
 const hasKey = apiKey.length > 0
+
+if (!hasKey) {
+  console.info(
+    '[ai-quality] 未检测到 API key（SOPHIA_AI_QUALITY_KEY / DEEPSEEK_API_KEY / .env.ai-quality.local），' +
+      '在线质量测试已跳过。'
+  )
+}
 
 describe('AI 质量 · 在线（真实 LLM，无 key 自动跳过）', () => {
   const client = hasKey
@@ -192,4 +226,16 @@ describe('AI 质量 · 在线（真实 LLM，无 key 自动跳过）', () => {
 it('质量测试配置自检：isKnowledgeQuestion 识别提问', () => {
   expect(isKnowledgeQuestion('什么是极限？')).toBe(true)
   expect(isKnowledgeQuestion('好的明白了')).toBe(false)
+})
+
+it('质量测试配置自检：endpoint 归一化为完整 chat/completions 路径', () => {
+  expect(toChatEndpoint('https://api.deepseek.com')).toBe(
+    'https://api.deepseek.com/chat/completions'
+  )
+  expect(toChatEndpoint('https://ark.cn-beijing.volces.com/api/v3/')).toBe(
+    'https://ark.cn-beijing.volces.com/api/v3/chat/completions'
+  )
+  expect(toChatEndpoint('https://x.example/v1/chat/completions')).toBe(
+    'https://x.example/v1/chat/completions'
+  )
 })
