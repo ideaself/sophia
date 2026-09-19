@@ -132,6 +132,8 @@ declare global {
       nextReview: number
       lastReview: number
     }
+    /** 掌握度历史（趋势图；数据版本 3 起，旧数据读取时补基线点）。 */
+    history?: Array<{ t: string; m: number }>
   }
 
   interface SearchResultDTO {

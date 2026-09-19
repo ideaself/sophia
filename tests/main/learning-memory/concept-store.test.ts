@@ -151,6 +151,58 @@ describe('ConceptStore.applyEvidence', () => {
   })
 })
 
+describe('ConceptStore mastery history (趋势)', () => {
+  it('每次有作答表现的更新追加一个历史点，unclear 不追加', async () => {
+    await store.applyEvidence(evidence({ updates: [{ name: '熵', performance: 'correct' }] }))
+    await store.applyEvidence(evidence({ updates: [{ name: '熵', performance: 'unclear' }] }))
+    await store.applyEvidence(evidence({ updates: [{ name: '熵', performance: 'incorrect' }] }))
+
+    const state = (await store.load())[0]
+    expect(state.history).toHaveLength(2)
+    expect(state.history![0].m).toBeGreaterThan(state.history![1].m)
+    expect(state.history![1].m).toBe(state.mastery)
+  })
+
+  it('旧数据（无 history）读取时用当前值补一个基线点', async () => {
+    await writeFile(
+      join(dataRoot, 'concepts.json'),
+      JSON.stringify([
+        {
+          id: 'concept_legacy',
+          name: '旧概念',
+          textbookId: null,
+          mastery: 0.62,
+          misconception: null,
+          attemptCount: 2,
+          correctCount: 1,
+          lastSeenAt: '2026-09-01T08:00:00.000Z',
+          updatedAt: '2026-09-02T08:00:00.000Z',
+          evidenceConversationId: 'conv_old',
+          evidenceMessageIds: []
+        },
+        {
+          id: 'concept_no_updated',
+          name: '缺 updatedAt',
+          textbookId: null,
+          mastery: 0.3,
+          misconception: null,
+          attemptCount: 1,
+          correctCount: 0,
+          lastSeenAt: '2026-09-03T08:00:00.000Z',
+          updatedAt: '',
+          evidenceConversationId: 'conv_old',
+          evidenceMessageIds: []
+        }
+      ]),
+      'utf-8'
+    )
+
+    const loaded = await store.load()
+    expect(loaded[0].history).toEqual([{ t: '2026-09-02T08:00:00.000Z', m: 0.62 }])
+    expect(loaded[1].history).toEqual([{ t: '2026-09-03T08:00:00.000Z', m: 0.3 }])
+  })
+})
+
 describe('ConceptStore.review (间隔复习)', () => {
   it('新概念自带 1 天后首次复习的排期', async () => {
     const before = Date.now()

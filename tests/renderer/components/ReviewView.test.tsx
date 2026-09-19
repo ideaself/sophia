@@ -31,7 +31,11 @@ const CONCEPTS = [
   {
     id: 'k1', name: '熵', textbookId: 'tb_1', mastery: 0.8, misconception: null,
     attemptCount: 3, correctCount: 2, lastSeenAt: '2026-07-06T09:00:00Z',
-    updatedAt: '2026-07-06T09:00:00Z', evidenceConversationId: 'c1'
+    updatedAt: '2026-07-06T09:00:00Z', evidenceConversationId: 'c1',
+    history: [
+      { t: '2026-07-01T09:00:00Z', m: 0.4 },
+      { t: '2026-07-06T09:00:00Z', m: 0.8 }
+    ]
   },
   {
     id: 'k2', name: '焓', textbookId: 'tb_1', mastery: 0.3, misconception: '混淆内能与焓',
@@ -141,6 +145,8 @@ describe('ReviewView', () => {
     expect(screen.getByText('⚠️ 误解点：混淆内能与焓')).toBeTruthy()
     // 无 SRS 排期的概念一律到期：可自评并展示下次复习时间。
     expect(screen.getAllByText('⏰ 待复习')).toHaveLength(2)
+    // 有 ≥2 个历史点的概念展示掌握度趋势。
+    expect(screen.getByTitle('掌握度趋势：40% → 80%')).toBeTruthy()
   })
 
   it('advances the schedule when a due concept is self-rated', async () => {

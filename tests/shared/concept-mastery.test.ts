@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
+  MASTERY_HISTORY_LIMIT,
+  appendMasteryPoint,
   buildConceptMasterySegment,
   isWeakConcept,
   masteryTier,
@@ -35,6 +37,23 @@ describe('concept-mastery prompt segment', () => {
 
   it('空概念返回 null', () => {
     expect(buildConceptMasterySegment([])).toBeNull()
+  })
+
+  it('掌握度历史：追加、从缺省开始并截断到上限', () => {
+    expect(appendMasteryPoint(undefined, 0.5, 't1')).toEqual([{ t: 't1', m: 0.5 }])
+    expect(appendMasteryPoint([{ t: 't1', m: 0.5 }], 0.6, 't2')).toEqual([
+      { t: 't1', m: 0.5 },
+      { t: 't2', m: 0.6 }
+    ])
+
+    const full = Array.from({ length: MASTERY_HISTORY_LIMIT }, (_, i) => ({
+      t: `t${i}`,
+      m: i / MASTERY_HISTORY_LIMIT
+    }))
+    const capped = appendMasteryPoint(full, 1, 'last')
+    expect(capped).toHaveLength(MASTERY_HISTORY_LIMIT)
+    expect(capped[0]).toEqual(full[1])
+    expect(capped[capped.length - 1]).toEqual({ t: 'last', m: 1 })
   })
 
   it('生成按薄弱到掌握排列的提示段', () => {

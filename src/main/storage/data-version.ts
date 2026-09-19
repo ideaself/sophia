@@ -13,8 +13,10 @@ import { isNotFoundError, warnReadFailure } from './fs-errors'
  * 1 — initial stamped version (layout unchanged since v0.1.0).
  * 2 — concept spaced-repetition schedule (optional `srs` on concepts.json).
  *     The store backfills missing schedules on read, so 1 → 2 rewrites nothing.
+ * 3 — concept mastery history (optional `history` on concepts.json), used by
+ *     the trend chart; the store seeds a baseline point on read.
  */
-export const DATA_VERSION = 2
+export const DATA_VERSION = 3
 
 export const DATA_VERSION_FILE = 'data-version.json'
 
@@ -32,6 +34,10 @@ export const MIGRATIONS: Record<number, DataMigration> = {
   1: async () => {
     // 1 → 2: concepts.json gains an optional `srs` field; ConceptStore
     // backfills defaults on read, so there is nothing to rewrite here.
+  },
+  2: async () => {
+    // 2 → 3: concepts.json gains an optional `history` field; ConceptStore
+    // seeds a baseline point on read, so there is nothing to rewrite here.
   }
 }
 

@@ -10,6 +10,27 @@ export interface ConceptStateBrief {
   misconception: string | null
 }
 
+/** 掌握度历史点（趋势图数据）。 */
+export interface MasteryPoint {
+  /** ISO 时间戳。 */
+  t: string
+  /** 当时的掌握度（0-1）。 */
+  m: number
+}
+
+/** 每个概念保留的历史点数上限（超出丢弃最旧的）。 */
+export const MASTERY_HISTORY_LIMIT = 60
+
+/** 追加一个掌握度历史点并截断到上限。 */
+export function appendMasteryPoint(
+  history: MasteryPoint[] | undefined,
+  mastery: number,
+  at: string
+): MasteryPoint[] {
+  const next = [...(history ?? []), { t: at, m: mastery }]
+  return next.length > MASTERY_HISTORY_LIMIT ? next.slice(-MASTERY_HISTORY_LIMIT) : next
+}
+
 export function masteryTier(m: number): '掌握' | '理解' | '薄弱' {
   if (m >= 0.7) return '掌握'
   if (m >= 0.35) return '理解'

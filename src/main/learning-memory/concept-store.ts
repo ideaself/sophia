@@ -8,6 +8,7 @@ import {
   type ConceptRating,
   type ConceptSrsState
 } from '../../shared/concept-srs'
+import { appendMasteryPoint, type MasteryPoint } from '../../shared/concept-mastery'
 
 export type ConceptPerformance = 'correct' | 'partial' | 'incorrect' | 'unclear'
 
@@ -33,6 +34,8 @@ export interface ConceptState {
   evidenceMessageIds: string[]
   /** 间隔复习排期（SM-2）；旧数据缺省时在读取时补齐。 */
   srs?: ConceptSrsState
+  /** 掌握度历史（趋势图）；旧数据缺省时用当前值补一个基线点。 */
+  history?: MasteryPoint[]
 }
 
 export interface ConceptEvidenceUpdate {
@@ -100,7 +103,8 @@ export class ConceptStore {
       // 使从未复习过的历史概念立即到期。
       return (parsed as ConceptState[]).map((c) => ({
         ...c,
-        srs: c.srs ?? newConceptSrs(Date.parse(c.lastSeenAt) || 0)
+        srs: c.srs ?? newConceptSrs(Date.parse(c.lastSeenAt) || 0),
+        history: c.history ?? [{ t: c.updatedAt || c.lastSeenAt, m: c.mastery }]
       }))
     } catch (err) {
       if (!isNotFoundError(err)) console.warn('Failed to load concepts:', err)
@@ -184,6 +188,9 @@ export class ConceptStore {
         case 'unclear':
           // 学习者提出但尚未作答的问题：仅标记接触，不改变掌握度
           break
+      }
+      if (u.performance !== 'unclear') {
+        s.history = appendMasteryPoint(s.history, s.mastery, now)
       }
     }
 

@@ -12,6 +12,7 @@ import {
 } from '../../../shared/concept-srs'
 import { FlashcardReviewView } from './FlashcardReviewView'
 import { ConceptCardGenerator } from './ConceptCardGenerator'
+import { MasterySparkline } from './MasterySparkline'
 import { SelfTestBlock } from './SelfTestBlock'
 import { AudioReviewPlayer } from './AudioReviewPlayer'
 
@@ -375,6 +376,9 @@ function ConceptStateList({
                 // 非到期意味着 srs 必存在（无排期一律视为到期）。
                 <span>下次复习：{nextReviewLabel(c.srs!, now)}</span>
               )}
+            </div>
+            <div className="mt-2">
+              <MasterySparkline history={c.history ?? []} />
             </div>
             {due && (
               <div className="mt-2 flex flex-wrap gap-2">
