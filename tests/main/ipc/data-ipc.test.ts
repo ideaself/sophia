@@ -138,6 +138,7 @@ vi.mock('../../../src/main/llm/deepseek-client', () => ({
 }))
 
 import { registerConversationIpc } from '../../../src/main/ipc/data'
+import { ConceptStore } from '../../../src/main/learning-memory/concept-store'
 import { ProviderStore } from '../../../src/main/storage/provider-store'
 import { loadReferenceCompanions } from '../../../src/main/companions/reference-loader'
 import {
@@ -1917,6 +1918,224 @@ describe('deep branch coverage', () => {
       ).rejects.toThrow('Failed to parse PDF file: raw parser exploded')
     } finally {
       parsers.extractTextThrow = null
+    }
+  })
+})
+
+describe('flashcard:generate-from-concepts', () => {
+  const cardContent = '- 问题：熵是什么？\n- 答案：状态函数'
+
+  /** Answer concept extraction with [] and the concept-card prompt with cards. */
+  function mockLlmWithCards(): void {
+    llm.chat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      const sys = messages[0]?.content ?? ''
+      if (sys.includes('学习分析助手')) return { content: '[]' }
+      if (sys.includes('掌握薄弱')) return { content: cardContent }
+      return { content: '通用内容' }
+    })
+  }
+
+  /** Seed one weak concept (two wrong answers + misconception). */
+  async function seedWeakConcept(
+    conversationId: string,
+    messageIds: string[],
+    name = '熵'
+  ): Promise<void> {
+    const store = new ConceptStore(dataRoot)
+    await store.applyEvidence({
+      conversationId,
+      textbookId: null,
+      messageIds,
+      updates: [
+        { name, performance: 'incorrect', misconception: '熵是能量' },
+        { name, performance: 'incorrect' }
+      ]
+    })
+  }
+
+  it('creates the flashcards artifact from weak concepts with evidence', async () => {
+    await withProvider()
+    mockLlmWithCards()
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '熵'
+    })
+    const user = await invoke<{ id: string }>('message:send', {
+      conversationId: conv.id,
+      content: '熵是什么？'
+    })
+    const assistant = await invoke<{ id: string }>('message:send', {
+      conversationId: conv.id,
+      content: '熵是状态函数。',
+      role: 'assistant'
+    })
+    await seedWeakConcept(conv.id, [user.id, assistant.id])
+
+    const res = await invoke<{ success: boolean; added: number; concepts: string[] }>(
+      'flashcard:generate-from-concepts',
+      { conversationId: conv.id }
+    )
+    expect(res).toMatchObject({ success: true, added: 1, concepts: ['熵'] })
+
+    const arts = await invoke<Array<{ type: string; content: string }>>('artifact:list', {
+      conversationId: conv.id
+    })
+    const flashcards = arts.filter((a) => a.type === 'flashcards')
+    expect(flashcards).toHaveLength(1)
+    expect(flashcards[0].content).toContain('问题：熵是什么？')
+
+    const cardCall = llm.chat.mock.calls.find((c) =>
+      String(c[0]?.[0]?.content ?? '').includes('掌握薄弱')
+    )
+    expect(cardCall).toBeTruthy()
+    const input = String(cardCall![0][1].content)
+    expect(input).toContain('熵（掌握度 28%，误解点：熵是能量）')
+    expect(input).toContain('熵是状态函数。')
+  })
+
+  it('appends to an existing flashcards artifact without touching SRS indices', async () => {
+    await withProvider()
+    mockLlmWithCards()
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '追加'
+    })
+    await invoke('artifact:create', {
+      conversationId: conv.id,
+      type: 'flashcards',
+      content: '- 问题：旧题\n- 答案：旧答'
+    })
+    // Evidence ids that are not part of the conversation are dropped.
+    await seedWeakConcept(conv.id, ['ghost_message'])
+
+    const res = await invoke<{ success: boolean; added: number }>(
+      'flashcard:generate-from-concepts',
+      { conversationId: conv.id }
+    )
+    expect(res).toMatchObject({ success: true, added: 1 })
+
+    const arts = await invoke<Array<{ type: string; content: string }>>('artifact:list', {
+      conversationId: conv.id
+    })
+    const flashcards = arts.filter((a) => a.type === 'flashcards')
+    expect(flashcards).toHaveLength(1)
+    expect(flashcards[0].content).toContain('旧题')
+    expect(flashcards[0].content).toContain('熵是什么')
+
+    const cardCall = llm.chat.mock.calls.find((c) =>
+      String(c[0]?.[0]?.content ?? '').includes('掌握薄弱')
+    )
+    expect(String(cardCall![0][1].content)).not.toContain('课堂证据摘录')
+  })
+
+  it('reports nothing to generate when no concept is weak', async () => {
+    await withProvider()
+    mockLlmWithCards()
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '无薄弱'
+    })
+    const store = new ConceptStore(dataRoot)
+    await store.applyEvidence({
+      conversationId: conv.id,
+      textbookId: null,
+      messageIds: ['m1'],
+      updates: [{ name: '熟悉的概念', performance: 'correct' }]
+    })
+
+    await expect(
+      invoke('flashcard:generate-from-concepts', { conversationId: conv.id })
+    ).resolves.toEqual({ success: true, added: 0, concepts: [] })
+    expect(
+      llm.chat.mock.calls.some((c) => String(c[0]?.[0]?.content ?? '').includes('掌握薄弱'))
+    ).toBe(false)
+  })
+
+  it('reports a missing conversation', async () => {
+    await expect(
+      invoke('flashcard:generate-from-concepts', { conversationId: 'conv_missing' })
+    ).resolves.toMatchObject({ success: false, added: 0, error: '课堂不存在' })
+  })
+
+  it('reports missing provider, missing key and missing provider store', async () => {
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '无模型'
+    })
+    await seedWeakConcept(conv.id, ['m1'])
+
+    // No active provider configured.
+    await expect(
+      invoke('flashcard:generate-from-concepts', { conversationId: conv.id })
+    ).resolves.toMatchObject({ success: false, error: '未配置模型服务' })
+
+    // Active provider whose key file is gone.
+    await withProvider()
+    const providerStore = new ProviderStore(dataRoot, fakeSafeStorage)
+    const active = await providerStore.getActive()
+    await rm(join(configDir(dataRoot), `${active!.id}.key.enc`), { force: true })
+    await expect(
+      invoke('flashcard:generate-from-concepts', { conversationId: conv.id })
+    ).resolves.toMatchObject({ success: false, error: '未配置模型密钥' })
+
+    // No provider store registered at all (legacy wiring).
+    mocks.handlers.clear()
+    registerConversationIpc(dataRoot)
+    await expect(
+      invoke('flashcard:generate-from-concepts', { conversationId: conv.id })
+    ).resolves.toMatchObject({ success: false, error: '未配置模型服务' })
+  })
+
+  it('uses the default model when the active provider has none', async () => {
+    const providerStore = new ProviderStore(dataRoot, fakeSafeStorage)
+    const provider = await providerStore.create({
+      name: 'Empty',
+      type: 'deepseek',
+      baseUrl: '',
+      apiKey: 'sk-empty',
+      models: [],
+      selectedModel: ''
+    })
+    await providerStore.update(provider.id, { isActive: true })
+    mockLlmWithCards()
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '默认模型'
+    })
+    await seedWeakConcept(conv.id, ['m1'])
+
+    await expect(
+      invoke('flashcard:generate-from-concepts', { conversationId: conv.id })
+    ).resolves.toMatchObject({ success: true, added: 1 })
+    expect(llm.clients.at(-1)?.model).toBe('deepseek-v4-flash')
+  })
+
+  it('reports unparseable output and both failure kinds', async () => {
+    await withProvider()
+    const conv = await invoke<{ id: string }>('conversation:create', {
+      companionId: 'comp_landau',
+      title: '失败'
+    })
+    await seedWeakConcept(conv.id, ['m1'])
+
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      llm.chat.mockResolvedValue({ content: '抱歉，无法生成' })
+      await expect(
+        invoke('flashcard:generate-from-concepts', { conversationId: conv.id })
+      ).resolves.toMatchObject({ success: false, error: '生成失败，请重试' })
+
+      llm.chat.mockRejectedValue(new Error('429 rate limited'))
+      await expect(
+        invoke('flashcard:generate-from-concepts', { conversationId: conv.id })
+      ).resolves.toMatchObject({ success: false, error: '429 rate limited' })
+
+      llm.chat.mockRejectedValue('offline')
+      await expect(
+        invoke('flashcard:generate-from-concepts', { conversationId: conv.id })
+      ).resolves.toMatchObject({ success: false, error: '生成失败，请重试' })
+    } finally {
+      error.mockRestore()
     }
   })
 })

@@ -206,6 +206,12 @@ export interface DataAPI {
     onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void
     listConcepts: (conversationId: string) => Promise<ConceptStateDTO[]>
     onConceptsUpdated: (callback: (payload: { conversationId: string }) => void) => () => void
+    generateConceptCards: (conversationId: string) => Promise<{
+      success: boolean
+      added: number
+      concepts?: string[]
+      error?: string
+    }>
   createTextbook: (input: {
     title: string
     format: 'markdown' | 'text' | 'pdf' | 'epub'
@@ -595,6 +601,8 @@ const sophia: SophiaAPI = {
       ipcRenderer.invoke('concepts:list', conversationId),
     onConceptsUpdated: (callback) =>
       createSimpleSubscriber<{ conversationId: string }>('concepts:updated', callback),
+    generateConceptCards: (conversationId) =>
+      ipcRenderer.invoke('flashcard:generate-from-concepts', { conversationId }),
     createTextbook: (input) =>
       ipcRenderer.invoke('textbook:create', input),
     getTextbook: (textbookId) =>

@@ -6,6 +6,7 @@ import { parseSelfTestQuestions } from '../../../shared/self-test-utils'
 import { buildNextSteps } from '../../../shared/next-steps'
 import { parseTimeline, parseFaq } from '../../../shared/lesson-media'
 import { FlashcardReviewView } from './FlashcardReviewView'
+import { ConceptCardGenerator } from './ConceptCardGenerator'
 import { SelfTestBlock } from './SelfTestBlock'
 import { AudioReviewPlayer } from './AudioReviewPlayer'
 
@@ -241,7 +242,15 @@ export function ReviewView(): React.ReactElement {
             </Suspense>
           </div>
         ) : currentKey === 'concepts' ? (
-          <ConceptStateList concepts={concepts} />
+          <div className="max-w-3xl space-y-4">
+            <ConceptCardGenerator
+              conversationId={scope.conversationId}
+              conversationTitle={scope.title}
+              concepts={concepts}
+              onGenerated={load}
+            />
+            <ConceptStateList concepts={concepts} />
+          </div>
         ) : currentKey === 'next' ? (
           <NextStepsPanel concepts={concepts} />
         ) : currentKey === 'audio' ? (

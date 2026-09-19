@@ -201,6 +201,12 @@ declare global {
     onArtifactsGenerated: (callback: (payload: ArtifactsGeneratedPayload) => void) => () => void
     listConcepts: (conversationId: string) => Promise<ConceptStateDTO[]>
     onConceptsUpdated: (callback: (payload: { conversationId: string }) => void) => () => void
+    generateConceptCards: (conversationId: string) => Promise<{
+      success: boolean
+      added: number
+      concepts?: string[]
+      error?: string
+    }>
     createTextbook: (input: {
       title: string
       format: 'markdown' | 'text' | 'pdf' | 'epub'

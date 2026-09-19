@@ -7,6 +7,7 @@
 import { DeepSeekClient } from '../llm/deepseek-client'
 import { createDeepSeekHttpAdapter } from '../llm/deepseek-http-adapter'
 import type { Message } from '../../shared/schemas/message'
+import { parseFlashcards } from '../../shared/flashcard-utils'
 import { ArtifactType, type ClassMode } from '../../shared/types/ids'
 
 interface ArtifactResult {
@@ -382,4 +383,64 @@ function buildArtifactPrompt(type: ArtifactType, cardTarget?: string): string {
       throw new Error(`Unknown artifact type: ${_exhaustive}`)
     }
   }
+}
+
+/** 生成薄弱概念卡片的输入：概念 + 课堂证据摘录。 */
+export interface ConceptCardSource {
+  name: string
+  mastery: number
+  misconception: string | null
+  /** 该概念最近一次课堂的证据消息摘录（已截断，可为空）。 */
+  evidence: string[]
+}
+
+function buildConceptCardPrompt(): string {
+  return `你是一位教育助手。学习者对下列概念掌握薄弱（或存在误解），请据此生成 3-6 张记忆卡片帮助复习。
+每张卡片格式：
+- 问题：(针对薄弱点或误解点的关键问题)
+- 答案：(简洁准确的答案；如概念带误解点，先辨析错误再给正确理解)
+
+【质量要求】
+- 只考给定概念与证据里的内容，不引入外部知识、不编造课堂里没有的细节。
+- 有误解点的概念优先出「辨析题」；其余考核心含义与用法。
+- 问题必须能独立理解，不依赖上下文；答案直接了当。
+- 内容不足时宁少勿滥（至少 1 张）。
+- 铁律：只输出 问题/答案 卡片行，不要标题、不要解释。
+
+用中文回答，使用 Markdown 格式。`
+}
+
+function buildConceptCardInput(concepts: ConceptCardSource[]): string {
+  const lines: string[] = ['需要复习的概念：', '']
+  concepts.forEach((c, i) => {
+    const mis = c.misconception ? `，误解点：${c.misconception}` : ''
+    lines.push(`${i + 1}. ${c.name}（掌握度 ${Math.round(c.mastery * 100)}%${mis}）`)
+    if (c.evidence.length > 0) {
+      lines.push('   课堂证据摘录：')
+      for (const quote of c.evidence) lines.push(`   - ${quote}`)
+    }
+  })
+  return lines.join('\n')
+}
+
+/**
+ * 为薄弱概念生成记忆卡片内容（`- 问题：/- 答案：` 格式）。
+ * 返回 null 表示模型没有产出可解析的卡片（调用方据此报错，不写空产物）。
+ */
+export async function generateConceptCards(
+  concepts: ConceptCardSource[],
+  config: ArtifactProviderConfig
+): Promise<string | null> {
+  const endpoint = config.baseUrl.replace(/\/$/, '') + '/chat/completions'
+  const adapter = createDeepSeekHttpAdapter({ endpoint })
+  const client = new DeepSeekClient(config.apiKey, adapter, config.model)
+
+  const response = await client.chat([
+    { role: 'system', content: buildConceptCardPrompt() },
+    { role: 'user', content: buildConceptCardInput(concepts) }
+  ])
+
+  const content = (response.content ?? '').trim()
+  if (!content || parseFlashcards(content).length === 0) return null
+  return content
 }

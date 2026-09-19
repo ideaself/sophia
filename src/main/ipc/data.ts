@@ -8,10 +8,11 @@ import { ArtifactStore } from '../storage/artifact-store'
 import { ReadingNoteStore } from '../storage/reading-note-store'
 import { DiaryStore } from '../storage/diary-store'
 import type { ProviderStore } from '../storage/provider-store'
-import { generateArtifacts } from '../artifacts/generate'
+import { generateArtifacts, generateConceptCards } from '../artifacts/generate'
 import { restoreFromBackup } from '../backup/restore'
 import { ConceptStore } from '../learning-memory/concept-store'
 import { extractConceptUpdates } from '../learning-memory/concept-extractor'
+import { selectWeakConcepts } from '../../shared/concept-mastery'
 import { parseFlashcards, rebuildArtifactContent } from '../../shared/flashcard-utils'
 import { estimateDailyStudyMinutes } from '../../shared/study-time'
 import { countDueFlashcards } from '../stats/due-flashcards'
@@ -69,6 +70,7 @@ import {
   IpcExportBackupInputSchema,
   IpcRestoreBackupInputSchema,
   IpcConceptsListInputSchema,
+  IpcGenerateConceptCardsInputSchema,
   IpcFlashcardSrsStateInputSchema,
   IpcFlashcardFavoritesInputSchema,
   IpcOpenFileDialogInputSchema,
@@ -328,6 +330,67 @@ export function registerConversationIpc(
   ipcMain.handle('concepts:list', async (_event, input: unknown) => {
     const conversationId = IpcConceptsListInputSchema.parse(input)
     return conversationId ? conceptStore.listByConversation(conversationId) : conceptStore.load()
+  })
+
+  // 薄弱概念 → 记忆卡片（复习闭环）：带课堂证据摘录调 LLM 出卡，追加到本课
+  // 已有的 flashcards 产物（只追加不改序，既有的卡片索引与 SRS 进度保持不变）。
+  ipcMain.handle('flashcard:generate-from-concepts', async (_event, input: unknown) => {
+    const { conversationId } = IpcGenerateConceptCardsInputSchema.parse(input)
+    try {
+      const conv = await conversationStore.get(conversationId)
+      if (!conv) return { success: false, added: 0, error: '课堂不存在' }
+
+      const selected = selectWeakConcepts(await conceptStore.listByConversation(conversationId))
+      if (selected.length === 0) return { success: true, added: 0, concepts: [] }
+
+      const active = providerStore ? await providerStore.getActive() : null
+      if (!active) return { success: false, added: 0, error: '未配置模型服务' }
+      const apiKey = await providerStore!.readApiKey(active.id)
+      if (!apiKey) return { success: false, added: 0, error: '未配置模型密钥' }
+
+      const byId = new Map<string, string>(
+        (await conversationStore.getMessages(conversationId)).map((m) => [m.id, m.content])
+      )
+      const sources = selected.map((c) => ({
+        name: c.name,
+        mastery: c.mastery,
+        misconception: c.misconception,
+        evidence: c.evidenceMessageIds
+          .map((id) => byId.get(id))
+          .filter((t): t is string => !!t)
+          .slice(0, 2)
+          .map((t) => t.replace(/\s+/g, ' ').trim().slice(0, 240))
+      }))
+
+      const content = await generateConceptCards(sources, {
+        apiKey,
+        baseUrl: active.baseUrl || 'https://api.deepseek.com',
+        model: active.selectedModel || 'deepseek-v4-flash'
+      })
+      if (!content) return { success: false, added: 0, error: '生成失败，请重试' }
+
+      const newCards = parseFlashcards(content)
+      const existing = (await artifactStore.list(conversationId)).find(
+        (a) => a.type === ArtifactType.Flashcards
+      )
+      if (existing) {
+        await artifactStore.update(
+          existing.id,
+          conversationId,
+          rebuildArtifactContent([...parseFlashcards(existing.content), ...newCards])
+        )
+      } else {
+        await artifactStore.create(conversationId as ConversationId, ArtifactType.Flashcards, content)
+      }
+      return { success: true, added: newCards.length, concepts: selected.map((c) => c.name) }
+    } catch (err) {
+      console.error(`[concepts] 概念卡片生成失败 for ${conversationId}:`, err)
+      return {
+        success: false,
+        added: 0,
+        error: err instanceof Error ? err.message : '生成失败，请重试'
+      }
+    }
   })
 
   ipcMain.handle('message:send', async (_event, input: unknown) => {

@@ -27,7 +27,7 @@ vi.mock('../../../src/main/llm/deepseek-http-adapter', () => ({
   createDeepSeekHttpAdapter: (opts: unknown) => ({ kind: 'http', opts })
 }))
 
-import { generateArtifacts } from '../../../src/main/artifacts/generate'
+import { generateArtifacts, generateConceptCards } from '../../../src/main/artifacts/generate'
 import { ArtifactType } from '../../../src/shared/types/ids'
 import type { Message } from '../../../src/shared/schemas/message'
 
@@ -214,5 +214,49 @@ describe('generateArtifacts — prompt plumbing', () => {
     await generateArtifacts(messages(20), config, { types: [ArtifactType.LessonSummary] })
     const shortTranscript = calls()[0][1].content
     expect(shortTranscript).not.toContain('【课堂开头】')
+  })
+})
+
+describe('generateConceptCards', () => {
+  const concepts = [
+    {
+      name: '熵',
+      mastery: 0.2,
+      misconception: '认为熵是能量',
+      evidence: ['熵是状态函数，描述系统混乱度']
+    },
+    { name: '焓', mastery: 0.6, misconception: null, evidence: [] }
+  ]
+
+  it('builds a targeted prompt with mastery, misconception and evidence', async () => {
+    llm.chat.mockResolvedValue({ content: '- 问题：熵是什么？\n- 答案：状态函数' })
+
+    const content = await generateConceptCards(concepts, {
+      ...config,
+      baseUrl: 'https://api.example.com/'
+    })
+
+    expect(content).toBe('- 问题：熵是什么？\n- 答案：状态函数')
+    const call = calls()[0]
+    expect(call[0].content).toContain('掌握薄弱')
+    expect(call[0].content).toContain('至少 1 张')
+    const input = call[1].content
+    expect(input).toContain('1. 熵（掌握度 20%，误解点：认为熵是能量）')
+    expect(input).toContain('   - 熵是状态函数，描述系统混乱度')
+    expect(input).toContain('2. 焓（掌握度 60%）')
+    expect(input).not.toContain('焓（掌握度 60%，误解点')
+    expect(llm.clients).toHaveLength(1)
+    expect(llm.clients[0].adapter).toEqual({
+      kind: 'http',
+      opts: { endpoint: 'https://api.example.com/chat/completions' }
+    })
+  })
+
+  it('returns null when the model produces empty or unparseable output', async () => {
+    llm.chat.mockResolvedValue({})
+    await expect(generateConceptCards(concepts, config)).resolves.toBeNull()
+
+    llm.chat.mockResolvedValue({ content: '抱歉，我无法生成卡片' })
+    await expect(generateConceptCards(concepts, config)).resolves.toBeNull()
   })
 })

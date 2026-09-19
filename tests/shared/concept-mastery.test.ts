@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { buildConceptMasterySegment, masteryTier } from '../../src/shared/concept-mastery'
+import {
+  buildConceptMasterySegment,
+  isWeakConcept,
+  masteryTier,
+  selectWeakConcepts
+} from '../../src/shared/concept-mastery'
 import { buildNextSteps } from '../../src/shared/next-steps'
 
 describe('concept-mastery prompt segment', () => {
@@ -7,6 +12,25 @@ describe('concept-mastery prompt segment', () => {
     expect(masteryTier(0.8)).toBe('掌握')
     expect(masteryTier(0.5)).toBe('理解')
     expect(masteryTier(0.2)).toBe('薄弱')
+  })
+
+  it('挑选薄弱概念：低掌握度或未澄清误解，按掌握度升序且限量', () => {
+    expect(isWeakConcept({ mastery: 0.2, misconception: null })).toBe(true)
+    expect(isWeakConcept({ mastery: 0.5, misconception: '混淆' })).toBe(true)
+    expect(isWeakConcept({ mastery: 0.5, misconception: null })).toBe(false)
+    expect(isWeakConcept({ mastery: 0.9, misconception: '旧误解' })).toBe(false)
+
+    const picked = selectWeakConcepts(
+      [
+        { name: 'A', mastery: 0.6, misconception: '误解' },
+        { name: 'B', mastery: 0.9, misconception: null },
+        { name: 'C', mastery: 0.1, misconception: null },
+        { name: 'D', mastery: 0.3, misconception: null },
+        { name: 'E', mastery: 0.2, misconception: null }
+      ],
+      3
+    )
+    expect(picked.map((c) => c.name)).toEqual(['C', 'E', 'D'])
   })
 
   it('空概念返回 null', () => {

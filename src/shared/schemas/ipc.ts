@@ -299,6 +299,11 @@ export const IpcRestoreBackupInputSchema = z.string().min(1).max(4096)
 /** Concept list query: a conversation id, or '' for all concepts. */
 export const IpcConceptsListInputSchema = z.union([EntityIdSchema, z.literal('')])
 
+/** 为当前会话的薄弱概念生成记忆卡片。 */
+export const IpcGenerateConceptCardsInputSchema = z.object({
+  conversationId: EntityIdSchema
+})
+
 export const IpcDialogFileFiltersSchema = z.array(z.object({
   name: z.string(),
   extensions: z.array(z.string())

@@ -16,6 +16,22 @@ export function masteryTier(m: number): '掌握' | '理解' | '薄弱' {
   return '薄弱'
 }
 
+/** 值得出复习卡的概念：薄弱（<0.35）或存在未澄清的误解（<0.7）。 */
+export function isWeakConcept(c: { mastery: number; misconception: string | null }): boolean {
+  return c.mastery < 0.35 || (!!c.misconception && c.mastery < 0.7)
+}
+
+/** 按掌握度升序挑选薄弱概念（最多 max 个）。 */
+export function selectWeakConcepts<T extends { mastery: number; misconception: string | null }>(
+  concepts: T[],
+  max = 6
+): T[] {
+  return concepts
+    .filter(isWeakConcept)
+    .sort((a, b) => a.mastery - b.mastery)
+    .slice(0, max)
+}
+
 const TIER_COLORS: Record<ReturnType<typeof masteryTier>, string> = {
   掌握: '已掌握',
   理解: '基本理解',

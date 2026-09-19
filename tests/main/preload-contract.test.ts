@@ -112,6 +112,7 @@ describe('preload bridge surface', () => {
     await api.data.listMessages('conv_1')
     await api.data.updateTextbookProgress('tb_1', { currentPage: 3 })
     await api.data.updateMessage('conv_1', 'msg_1', '改过的内容')
+    await api.data.generateConceptCards('conv_1')
 
     expect(mocks.invoke).toHaveBeenCalledWith('conversation:get', { conversationId: 'conv_1' })
     expect(mocks.invoke).toHaveBeenCalledWith('conversation:list', {})
@@ -124,6 +125,9 @@ describe('preload bridge surface', () => {
       conversationId: 'conv_1',
       messageId: 'msg_1',
       content: '改过的内容'
+    })
+    expect(mocks.invoke).toHaveBeenCalledWith('flashcard:generate-from-concepts', {
+      conversationId: 'conv_1'
     })
   })
 
