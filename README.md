@@ -32,7 +32,7 @@ npm run smoke         # 启动 win-unpacked 冒烟：存活 12s + 数据布局�
 npm run clean         # 清理 out/ release/ coverage/
 ```
 
-Node >= 22.13（见 `engines`；pdfjs-dist / unpdf 的硬性要求）。
+Node >= 22.22.2（见 `engines`；jsdom 30 与 pdfjs-dist / unpdf 的硬性要求）。
 
 ## 架构
 
