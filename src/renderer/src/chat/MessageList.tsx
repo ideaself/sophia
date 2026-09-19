@@ -14,6 +14,7 @@ import { ChatErrorRow } from './ChatErrorRow'
 import { EndClassCard } from './EndClassCard'
 import { type DisplayMessage, type TabState } from './types'
 import type { MessageVirtualizer } from './useMessageListScroll'
+import type { CitationMismatchMap } from './useCitationAudit'
 
 export type MessageRow =
   | {
@@ -37,6 +38,8 @@ export interface MessageListProps {
   isStreaming: boolean
   reasoningContent: string
   groundingFlagged: ReadonlySet<string>
+  /** 消息 → 未在教材中找到的引用标记（运行时引用真实性校验）。 */
+  citationMismatches: CitationMismatchMap
   errorMessage: string | undefined
   onRetry?: () => void
   textbookId: string | null
@@ -61,6 +64,7 @@ export function MessageList({
   isStreaming,
   reasoningContent,
   groundingFlagged,
+  citationMismatches,
   errorMessage,
   onRetry,
   textbookId,
@@ -127,6 +131,7 @@ export function MessageList({
                       highlight={row.highlight}
                       textbookId={textbookId}
                       showGroundingNotice={groundingFlagged.has(row.msg.id)}
+                      mismatchedCitations={citationMismatches.get(row.msg.id)}
                       onRewind={
                         !isStreaming &&
                         row.msg.role !== 'system' &&

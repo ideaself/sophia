@@ -20,6 +20,7 @@ import {
   type MessageRow
 } from '../../../src/renderer/src/chat/MessageList'
 import { useMessageListScroll } from '../../../src/renderer/src/chat/useMessageListScroll'
+import type { CitationMismatchMap } from '../../../src/renderer/src/chat/useCitationAudit'
 import type { TabState } from '../../../src/renderer/src/chat/types'
 
 // --------------- jsdom layout stubs ---------------
@@ -74,6 +75,7 @@ interface HarnessProps {
   isStreaming?: boolean
   reasoningContent?: string
   groundingFlagged?: ReadonlySet<string>
+  citationMismatches?: CitationMismatchMap
   errorMessage?: string
   onRetry?: () => void
   textbookId?: string | null
@@ -94,6 +96,7 @@ function ListHarness({
   isStreaming = false,
   reasoningContent = '',
   groundingFlagged = new Set<string>(),
+  citationMismatches = new Map(),
   errorMessage,
   onRetry,
   textbookId = null,
@@ -127,6 +130,7 @@ function ListHarness({
       isStreaming={isStreaming}
       reasoningContent={reasoningContent}
       groundingFlagged={groundingFlagged}
+      citationMismatches={citationMismatches}
       errorMessage={errorMessage}
       onRetry={onRetry}
       textbookId={textbookId}
@@ -262,6 +266,23 @@ describe('MessageList', () => {
     expect(screen.getByText('⚠️ 本次回答未引用教材出处，内容待核实')).toBeTruthy()
 
     rerender(<ListHarness rows={[messageRow('m1', 'assistant', 'A1 未引用的回答')]} textbookId="tb_1" />)
+    expect(screen.queryByText('⚠️ 本次回答未引用教材出处，内容待核实')).toBeNull()
+  })
+
+  it('passes per-message citation mismatches through to the message', async () => {
+    const marker = '【教材出处 · 《物理讲义》 · 第一章】'
+    render(
+      <ListHarness
+        rows={[messageRow('m1', 'assistant', `A1 回答\n\n> ${marker}\n> 引文内容`)]}
+        citationMismatches={new Map([['m1', new Set([marker])]])}
+        groundingFlagged={new Set(['m1'])}
+        textbookId="tb_1"
+      />
+    )
+
+    await screen.findByText(/A1 回答/)
+    expect(screen.getByText(/疑似不实的教材引用/)).toBeTruthy()
+    // 不实引用比“未引用”更严重：不再叠加未引用提示。
     expect(screen.queryByText('⚠️ 本次回答未引用教材出处，内容待核实')).toBeNull()
   })
 })

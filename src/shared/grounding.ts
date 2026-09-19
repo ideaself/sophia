@@ -68,8 +68,32 @@ export function normalizeForMatch(text: string): string {
  * 策略：引用正文切为 6 字以上片段，任一长片段可在教材中找到（包含关系）即视为真实。
  */
 export function citationMatchesTextbook(citation: CitationBlock, textbook: string): boolean {
-  const book = normalizeForMatch(textbook)
-  const chunks = citation.quoted.split('\n').map(normalizeForMatch).filter((s) => s.length >= 6)
-  if (chunks.length === 0) return false
-  return chunks.some((chunk) => book.includes(chunk))
+  return verifyCitation(citation, textbook) === 'verified'
+}
+
+/** 单条引用真实性判定（运行时校验用三态，区别于布尔的历史 API）。 */
+export type CitationVerdict =
+  /** 存在 ≥6 字片段可在教材中找到。 */
+  | 'verified'
+  /** 有足够长的片段但都找不到 —— 疑似伪造引用。 */
+  | 'mismatch'
+  /** 引用过短/为空，无法判定（不标红）。 */
+  | 'unverifiable'
+
+/** 在已规范化的教材文本上判定，避免逐条引用重复规范化整本书。 */
+export function verifyCitationNormalized(
+  citation: CitationBlock,
+  normalizedTextbook: string
+): CitationVerdict {
+  const chunks = citation.quoted
+    .split('\n')
+    .map(normalizeForMatch)
+    .filter((s) => s.length >= 6)
+  if (chunks.length === 0) return 'unverifiable'
+  return chunks.some((chunk) => normalizedTextbook.includes(chunk)) ? 'verified' : 'mismatch'
+}
+
+/** 引用真实性判定（内部先规范化教材全文）。 */
+export function verifyCitation(citation: CitationBlock, textbook: string): CitationVerdict {
+  return verifyCitationNormalized(citation, normalizeForMatch(textbook))
 }

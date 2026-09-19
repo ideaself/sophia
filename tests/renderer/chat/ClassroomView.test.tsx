@@ -136,7 +136,8 @@ const dataMocks = {
   redoArtifacts: vi.fn(),
   captureScreenshot: vi.fn(),
   composeAiAnswer: vi.fn(),
-  updateTextbookProgress: vi.fn()
+  updateTextbookProgress: vi.fn(),
+  getTextbook: vi.fn()
 }
 
 const dialogMocks = {
@@ -162,6 +163,7 @@ beforeEach(() => {
 
   dataMocks.getConversation.mockResolvedValue({ id: 'conv_1', title: '07-06 朗道', endedAt: null })
   dataMocks.listMessages.mockResolvedValue(STORED_MESSAGES)
+  dataMocks.getTextbook.mockResolvedValue(null)
   dataMocks.truncateConversation.mockResolvedValue(true)
   dataMocks.deleteMessage.mockResolvedValue(true)
   dataMocks.sendMessage.mockImplementation(async (input: { role?: string; content: string }) => ({
@@ -1635,5 +1637,41 @@ describe('ClassroomView — branch closure', () => {
 
     await screen.findByText('那什么是卷积？')
     expect(screen.queryByText(/未引用教材出处/)).toBeNull()
+  })
+})
+
+describe('ClassroomView — runtime citation authenticity', () => {
+  const marker = '【教材出处 · 《物理讲义》 · 第一章】'
+  const citationMessage = {
+    id: 'm1',
+    conversationId: 'conv_1',
+    role: 'assistant',
+    content: `A1 回答\n\n> ${marker}\n> 熵是状态函数`,
+    createdAt: '2026-07-06T09:00:00Z'
+  }
+  const textbook = { id: 'tb_1', title: '物理讲义', format: 'pdf' as const, originalFile: 'x.pdf' }
+
+  it('marks a citation that the bound textbook does not contain', async () => {
+    dataMocks.listMessages.mockResolvedValue([citationMessage])
+    dataMocks.getTextbook.mockResolvedValue({ content: '第一章：完全无关的教材内容' })
+    const chat = createFakeChat()
+    render(<Harness chat={chat} textbook={textbook} />)
+
+    expect(await screen.findByText(/疑似不实的教材引用/)).toBeTruthy()
+  })
+
+  it('keeps a citation that matches the textbook unflagged', async () => {
+    dataMocks.listMessages.mockResolvedValue([citationMessage])
+    dataMocks.getTextbook.mockResolvedValue({ content: '第一章：熵是状态函数，描述系统混乱度。' })
+    const chat = createFakeChat()
+    render(<Harness chat={chat} textbook={textbook} />)
+
+    await screen.findByText(/A1 回答/)
+    await waitFor(() => expect(dataMocks.getTextbook).toHaveBeenCalledWith('tb_1'))
+    // Flush the audit's resolution + rerender before asserting the negative.
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(screen.queryByText(/疑似不实的教材引用/)).toBeNull()
   })
 })

@@ -73,6 +73,64 @@ describe('ChatMessage (assistant)', () => {
     expect(screen.getByText(/未引用教材出处/)).toBeTruthy()
   })
 
+  it('prefers the citation-mismatch notice over the grounding notice', () => {
+    const marker = '【教材出处 · 《物理》 · 第一章】'
+    const content = `某段回答\n\n> ${marker}\n> 引文内容`
+    const { rerender } = render(
+      <ChatMessage
+        id="a1"
+        role="assistant"
+        content={content}
+        showGroundingNotice
+        mismatchedCitations={new Set([marker])}
+      />
+    )
+    expect(screen.getByText(/疑似不实的教材引用/)).toBeTruthy()
+    expect(screen.queryByText(/未引用教材出处/)).toBeNull()
+
+    // 空集合不是不实引用：回落到「未引用」提示。
+    rerender(
+      <ChatMessage
+        id="a1"
+        role="assistant"
+        content={content}
+        showGroundingNotice
+        mismatchedCitations={new Set()}
+      />
+    )
+    expect(screen.getByText(/未引用教材出处/)).toBeTruthy()
+  })
+
+  it('shows no notices on user messages and hides them while editing', () => {
+    const marker = '【教材出处 · 《物理》 · 第一章】'
+    const content = `某段回答\n\n> ${marker}\n> 引文内容`
+    const { rerender } = render(
+      <ChatMessage
+        id="u1"
+        role="user"
+        content={content}
+        showGroundingNotice
+        mismatchedCitations={new Set([marker])}
+      />
+    )
+    expect(screen.queryByText(/疑似不实的教材引用/)).toBeNull()
+    expect(screen.queryByText(/未引用教材出处/)).toBeNull()
+
+    rerender(
+      <ChatMessage
+        id="a1"
+        role="assistant"
+        content={content}
+        showActions
+        onEdit={() => {}}
+        mismatchedCitations={new Set([marker])}
+      />
+    )
+    expect(screen.getByText(/疑似不实的教材引用/)).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('编辑消息'))
+    expect(screen.queryByText(/疑似不实的教材引用/)).toBeNull()
+  })
+
   it('renders a formatted timestamp when createdAt is given', () => {
     render(
       <ChatMessage

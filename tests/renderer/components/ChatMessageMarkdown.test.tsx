@@ -118,6 +118,37 @@ describe('ChatMessage markdown components', () => {
 describe('ChatMessage citation chip', () => {
   const CITATION = '> 【教材出处 · 《高等数学》 · 第3章】\n> 引文内容'
 
+  it('marks citations that are not found in the textbook', async () => {
+    render(
+      <ChatMessage
+        id="m1"
+        role="assistant"
+        content={CITATION}
+        textbookId="tb1"
+        mismatchedCitations={new Set(['【教材出处 · 《高等数学》 · 第3章】'])}
+      />
+    )
+
+    expect(await screen.findByText('⚠️ 未在教材中找到该引用，内容待核实')).toBeTruthy()
+    expect(screen.getByText(/疑似不实的教材引用/)).toBeTruthy()
+  })
+
+  it('keeps citations unstyled when only other markers are flagged', async () => {
+    render(
+      <ChatMessage
+        id="m1"
+        role="assistant"
+        content={CITATION}
+        textbookId="tb1"
+        mismatchedCitations={new Set(['【教材出处 · 《其他书》 · 第一章】'])}
+      />
+    )
+
+    expect(await screen.findByText('📖 教材原文 · 第3章')).toBeTruthy()
+    expect(screen.queryByText(/未在教材中找到该引用/)).toBeNull()
+    expect(screen.queryByText(/疑似不实的教材引用/)).toBeNull()
+  })
+
   it('loads the excerpt, toggles off, then loads the translation', async () => {
     const source = deferred<{ excerpt: string }>()
     searchExcerpt.mockReturnValue(source.promise)

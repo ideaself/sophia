@@ -5,6 +5,7 @@ import { MermaidBlock } from '../components/MermaidBlock'
 import { SelfTestBlock } from '../components/SelfTestBlock'
 import { normalizeMathDelimiters } from '../../../shared/math-delimiters'
 import { parseSelfTestQuestions } from '../../../shared/self-test-utils'
+import { extractCitations } from '../../../shared/grounding'
 import { parseEventCard, type EventCard } from '../../../shared/event-cards'
 import { handleCopyMathSource } from '../lib/mathCopy'
 
@@ -25,6 +26,8 @@ interface ChatMessageProps {
   textbookId?: string | null
   /** 轻量 grounding 提醒：知识性回答未引用教材出处时展示小字警示。 */
   showGroundingNotice?: boolean
+  /** 运行时引用真实性校验：未在教材中找到的引用标记集合（标红）。 */
+  mismatchedCitations?: ReadonlySet<string>
   onEdit?: (id: string, content: string) => void
   onDelete?: (id: string) => void
   onRegenerate?: (id: string) => void
@@ -249,6 +252,7 @@ export const ChatMessage = memo(function ChatMessage({
   highlight = 'none',
   textbookId,
   showGroundingNotice = false,
+  mismatchedCitations,
   onEdit,
   onDelete,
   onRegenerate,
@@ -279,6 +283,13 @@ export const ChatMessage = memo(function ChatMessage({
     }
     setEditing(false)
   }
+
+  // Only count flags whose marker actually appears in this message, so a stale
+  // map entry from elsewhere can never raise the message-level notice.
+  const citationMismatchCount = useMemo(() => {
+    if (!mismatchedCitations || mismatchedCitations.size === 0) return 0
+    return extractCitations(content).filter((c) => mismatchedCitations.has(c.marker)).length
+  }, [content, mismatchedCitations])
   const rendered = useMemo(() => {
     // Event-card parsing scans the whole message with regexes and returns a
     // fresh object — keeping it inside this memo (keyed on `content`) is what
@@ -336,8 +347,14 @@ export const ChatMessage = memo(function ChatMessage({
               const text = extractText(children)
               const m = /【教材出处 · 《([^】]+)》 · ([^】]+)】/.exec(text)
               if (!m) return <blockquote>{children}</blockquote>
+              const suspect = mismatchedCitations?.has(m[0]) ?? false
               return (
-                <blockquote>
+                <blockquote style={suspect ? { borderLeftColor: '#ef4444', background: 'rgba(239, 68, 68, 0.08)', color: '#fca5a5' } : undefined}>
+                  {suspect && (
+                    <p className="mb-1 text-[10px] font-medium text-red-400">
+                      ⚠️ 未在教材中找到该引用，内容待核实
+                    </p>
+                  )}
                   <CitationChip textbookId={textbookId} chapter={m[2].trim()} />
                   {children}
                 </blockquote>
@@ -359,7 +376,7 @@ export const ChatMessage = memo(function ChatMessage({
         {body}
       </div>
     )
-  }, [content, isUser, textbookId])
+  }, [content, isUser, textbookId, mismatchedCitations])
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} group`}>
@@ -414,11 +431,15 @@ export const ChatMessage = memo(function ChatMessage({
                 {new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </p>
             )}
-            {showGroundingNotice && !isUser && !editing && (
+            {citationMismatchCount > 0 && !isUser && !editing ? (
+              <p className="mt-1.5 text-[10px] leading-relaxed text-red-400">
+                ⚠️ 检测到疑似不实的教材引用（已标红），请以教材原文为准
+              </p>
+            ) : showGroundingNotice && !isUser && !editing ? (
               <p className="mt-1.5 text-[10px] leading-relaxed text-amber-600/90">
                 ⚠️ 本次回答未引用教材出处，内容待核实
               </p>
-            )}
+            ) : null}
           </div>
               {showActions && !editing && (
             <div className="flex-shrink-0 flex items-start gap-1 opacity-0 group-hover:opacity-100 transition-opacity pt-0.5">

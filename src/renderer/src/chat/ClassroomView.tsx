@@ -8,6 +8,7 @@ import { useAppStore } from '../stores/useAppStore'
 import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-templates'
 import { useTodayStudyMinutes } from '../hooks/useTodayStudyMinutes'
 import { isKnowledgeQuestion, hasTextbookCitation } from '../../../shared/grounding'
+import { useCitationAudit } from './useCitationAudit'
 import { useClassroomSend } from './useClassroomSend'
 import { useChatStreamTick } from './chat-stream-store'
 import { ClassroomHeader } from './ClassroomHeader'
@@ -650,6 +651,9 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
     return flagged
   }, [allMessages, textbook])
 
+  // ---- 运行时引用真实性校验：教材中找不到的引用标红（含消息级提示） ----
+  const citationMismatches = useCitationAudit(textbook?.id ?? null, activeTab.messages)
+
   // ---- In-conversation search (Ctrl+F) ----
   const searchMatches = useMemo(
     () => findMessageMatches(allMessages, searchQuery),
@@ -869,6 +873,7 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         isStreaming={chatStream.state.isStreaming}
         reasoningContent={chatStream.state.reasoningContent}
         groundingFlagged={groundingFlagged}
+        citationMismatches={citationMismatches}
         errorMessage={sendError ?? chatStream.state.error?.message}
         onRetry={
           activeTab.retryMessage

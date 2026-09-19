@@ -13,7 +13,14 @@ import {
   setFontScale,
   FONT_SCALE_OPTIONS
 } from '../../src/shared/font-scale'
-import { citationMatchesTextbook, extractCitations, hasTextbookCitation } from '../../src/shared/grounding'
+import {
+  citationMatchesTextbook,
+  extractCitations,
+  hasTextbookCitation,
+  normalizeForMatch,
+  verifyCitation,
+  verifyCitationNormalized
+} from '../../src/shared/grounding'
 import { applyNotesToHtml } from '../../src/shared/reading-notes-utils'
 import { parseSelfTestQuestions } from '../../src/shared/self-test-utils'
 import { parsePersistedTabs } from '../../src/shared/tab-persistence'
@@ -86,6 +93,18 @@ describe('grounding', () => {
     expect(
       extractCitations('> 【教材出处 · 《高等数学》 · 第3章】\n> 引文内容')
     ).toEqual([{ marker: '【教材出处 · 《高等数学》 · 第3章】', quoted: '引文内容' }])
+  })
+
+  it('classifies citations as verified, mismatch or unverifiable', () => {
+    const citation = { marker: '【教材出处 · 《高等数学》 · 第3章】', quoted: '熵是状态函数' }
+    expect(verifyCitation(citation, '第三章：熵是状态函数，用于描述系统的混乱度')).toBe('verified')
+    expect(verifyCitation(citation, '完全无关的教材内容')).toBe('mismatch')
+    expect(verifyCitation({ marker: citation.marker, quoted: '熵' }, '熵是状态函数')).toBe(
+      'unverifiable'
+    )
+    // 已规范化文本的快路径与全量规范化结果一致。
+    expect(verifyCitationNormalized(citation, normalizeForMatch('熵是状态函数'))).toBe('verified')
+    expect(citationMatchesTextbook(citation, '完全无关的教材内容')).toBe(false)
   })
 })
 
