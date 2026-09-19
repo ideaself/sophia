@@ -137,7 +137,9 @@ const dataMocks = {
   captureScreenshot: vi.fn(),
   composeAiAnswer: vi.fn(),
   updateTextbookProgress: vi.fn(),
-  getTextbook: vi.fn()
+  getTextbook: vi.fn(),
+  listConcepts: vi.fn(),
+  onConceptsUpdated: vi.fn(() => () => {})
 }
 
 const dialogMocks = {
@@ -164,6 +166,7 @@ beforeEach(() => {
   dataMocks.getConversation.mockResolvedValue({ id: 'conv_1', title: '07-06 朗道', endedAt: null })
   dataMocks.listMessages.mockResolvedValue(STORED_MESSAGES)
   dataMocks.getTextbook.mockResolvedValue(null)
+  dataMocks.listConcepts.mockResolvedValue([])
   dataMocks.truncateConversation.mockResolvedValue(true)
   dataMocks.deleteMessage.mockResolvedValue(true)
   dataMocks.sendMessage.mockImplementation(async (input: { role?: string; content: string }) => ({
@@ -1673,5 +1676,45 @@ describe('ClassroomView — runtime citation authenticity', () => {
       await Promise.resolve()
     })
     expect(screen.queryByText(/疑似不实的教材引用/)).toBeNull()
+  })
+})
+
+describe('ClassroomView — live insights panel', () => {
+  it('opens the panel, shows concepts and closes again', async () => {
+    dataMocks.listConcepts.mockResolvedValue([
+      {
+        id: 'k1',
+        name: '熵',
+        textbookId: 'tb_1',
+        mastery: 0.2,
+        misconception: '熵是能量',
+        attemptCount: 2,
+        correctCount: 0,
+        lastSeenAt: '2026-07-06T09:00:00Z',
+        updatedAt: '2026-07-06T09:00:00Z',
+        evidenceConversationId: 'conv_1',
+        evidenceMessageIds: []
+      }
+    ])
+    const chat = createFakeChat()
+    render(
+      <Harness
+        chat={chat}
+        textbook={{ id: 'tb_1', title: '物理讲义', format: 'pdf', originalFile: 'x.pdf' }}
+      />
+    )
+
+    await screen.findByText('Q1 什么是卷积？')
+    // 薄弱概念计数显示在「学情」按钮上。
+    const toggle = screen.getByTitle('查看本节实时学情：已识别概念与掌握度')
+    expect(toggle.textContent).toContain('1')
+
+    fireEvent.click(toggle)
+    expect(await screen.findByRole('region', { name: '实时学情' })).toBeTruthy()
+    expect(screen.getByText('已识别 1 个概念：薄弱 1 · 基本理解 0 · 已掌握 0')).toBeTruthy()
+    expect(screen.getByText('⚠️ 误解点：熵是能量')).toBeTruthy()
+
+    fireEvent.click(toggle)
+    expect(screen.queryByRole('region', { name: '实时学情' })).toBeNull()
   })
 })

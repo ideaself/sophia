@@ -9,6 +9,9 @@ import { loadTextTemplates, MAX_TEXT_TEMPLATES } from '../../../shared/text-temp
 import { useTodayStudyMinutes } from '../hooks/useTodayStudyMinutes'
 import { isKnowledgeQuestion, hasTextbookCitation } from '../../../shared/grounding'
 import { useCitationAudit } from './useCitationAudit'
+import { useConversationConcepts } from './useConversationConcepts'
+import { ClassroomInsightsPanel } from './ClassroomInsightsPanel'
+import { selectWeakConcepts } from '../../../shared/concept-mastery'
 import { useClassroomSend } from './useClassroomSend'
 import { useChatStreamTick } from './chat-stream-store'
 import { ClassroomHeader } from './ClassroomHeader'
@@ -105,6 +108,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   const [aiAnswering, setAiAnswering] = useState(false)
   // 课堂内嵌教材阅读分栏（左右并排，宽度可拖拽调整）
   const { readerOpen, setReaderOpen, readerWidth, handleReaderResizeStart } = useReaderSplit()
+  // 实时学情面板（概念掌握度随问答更新）
+  const [insightsOpen, setInsightsOpen] = useState(false)
   // Math symbol quick-insert panel
   const [mathOpen, setMathOpen] = useState(false)
   const [mathTab, setMathTab] = useState('greek')
@@ -654,6 +659,10 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
   // ---- 运行时引用真实性校验：教材中找不到的引用标红（含消息级提示） ----
   const citationMismatches = useCitationAudit(textbook?.id ?? null, activeTab.messages)
 
+  // ---- 实时学情面板：当前会话概念掌握度（随问答事件刷新） ----
+  const insightsConcepts = useConversationConcepts(activeTab.conversationId)
+  const weakConceptCount = useMemo(() => selectWeakConcepts(insightsConcepts).length, [insightsConcepts])
+
   // ---- In-conversation search (Ctrl+F) ----
   const searchMatches = useMemo(
     () => findMessageMatches(allMessages, searchQuery),
@@ -828,6 +837,8 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
         textbookTitle={textbook?.title ?? null}
         hasTextbookOriginal={!!textbook?.originalFile}
         readerOpen={readerOpen}
+        insightsOpen={insightsOpen}
+        weakConceptCount={weakConceptCount}
         isStreaming={chatStream.state.isStreaming}
         isReasoning={chatStream.state.reasoningContent.length > 0}
         dailyGoal={dailyGoal}
@@ -842,9 +853,18 @@ export function ClassroomView({ companion, textbook, chatStream, loadConversatio
           classMode: activeTab.classMode === 'feynman' ? 'standard' : 'feynman'
         })}
         onToggleReader={() => setReaderOpen((v) => !v)}
+        onToggleInsights={() => setInsightsOpen((v) => !v)}
         onScreenshot={() => void handleScreenshot()}
         onEndClass={() => void handleEndClass()}
       />
+
+      {/* 实时学情面板（概念掌握度随问答更新） */}
+      {insightsOpen && (
+        <ClassroomInsightsPanel
+          conversationId={activeTab.conversationId}
+          concepts={insightsConcepts}
+        />
+      )}
 
       {/* In-conversation search (Ctrl+F) */}
       {searchOpen && (

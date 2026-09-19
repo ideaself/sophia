@@ -16,6 +16,9 @@ export interface ClassroomHeaderProps {
   textbookTitle?: string | null
   hasTextbookOriginal: boolean
   readerOpen: boolean
+  /** 实时学情面板开关与薄弱概念计数。 */
+  insightsOpen: boolean
+  weakConceptCount: number
   isStreaming: boolean
   isReasoning: boolean
   dailyGoal: number
@@ -28,6 +31,7 @@ export interface ClassroomHeaderProps {
   onPaceChange: (pace: 'slow' | 'normal' | 'fast') => void
   onToggleFeynman: () => void
   onToggleReader: () => void
+  onToggleInsights: () => void
   onScreenshot: () => void
   onEndClass: () => void
 }
@@ -44,6 +48,8 @@ export function ClassroomHeader({
   textbookTitle,
   hasTextbookOriginal,
   readerOpen,
+  insightsOpen,
+  weakConceptCount,
   isStreaming,
   isReasoning,
   dailyGoal,
@@ -56,6 +62,7 @@ export function ClassroomHeader({
   onPaceChange,
   onToggleFeynman,
   onToggleReader,
+  onToggleInsights,
   onScreenshot,
   onEndClass
 }: ClassroomHeaderProps): React.ReactElement {
@@ -138,6 +145,24 @@ export function ClassroomHeader({
               title="并排打开教材阅读（拖动分隔条调整宽度）"
             >
               📖 {readerOpen ? '关闭阅读' : '教材阅读'}
+            </button>
+          )}
+          {conversationId && (
+            <button
+              onClick={onToggleInsights}
+              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                insightsOpen
+                  ? 'border-accent text-accent hover:bg-accent-subtle'
+                  : 'border-surface-border-strong text-text-muted hover:bg-bg-elevated hover:text-text-secondary'
+              }`}
+              title="查看本节实时学情：已识别概念与掌握度"
+            >
+              📊 学情
+              {weakConceptCount > 0 && (
+                <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-700 px-1 text-[10px] font-semibold text-white">
+                  {weakConceptCount}
+                </span>
+              )}
             </button>
           )}
           <button

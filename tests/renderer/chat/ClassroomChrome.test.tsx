@@ -28,6 +28,8 @@ function headerProps(overrides: Partial<HeaderProps> = {}): HeaderProps {
     textbookTitle: '热力学入门',
     hasTextbookOriginal: true,
     readerOpen: false,
+    insightsOpen: false,
+    weakConceptCount: 0,
     isStreaming: false,
     isReasoning: false,
     dailyGoal: 60,
@@ -40,6 +42,7 @@ function headerProps(overrides: Partial<HeaderProps> = {}): HeaderProps {
     onPaceChange: vi.fn(),
     onToggleFeynman: vi.fn(),
     onToggleReader: vi.fn(),
+    onToggleInsights: vi.fn(),
     onScreenshot: vi.fn(),
     onEndClass: vi.fn(),
     ...overrides
@@ -65,6 +68,19 @@ describe('ClassroomHeader', () => {
   it('hides the goal ring when the daily goal is disabled', () => {
     renderHeader({ dailyGoal: 0 })
     expect(screen.queryByText(/30\/60m/)).toBeNull()
+  })
+
+  it('toggles the insights panel and badges weak concepts', () => {
+    const props = renderHeader({ insightsOpen: true, weakConceptCount: 3 })
+
+    fireEvent.click(screen.getByText('📊 学情'))
+    expect(props.onToggleInsights).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('3')).toBeTruthy()
+  })
+
+  it('hides the insights toggle without a conversation', () => {
+    renderHeader({ conversationId: null })
+    expect(screen.queryByText('📊 学情')).toBeNull()
   })
 
   it('switches pace and toggles feynman mode', () => {
