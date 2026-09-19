@@ -116,7 +116,8 @@ const data = {
   lock: { has: vi.fn(async () => false), verify: vi.fn(async () => true) },
   listConversations: vi.fn(async () => [] as unknown[]),
   getTextbook: vi.fn(async (): Promise<unknown> => null),
-  dueFlashcardCount: vi.fn(async () => ({ due: 0, total: 0 }))
+  dueFlashcardCount: vi.fn(async () => ({ due: 0, total: 0 })),
+  dueConceptCount: vi.fn(async () => ({ due: 0, total: 0 }))
 }
 const companionsApi = { get: vi.fn(async () => null as unknown) }
 const chatApi = {
@@ -137,6 +138,7 @@ beforeEach(() => {
   data.listConversations.mockClear().mockResolvedValue([])
   data.getTextbook.mockClear().mockResolvedValue(null)
   data.dueFlashcardCount.mockClear().mockResolvedValue({ due: 0, total: 0 })
+  data.dueConceptCount.mockClear().mockResolvedValue({ due: 0, total: 0 })
   companionsApi.get.mockClear().mockResolvedValue(null)
 
   Object.defineProperty(window, 'sophia', {
@@ -299,14 +301,56 @@ describe('App — classroom dropdown', () => {
 })
 
 describe('App — due flashcards badge', () => {
-  it('shows the badge and records the daily reminder', async () => {
+  it('shows the combined badge and records the daily reminder', async () => {
     localStorage.setItem('sophia.onboardingDone', '1')
     data.dueFlashcardCount.mockResolvedValue({ due: 150, total: 150 })
+    data.dueConceptCount.mockResolvedValue({ due: 3, total: 4 })
+    const NotificationSpy = vi.fn()
+    Object.defineProperty(window, 'Notification', { configurable: true, value: NotificationSpy })
     render(<App />)
 
     expect(await screen.findByText('99+')).toBeTruthy()
+    expect(screen.getByTitle('待复习：150 张卡片 · 3 个概念')).toBeTruthy()
     await waitFor(() =>
       expect(localStorage.getItem('sophia.dueReminderDate')).toBe(new Date().toDateString())
+    )
+    expect(NotificationSpy).toHaveBeenCalledWith(
+      '复习提醒',
+      expect.objectContaining({
+        body: expect.stringContaining('150 张记忆卡片、3 个概念')
+      })
+    )
+  })
+
+  it('reminds about due flashcards without mentioning concepts', async () => {
+    localStorage.setItem('sophia.onboardingDone', '1')
+    data.dueFlashcardCount.mockResolvedValue({ due: 1, total: 1 })
+    const NotificationSpy = vi.fn()
+    Object.defineProperty(window, 'Notification', { configurable: true, value: NotificationSpy })
+    render(<App />)
+
+    await waitFor(() =>
+      expect(NotificationSpy).toHaveBeenCalledWith(
+        '复习提醒',
+        expect.objectContaining({ body: expect.stringContaining('1 张记忆卡片') })
+      )
+    )
+    const body = NotificationSpy.mock.calls[0][1].body as string
+    expect(body).not.toContain('概念')
+  })
+
+  it('reminds about due concepts even when no card is due', async () => {    localStorage.setItem('sophia.onboardingDone', '1')
+    data.dueConceptCount.mockResolvedValue({ due: 2, total: 2 })
+    const NotificationSpy = vi.fn()
+    Object.defineProperty(window, 'Notification', { configurable: true, value: NotificationSpy })
+    render(<App />)
+
+    expect(await screen.findByTitle('待复习：0 张卡片 · 2 个概念')).toBeTruthy()
+    await waitFor(() =>
+      expect(NotificationSpy).toHaveBeenCalledWith(
+        '复习提醒',
+        expect.objectContaining({ body: expect.stringContaining('2 个概念') })
+      )
     )
   })
 })

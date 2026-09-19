@@ -2139,3 +2139,50 @@ describe('flashcard:generate-from-concepts', () => {
     }
   })
 })
+
+describe('concept spaced review', () => {
+  /** Seed one concept whose schedule is already due (reviewed long ago). */
+  async function seedDueConcept(name: string, textbookId: string | null = null): Promise<string> {
+    const store = new ConceptStore(dataRoot)
+    await store.applyEvidence({
+      conversationId: 'conv_review',
+      textbookId,
+      messageIds: ['m1'],
+      updates: [{ name, performance: 'correct' }]
+    })
+    const state = (await store.load()).find((c) => c.name === name)!
+    await store.review(state.id, textbookId, 'good', Date.now() - 10 * 86_400_000)
+    return state.id
+  }
+
+  it('counts due concepts and advances the schedule through self-rating', async () => {
+    await seedDueConcept('熵')
+
+    await expect(invoke('stats:due-concepts')).resolves.toEqual({ due: 1, total: 1 })
+
+    const states = await invoke<Array<{ id: string; srs: { nextReview: number } }>>(
+      'concepts:list',
+      'conv_review'
+    )
+    expect(states[0].srs.nextReview).toBeLessThan(Date.now())
+
+    const updated = await invoke<{ srs: { reps: number; nextReview: number } } | null>(
+      'concepts:review',
+      { conceptId: states[0].id, textbookId: null, rating: 'good' }
+    )
+    expect(updated?.srs.reps).toBe(2)
+    expect(updated!.srs.nextReview).toBeGreaterThan(Date.now())
+
+    await expect(invoke('stats:due-concepts')).resolves.toEqual({ due: 0, total: 1 })
+  })
+
+  it('returns null for unknown concepts and rejects invalid ratings', async () => {
+    await expect(
+      invoke('concepts:review', { conceptId: 'concept_missing', textbookId: null, rating: 'good' })
+    ).resolves.toBeNull()
+
+    await expect(
+      invoke('concepts:review', { conceptId: 'concept_missing', textbookId: null, rating: 'nope' })
+    ).rejects.toThrow()
+  })
+})

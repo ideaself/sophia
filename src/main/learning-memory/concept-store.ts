@@ -2,6 +2,12 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isNotFoundError } from '../storage/fs-errors'
 import { atomicWriteFile } from '../storage/atomic-write'
+import {
+  newConceptSrs,
+  updateConceptSrs,
+  type ConceptRating,
+  type ConceptSrsState
+} from '../../shared/concept-srs'
 
 export type ConceptPerformance = 'correct' | 'partial' | 'incorrect' | 'unclear'
 
@@ -25,6 +31,8 @@ export interface ConceptState {
   evidenceConversationIds?: string[]
   /** 证据消息 ID —— 可溯源"这条掌握度来自哪次对话"。 */
   evidenceMessageIds: string[]
+  /** 间隔复习排期（SM-2）；旧数据缺省时在读取时补齐。 */
+  srs?: ConceptSrsState
 }
 
 export interface ConceptEvidenceUpdate {
@@ -87,7 +95,13 @@ export class ConceptStore {
     try {
       const raw = await readFile(this.filePath, 'utf-8')
       const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed as ConceptState[] : []
+      if (!Array.isArray(parsed)) return []
+      // 数据版本 2 起概念带 SM-2 排期；旧数据按「上次接触 +1 天」补齐，
+      // 使从未复习过的历史概念立即到期。
+      return (parsed as ConceptState[]).map((c) => ({
+        ...c,
+        srs: c.srs ?? newConceptSrs(Date.parse(c.lastSeenAt) || 0)
+      }))
     } catch (err) {
       if (!isNotFoundError(err)) console.warn('Failed to load concepts:', err)
       return []
@@ -116,6 +130,7 @@ export class ConceptStore {
   private async applyEvidenceLocked(evidence: ConceptEvidence): Promise<ConceptState[]> {
     const states = await this.load()
     const now = new Date().toISOString()
+    const nowMs = Date.parse(now)
     const msgIds = evidence.messageIds
 
     for (const u of evidence.updates) {
@@ -136,7 +151,8 @@ export class ConceptStore {
           updatedAt: now,
           evidenceConversationId: evidence.conversationId,
           evidenceConversationIds: [evidence.conversationId],
-          evidenceMessageIds: msgIds
+          evidenceMessageIds: msgIds,
+          srs: newConceptSrs(nowMs)
         }
         states.push(s)
       }
@@ -175,5 +191,28 @@ export class ConceptStore {
     // Atomic write: a crash mid-save must not truncate concepts.json.
     await atomicWriteFile(this.filePath, JSON.stringify(states, null, 2), 'utf-8')
     return states
+  }
+
+  /**
+   * 记录一次概念自评并推进 SM-2 排期（掌握度不变：自评反映记忆状态，
+   * 课堂问答才更新掌握度）。未找到概念返回 null。
+   */
+  async review(
+    conceptId: string,
+    textbookId: string | null,
+    rating: ConceptRating,
+    now = Date.now()
+  ): Promise<ConceptState | null> {
+    return this.enqueueWrite(async () => {
+      const states = await this.load()
+      const state = states.find((c) => c.id === conceptId && c.textbookId === textbookId)
+      if (!state) return null
+      // load() 已为旧数据补齐 srs。
+      state.srs = updateConceptSrs(state.srs!, rating, now)
+      state.updatedAt = new Date(now).toISOString()
+      await mkdir(this.dataRoot, { recursive: true })
+      await atomicWriteFile(this.filePath, JSON.stringify(states, null, 2), 'utf-8')
+      return state
+    })
   }
 }

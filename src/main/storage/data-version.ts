@@ -11,8 +11,10 @@ import { isNotFoundError, warnReadFailure } from './fs-errors'
  * matching entry to MIGRATIONS so existing data roots upgrade on startup.
  *
  * 1 — initial stamped version (layout unchanged since v0.1.0).
+ * 2 — concept spaced-repetition schedule (optional `srs` on concepts.json).
+ *     The store backfills missing schedules on read, so 1 → 2 rewrites nothing.
  */
-export const DATA_VERSION = 1
+export const DATA_VERSION = 2
 
 export const DATA_VERSION_FILE = 'data-version.json'
 
@@ -26,6 +28,10 @@ export type DataMigration = (dataRoot: string) => Promise<void>
 export const MIGRATIONS: Record<number, DataMigration> = {
   0: async () => {
     // 0 → 1: layout unchanged; stamping the version is the whole migration.
+  },
+  1: async () => {
+    // 1 → 2: concepts.json gains an optional `srs` field; ConceptStore
+    // backfills defaults on read, so there is nothing to rewrite here.
   }
 }
 

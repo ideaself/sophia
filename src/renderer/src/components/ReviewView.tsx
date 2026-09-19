@@ -5,6 +5,11 @@ import { useTextbookStore } from '../stores/useTextbookStore'
 import { parseSelfTestQuestions } from '../../../shared/self-test-utils'
 import { buildNextSteps } from '../../../shared/next-steps'
 import { parseTimeline, parseFaq } from '../../../shared/lesson-media'
+import {
+  isConceptDue,
+  nextReviewLabel,
+  type ConceptRating
+} from '../../../shared/concept-srs'
 import { FlashcardReviewView } from './FlashcardReviewView'
 import { ConceptCardGenerator } from './ConceptCardGenerator'
 import { SelfTestBlock } from './SelfTestBlock'
@@ -118,6 +123,23 @@ export function ReviewView(): React.ReactElement {
 
   const startDate = messages.length > 0 ? new Date(messages[0].createdAt).toLocaleString() : ''
   const endDate = messages.length > 0 ? new Date(messages[messages.length - 1].createdAt).toLocaleString() : ''
+
+  /** 概念自评：推进 SM-2 排期并用返回值就地更新列表。 */
+  const handleReviewConcept = async (
+    concept: ConceptStateDTO,
+    rating: ConceptRating
+  ): Promise<void> => {
+    const updated = await window.sophia.data
+      .reviewConcept(concept.id, concept.textbookId, rating)
+      .catch(() => null)
+    if (updated) {
+      setConcepts((prev) =>
+        prev.map((c) =>
+          c.id === updated.id && c.textbookId === updated.textbookId ? updated : c
+        )
+      )
+    }
+  }
 
   const handleContinueLearning = async () => {
     /* v8 ignore next -- @preserve */
@@ -249,7 +271,7 @@ export function ReviewView(): React.ReactElement {
               concepts={concepts}
               onGenerated={load}
             />
-            <ConceptStateList concepts={concepts} />
+            <ConceptStateList concepts={concepts} onReview={handleReviewConcept} />
           </div>
         ) : currentKey === 'next' ? (
           <NextStepsPanel concepts={concepts} />
@@ -299,8 +321,15 @@ function masteryLevel(m: number): { label: string; bar: string; text: string } {
   return { label: '未接触', bar: 'bg-bg-elevated', text: 'text-text-muted' }
 }
 
-/** 复盘页「概念掌握」：本课涉及概念的增量识别结果与累计掌握度。 */
-function ConceptStateList({ concepts }: { concepts: ConceptStateDTO[] }): React.ReactElement {
+/** 复盘页「概念掌握」：本课涉及概念的增量识别结果与累计掌握度 + 到期自评。 */
+function ConceptStateList({
+  concepts,
+  onReview
+}: {
+  concepts: ConceptStateDTO[]
+  onReview: (concept: ConceptStateDTO, rating: ConceptRating) => Promise<void>
+}): React.ReactElement {
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
   /* v8 ignore next -- @preserve */
   if (concepts.length === 0) {
     return (
@@ -309,13 +338,23 @@ function ConceptStateList({ concepts }: { concepts: ConceptStateDTO[] }): React.
       </div>
     )
   }
+  const now = Date.now()
   const sorted = [...concepts].sort((a, b) => b.mastery - a.mastery)
+
+  const rate = (concept: ConceptStateDTO, rating: ConceptRating): void => {
+    const key = `${concept.id}:${concept.textbookId ?? ''}`
+    setPendingKey(key)
+    void onReview(concept, rating).finally(() => setPendingKey(null))
+  }
+
   return (
     <div className="max-w-3xl space-y-3">
       {sorted.map((c) => {
         const level = masteryLevel(c.mastery)
+        const key = `${c.id}:${c.textbookId ?? ''}`
+        const due = isConceptDue(c.srs, now)
         return (
-          <div key={c.id} className="rounded-xl border border-surface-border bg-bg-surface p-4">
+          <div key={key} className="rounded-xl border border-surface-border bg-bg-surface p-4">
             <div className="flex items-center justify-between gap-3">
               <span className="font-medium text-text-primary">{c.name}</span>
               <span className={`flex-shrink-0 rounded-full bg-bg-elevated px-2 py-0.5 text-[10px] font-medium ${level.text}`}>
@@ -328,7 +367,33 @@ function ConceptStateList({ concepts }: { concepts: ConceptStateDTO[] }): React.
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-muted">
               <span>尝试 {c.attemptCount} 次 · 答对 {c.correctCount} 次</span>
               <span>最近接触 {new Date(c.lastSeenAt).toLocaleString()}</span>
+              {due ? (
+                <span className="rounded-full bg-amber-900/30 px-2 py-0.5 font-medium text-amber-500">
+                  ⏰ 待复习
+                </span>
+              ) : (
+                // 非到期意味着 srs 必存在（无排期一律视为到期）。
+                <span>下次复习：{nextReviewLabel(c.srs!, now)}</span>
+              )}
             </div>
+            {due && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {([
+                  ['again', '😵 忘了'],
+                  ['hard', '🤔 模糊'],
+                  ['good', '😀 记得']
+                ] as Array<[ConceptRating, string]>).map(([rating, label]) => (
+                  <button
+                    key={rating}
+                    onClick={() => rate(c, rating)}
+                    disabled={pendingKey === key}
+                    className="rounded border border-surface-border-strong px-2.5 py-1 text-[11px] text-text-secondary hover:bg-bg-elevated disabled:opacity-50"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {c.misconception && (
               <p className="mt-2 rounded-lg border border-amber-700/40 bg-amber-900/15 px-3 py-2 text-xs leading-relaxed text-text-secondary">
                 ⚠️ 误解点：{c.misconception}

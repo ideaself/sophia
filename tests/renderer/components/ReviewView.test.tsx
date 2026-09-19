@@ -45,6 +45,7 @@ const dataMocks = {
   listMessages: vi.fn(),
   listArtifacts: vi.fn(),
   listConcepts: vi.fn(),
+  reviewConcept: vi.fn(),
   getTextbook: vi.fn(),
   onConceptsUpdated: vi.fn((_cb?: (event: { conversationId: string }) => void) => () => {}),
   listConversations: vi.fn(async () => [] as unknown[]),
@@ -74,6 +75,7 @@ beforeEach(() => {
   ])
   dataMocks.listArtifacts.mockResolvedValue(ARTIFACTS)
   dataMocks.listConcepts.mockResolvedValue(CONCEPTS)
+  dataMocks.reviewConcept.mockResolvedValue(null)
   dataMocks.getTextbook.mockResolvedValue({ id: 'tb_1', title: '化学课本' })
   companionsGet.mockResolvedValue({
     id: 'comp_a', name: '朗道', identity: '化学导师', personalityKeywords: []
@@ -137,6 +139,45 @@ describe('ReviewView', () => {
     expect(screen.getByText('薄弱 · 30%')).toBeTruthy()
     expect(screen.getByText('尝试 2 次 · 答对 0 次')).toBeTruthy()
     expect(screen.getByText('⚠️ 误解点：混淆内能与焓')).toBeTruthy()
+    // 无 SRS 排期的概念一律到期：可自评并展示下次复习时间。
+    expect(screen.getAllByText('⏰ 待复习')).toHaveLength(2)
+  })
+
+  it('advances the schedule when a due concept is self-rated', async () => {
+    const now = Date.now()
+    dataMocks.reviewConcept.mockResolvedValueOnce({
+      ...CONCEPTS[0],
+      srs: { interval: 1, ease: 2.5, reps: 1, nextReview: now + 86_400_000, lastReview: now }
+    })
+
+    render(<ReviewView />)
+    await screen.findByText('📊 概念掌握')
+    fireEvent.click(screen.getByText('📊 概念掌握'))
+
+    fireEvent.click(screen.getAllByText('😀 记得')[0])
+    await waitFor(() =>
+      expect(dataMocks.reviewConcept).toHaveBeenCalledWith('k1', 'tb_1', 'good')
+    )
+    expect(await screen.findByText('下次复习：明天')).toBeTruthy()
+    expect(screen.getAllByText('⏰ 待复习')).toHaveLength(1)
+  })
+
+  it('keeps the list unchanged when the review call fails', async () => {
+    dataMocks.listConcepts.mockResolvedValue([
+      { ...CONCEPTS[0], textbookId: null },
+      CONCEPTS[1]
+    ])
+    dataMocks.reviewConcept.mockRejectedValueOnce(new Error('ipc down'))
+
+    render(<ReviewView />)
+    await screen.findByText('📊 概念掌握')
+    fireEvent.click(screen.getByText('📊 概念掌握'))
+
+    fireEvent.click(screen.getAllByText('😵 忘了')[0])
+    await waitFor(() =>
+      expect(dataMocks.reviewConcept).toHaveBeenCalledWith('k1', null, 'again')
+    )
+    expect(screen.getAllByText('⏰ 待复习')).toHaveLength(2)
   })
 
   it('builds next steps from the concept tiers', async () => {

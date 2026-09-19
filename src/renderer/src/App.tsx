@@ -5,6 +5,7 @@ import { ClassroomView } from './chat/ClassroomView'
 import { getChatStreamController } from './chat/chat-stream-store'
 import { useOnlineStatus } from './hooks/useOnlineStatus'
 import { useDueFlashcardCount } from './hooks/useFlashcards'
+import { useDueConceptCount } from './hooks/useConcepts'
 import { CompanionEditModal } from './components/CompanionEditModal'
 import { NewClassroomModal } from './components/NewClassroomModal'
 import { SettingsView } from './components/SettingsView'
@@ -85,22 +86,27 @@ function App(): React.ReactElement {
   const chatStream = getChatStreamController()
   const isOnline = useOnlineStatus()
   const dueFlashcardCount = useDueFlashcardCount()
+  const dueConceptCount = useDueConceptCount()
+  const dueTotal = dueFlashcardCount + dueConceptCount
   const classroomDropdownRef = useRef<HTMLDivElement>(null)
 
-  // 到期卡片提醒：每天只提醒一次（本地记录当天已提醒），避免打扰。
+  // 到期卡片/概念提醒：每天只提醒一次（本地记录当天已提醒），避免打扰。
   useEffect(() => {
-    if (dueFlashcardCount <= 0) return
+    if (dueTotal <= 0) return
     const today = new Date().toDateString()
     if (localStorage.getItem('sophia.dueReminderDate') === today) return
     localStorage.setItem('sophia.dueReminderDate', today)
+    const parts: string[] = []
+    if (dueFlashcardCount > 0) parts.push(`${dueFlashcardCount} 张记忆卡片`)
+    if (dueConceptCount > 0) parts.push(`${dueConceptCount} 个概念`)
     try {
-      new Notification('记忆卡片待复习', {
-        body: `今天有 ${dueFlashcardCount} 张记忆卡片到期，去「复习」看看吧`
+      new Notification('复习提醒', {
+        body: `今天有 ${parts.join('、')} 待复习，去「复习」看看吧`
       })
     } catch {
       // 系统通知不可用时静默跳过
     }
-  }, [dueFlashcardCount])
+  }, [dueFlashcardCount, dueConceptCount, dueTotal])
 
   useEffect(() => {
     void (async () => {
@@ -272,12 +278,12 @@ function App(): React.ReactElement {
           <button onClick={() => { setView('flashcards'); setFlashcardScope(null); setShowClassroomDropdown(false) }}
             className={`rounded px-3 py-2 text-sm transition-colors ${view === 'flashcards' ? 'bg-accent text-white' : 'text-text-secondary hover:bg-bg-elevated'}`}>
             复习
-            {dueFlashcardCount > 0 && (
+            {dueTotal > 0 && (
               <span
                 className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white"
-                title={`今天有 ${dueFlashcardCount} 张卡片待复习`}
+                title={`待复习：${dueFlashcardCount} 张卡片 · ${dueConceptCount} 个概念`}
               >
-                {dueFlashcardCount > 99 ? '99+' : dueFlashcardCount}
+                {dueTotal > 99 ? '99+' : dueTotal}
               </span>
             )}
           </button>

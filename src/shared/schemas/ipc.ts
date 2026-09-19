@@ -304,6 +304,13 @@ export const IpcGenerateConceptCardsInputSchema = z.object({
   conversationId: EntityIdSchema
 })
 
+/** 概念间隔复习的一次自评。 */
+export const IpcReviewConceptInputSchema = z.object({
+  conceptId: EntityIdSchema,
+  textbookId: EntityIdSchema.nullable(),
+  rating: z.enum(['again', 'hard', 'good', 'easy'])
+})
+
 export const IpcDialogFileFiltersSchema = z.array(z.object({
   name: z.string(),
   extensions: z.array(z.string())

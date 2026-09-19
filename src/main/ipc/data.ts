@@ -16,6 +16,7 @@ import { selectWeakConcepts } from '../../shared/concept-mastery'
 import { parseFlashcards, rebuildArtifactContent } from '../../shared/flashcard-utils'
 import { estimateDailyStudyMinutes } from '../../shared/study-time'
 import { countDueFlashcards } from '../stats/due-flashcards'
+import { countDueConcepts } from '../stats/due-concepts'
 import { buildStatsOverview } from '../stats/overview'
 import { extractText, getEpubChapters, epubChaptersToText } from '../parsers'
 import { splitSections, headingMatches } from '../prompt/textbook-retrieval'
@@ -71,6 +72,7 @@ import {
   IpcRestoreBackupInputSchema,
   IpcConceptsListInputSchema,
   IpcGenerateConceptCardsInputSchema,
+  IpcReviewConceptInputSchema,
   IpcFlashcardSrsStateInputSchema,
   IpcFlashcardFavoritesInputSchema,
   IpcOpenFileDialogInputSchema,
@@ -330,6 +332,12 @@ export function registerConversationIpc(
   ipcMain.handle('concepts:list', async (_event, input: unknown) => {
     const conversationId = IpcConceptsListInputSchema.parse(input)
     return conversationId ? conceptStore.listByConversation(conversationId) : conceptStore.load()
+  })
+
+  // 概念间隔复习：一次自评推进 SM-2 排期（掌握度不变）。
+  ipcMain.handle('concepts:review', async (_event, input: unknown) => {
+    const { conceptId, textbookId, rating } = IpcReviewConceptInputSchema.parse(input)
+    return conceptStore.review(conceptId, textbookId, rating)
   })
 
   // 薄弱概念 → 记忆卡片（复习闭环）：带课堂证据摘录调 LLM 出卡，追加到本课
@@ -949,6 +957,16 @@ export function registerConversationIpc(
         // No SRS state yet — every card counts as new/due.
       }
       return countDueFlashcards(artifacts, states, Date.now())
+    } catch {
+      /* v8 ignore next -- @preserve */
+      return { due: 0, total: 0 }
+    }
+  })
+
+  // 概念间隔复习到期数（导航徽标 / 每日提醒）。
+  ipcMain.handle('stats:due-concepts', async () => {
+    try {
+      return countDueConcepts(await conceptStore.load(), Date.now())
     } catch {
       /* v8 ignore next -- @preserve */
       return { due: 0, total: 0 }

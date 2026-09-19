@@ -124,6 +124,14 @@ declare global {
     evidenceConversationId: string
     evidenceConversationIds?: string[]
     evidenceMessageIds: string[]
+    /** 间隔复习排期（SM-2，数据版本 2 起；旧数据读取时补齐）。 */
+    srs?: {
+      interval: number
+      ease: number
+      reps: number
+      nextReview: number
+      lastReview: number
+    }
   }
 
   interface SearchResultDTO {
@@ -207,6 +215,12 @@ declare global {
       concepts?: string[]
       error?: string
     }>
+    reviewConcept: (
+      conceptId: string,
+      textbookId: string | null,
+      rating: 'again' | 'hard' | 'good' | 'easy'
+    ) => Promise<ConceptStateDTO | null>
+    dueConceptCount: () => Promise<{ due: number; total: number }>
     createTextbook: (input: {
       title: string
       format: 'markdown' | 'text' | 'pdf' | 'epub'

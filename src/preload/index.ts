@@ -212,6 +212,12 @@ export interface DataAPI {
       concepts?: string[]
       error?: string
     }>
+    reviewConcept: (
+      conceptId: string,
+      textbookId: string | null,
+      rating: 'again' | 'hard' | 'good' | 'easy'
+    ) => Promise<ConceptStateDTO | null>
+    dueConceptCount: () => Promise<{ due: number; total: number }>
   createTextbook: (input: {
     title: string
     format: 'markdown' | 'text' | 'pdf' | 'epub'
@@ -603,6 +609,10 @@ const sophia: SophiaAPI = {
       createSimpleSubscriber<{ conversationId: string }>('concepts:updated', callback),
     generateConceptCards: (conversationId) =>
       ipcRenderer.invoke('flashcard:generate-from-concepts', { conversationId }),
+    reviewConcept: (conceptId, textbookId, rating) =>
+      ipcRenderer.invoke('concepts:review', { conceptId, textbookId, rating }),
+    dueConceptCount: () =>
+      ipcRenderer.invoke('stats:due-concepts'),
     createTextbook: (input) =>
       ipcRenderer.invoke('textbook:create', input),
     getTextbook: (textbookId) =>

@@ -151,6 +151,100 @@ describe('ConceptStore.applyEvidence', () => {
   })
 })
 
+describe('ConceptStore.review (间隔复习)', () => {
+  it('新概念自带 1 天后首次复习的排期', async () => {
+    const before = Date.now()
+    await store.applyEvidence(evidence({ updates: [{ name: '熵', performance: 'correct' }] }))
+    const state = (await store.load())[0]
+    expect(state.srs).toBeDefined()
+    expect(state.srs!.nextReview).toBeGreaterThanOrEqual(before + 86_400_000)
+    expect(state.srs!.reps).toBe(0)
+    expect(state.srs!.lastReview).toBe(0)
+  })
+
+  it('自评推进排期但不改变掌握度', async () => {
+    const now = Date.parse('2026-09-20T08:00:00.000Z')
+    await store.applyEvidence(evidence({ updates: [{ name: '熵', performance: 'correct' }] }))
+    const before = (await store.load())[0]
+
+    const updated = await store.review(before.id, null, 'good', now)
+    expect(updated).not.toBeNull()
+    expect(updated!.mastery).toBe(before.mastery)
+    expect(updated!.srs).toMatchObject({ reps: 1, interval: 1, lastReview: now })
+    expect(updated!.srs!.nextReview).toBe(now + 86_400_000)
+
+    // 排期已持久化：重新实例化后仍生效。
+    const reloaded = await new ConceptStore(dataRoot).load()
+    expect(reloaded[0].srs!.lastReview).toBe(now)
+  })
+
+  it('未找到概念（id 或教材不匹配）时返回 null', async () => {
+    await store.applyEvidence(
+      evidence({ textbookId: 'tb_a', updates: [{ name: '熵', performance: 'correct' }] })
+    )
+    const state = (await store.load())[0]
+    await expect(store.review('concept_missing', null, 'good')).resolves.toBeNull()
+    await expect(store.review(state.id, 'tb_b', 'good')).resolves.toBeNull()
+  })
+
+  it('旧数据（无 srs 字段）读取时按上次接触 +1 天补齐，且可直接复习', async () => {
+    const path = join(dataRoot, 'concepts.json')
+    const lastSeenAt = '2026-09-01T08:00:00.000Z'
+    await writeFile(
+      path,
+      JSON.stringify([
+        {
+          id: 'concept_legacy',
+          name: '旧概念',
+          textbookId: null,
+          mastery: 0.4,
+          misconception: null,
+          attemptCount: 1,
+          correctCount: 0,
+          lastSeenAt,
+          updatedAt: lastSeenAt,
+          evidenceConversationId: 'conv_old',
+          evidenceMessageIds: ['m1']
+        }
+      ]),
+      'utf-8'
+    )
+
+    const loaded = await store.load()
+    expect(loaded[0].srs!.nextReview).toBe(Date.parse(lastSeenAt) + 86_400_000)
+
+    const now = Date.parse('2026-09-20T08:00:00.000Z')
+    const updated = await store.review('concept_legacy', null, 'easy', now)
+    expect(updated!.srs).toMatchObject({ interval: 4, reps: 1 })
+  })
+
+  it('旧数据的 lastSeenAt 不可解析时按纪元时间补齐（立即到期）', async () => {
+    await writeFile(
+      join(dataRoot, 'concepts.json'),
+      JSON.stringify([
+        {
+          id: 'concept_broken',
+          name: '坏时间戳',
+          textbookId: null,
+          mastery: 0.5,
+          misconception: null,
+          attemptCount: 0,
+          correctCount: 0,
+          lastSeenAt: 'not-a-date',
+          updatedAt: 'not-a-date',
+          evidenceConversationId: 'conv_old',
+          evidenceMessageIds: []
+        }
+      ]),
+      'utf-8'
+    )
+
+    const loaded = await store.load()
+    expect(loaded[0].srs!.nextReview).toBe(86_400_000)
+    expect(loaded[0].srs!.nextReview).toBeLessThan(Date.now())
+  })
+})
+
 describe('parseUpdates', () => {
   it('解析标准 JSON 数组', () => {
     const out = parseUpdates('[{"name":"复数","performance":"partial","misconception":"虚部理解模糊"}]')
