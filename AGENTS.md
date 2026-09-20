@@ -2,6 +2,15 @@
 
 本文件面向在此仓库工作的 AI Agent 与贡献者，只记录**能省时间、避免踩坑**的约定。
 
+## 路线图与进度（2026-09-20 快照）
+
+- 权威路线图是 `docs/改进计划.md`：里程碑 1-5 全部完成，处于使用观察期；当前版本 0.1.6。
+- 未完成仅 2 项观察期候选（非缺陷，动手前先和用户确认优先级）：
+  - 音频回顾导出本地语音文件——现状是 Web Speech 实时播放，不能导出（`src/renderer/src/components/AudioReviewPlayer.tsx`）。
+  - 在线 AI 质量测试实跑——`tests/ai-quality/quality.test.ts` 无 key 自动跳过；凭据放 `.env.ai-quality.local`（已 gitignore）；需平台 type 的 ARK key 或官方 DeepSeek key，coding-plan key 无广场模型直连权限。
+- 「明确暂缓」清单见 `docs/改进计划.md` 末尾（SQLite/FTS、WebDAV 远端加密、原生语音对话、幻灯片/信息图、多 Agent/本地大模型）：是产品决策，不要主动实现。
+- 发布：仅 Windows x64、未签名安装包（SmartScreen 需用户手动放行）；签名配置 `CSC_LINK`/`CSC_KEY_PASSWORD`。发布链路任何改动先用安装包实测升级（自动更新会直接推给所有用户）。
+
 ## 验证门禁（提交前必跑）
 
 ```bash
